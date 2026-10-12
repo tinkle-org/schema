@@ -441,6 +441,9 @@ message Session {
   string region = 10;
   // True if this is the session that issued the current request.
   bool current = 11;
+  // Client-reported application build identifier captured at sign-in (e.g. "142").
+  // Empty when unknown; descriptive only, not an authentication signal.
+  string app_build = 12;
 }
 
 // GetSessionsRequest is empty - lists all sessions for the user from the active Ory Kratos session.
