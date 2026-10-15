@@ -338,10 +338,13 @@ message SendChangePhoneCodeRequest {
 
 // SendChangePhoneCodeResponse confirms code delivery.
 message SendChangePhoneCodeResponse {
-  // Request identifier for tracking.
-  string request_id = 1;
+  // Deprecated alias for verification_id. Do not log this value.
+  string request_id = 1 [deprecated = true];
   // When the code expires.
   google.protobuf.Timestamp expires_at = 2;
+  // Opaque verification flow identifier to retain on the client and return
+  // unchanged in ChangePhoneNumberRequest.verification_id. Do not log it.
+  string verification_id = 3;
 }
 
 // ChangePhoneNumberRequest contains the new phone and verification code.
@@ -350,6 +353,9 @@ message ChangePhoneNumberRequest {
   string phone_number = 1;
   // Verification code received via SMS.
   string code = 2;
+  // Required identifier returned by SendChangePhoneCodeResponse.verification_id.
+  // Bound to the new phone_number; not an authenticated session token.
+  string verification_id = 3;
 }
 
 // ChangePhoneNumberResponse confirms the phone number change.
