@@ -38,10 +38,14 @@ message SendCodeRequest {
 message SendCodeResponse {
   // Delivery method used for this request.
   VerificationCodeType code_type = 1;
-  // Request identifier for tracking/debugging.
-  string request_id = 2;
+  // Deprecated alias for verification_id. Do not log this value.
+  string request_id = 2 [deprecated = true];
   // Timestamp when the code expires.
   google.protobuf.Timestamp expires_at = 3;
+  // Opaque verification flow identifier. Retain on the client and return
+  // unchanged in SignInRequest.verification_id alongside the SMS code.
+  // This is not an authenticated session token and must not be logged.
+  string verification_id = 4;
 }
 
 // =============================================================================
@@ -54,6 +58,9 @@ message SignInRequest {
   string phone_number = 1;
   // Verification code received via SMS (typically 6 digits).
   string code = 2;
+  // Required identifier returned by SendCodeResponse.verification_id.
+  // Bound to phone_number; never substitute a flow issued for another phone.
+  string verification_id = 3;
 }
 
 // SignInResponse contains user information and an opaque session token.
