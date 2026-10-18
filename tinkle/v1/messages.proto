@@ -521,6 +521,15 @@ message GetDialogsRequest {
   // Compute as: XOR of all (dialog.peer_id * 0x2491 + dialog.top_message) values.
   // Set to 0 to always receive the full list.
   int64 hash = 5;
+  // cursor is an opaque continuation token from a previous next_cursor value.
+  // Omit or leave empty to use the existing first-page or legacy offset behavior.
+  // A nonempty cursor is mutually exclusive with offset_date and offset_peer_id;
+  // omit both legacy offsets when supplying it. Cursor pagination follows the
+  // server's pinned-first activity ordering. Keep the exact space_id scope unchanged
+  // across pages, including whether it was omitted; changing folders requires
+  // restarting without a cursor. The dialog list is live, not a snapshot: activity
+  // and pin changes can move dialogs across page boundaries between requests.
+  optional string cursor = 6;
 }
 
 // GetDialogsResponse is the response for GetDialogs.
@@ -529,6 +538,12 @@ message GetDialogsResponse {
   repeated Message messages = 2;
   repeated User users = 3;
   repeated Chat chats = 4;
+  // next_cursor is an opaque token to pass unchanged as the next request's cursor.
+  // A nonempty token means pagination may continue, even when privacy filtering
+  // leaves this page shorter than limit or empty. Do not infer exhaustion from the
+  // number of returned dialogs. An absent or empty token provides no continuation;
+  // existing hash-based unchanged-response semantics still apply.
+  optional string next_cursor = 5;
 }
 
 // GetHistoryRequest requests message history for a conversation.
