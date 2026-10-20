@@ -8,6 +8,11 @@ lint:
 breaking:
   use:
     - FILE
+  # Pre-release: builtin breaking is disabled so restructuring tinkle.v1
+  # does not fail CI or local `buf breaking`. The `use: FILE` + `except`
+  # below documents the intended stable policy. Re-enable on first stable
+  # release by setting `disable_builtin: false`.
+  disable_builtin: true
   # The BSR's managed mode overrides the import path of the
   # published Go SDK to buf.build/gen/go/... regardless of what
   # the literal in `option go_package` says. Only the `;name`

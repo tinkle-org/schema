@@ -77,12 +77,13 @@ Versions are `{plugin-version}-{module-commit-timestamp}-{module-commit-id}.{plu
 4. **Lint before pushing.** Run `buf format -d` and `buf lint`
    locally; the `buf-ci.yaml` action will run them on every PR and
    fail the build on findings.
-5. **Breaking changes are blocked by `buf breaking`** in CI (the
-   `breaking: FILE` category from `buf.yaml`). For intentional
-   breaks, add a `buf skip breaking` label to the PR (Issues →
-   Labels in the repo settings) — the action checks for the label
-   and skips the breaking step. For permanent breaks, add a new
-   package path (`tinkle/v2/`) rather than mutating `tinkle/v1/`.
+5. **Breaking is disabled for pre-release.** `buf.yaml` sets
+   `breaking.disable_builtin: true`, so restructuring `tinkle/v1/`
+   does not fail CI or local `buf breaking`. Re-enable on first
+   stable release by setting it to `false` (intended stable policy
+   is `breaking: FILE`). After re-enabling, intentional breaks need
+   a `buf skip breaking` label on the PR, and permanent breaks need
+   a new package path (`tinkle/v2/`) rather than mutating `tinkle/v1/`.
 6. **No `buf generate`, no `buf.gen.yaml`.** Code generation
    happens on the BSR. A `buf.gen.yaml` only exists if you need
    to run `buf generate` against a third-party plugin locally;
