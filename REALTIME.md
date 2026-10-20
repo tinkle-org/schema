@@ -17,11 +17,12 @@ batches, presence data and synchronization resets. No Syntra schema is imported
 or modified. `RealtimeNotification` is an application discriminator inside
 `syntra.v1.Notification.payload`, not another transport frame.
 
-The published `RealtimeFrame`, `RealtimeReady`, `RealtimeUpdate`,
-`RealtimeConnectControl` and `RealtimeError` remain frozen for the legacy
-`/connection/websocket` JSON binding. They MUST NOT be used as framing for this
-binding. `RealtimeOnline` and `RealtimeResetRequired` are reusable application
-data, carried only through the new notification discriminator here.
+There is no legacy JSON WebSocket binding in this pre-release contract.
+`RealtimeFrame`, `RealtimeReady`, `RealtimeUpdate`, `RealtimeConnectControl` and
+`RealtimeError` were removed during the Syntra-only restructuring and MUST NOT
+be reintroduced as framing for this binding. `RealtimeOnline` and
+`RealtimeResetRequired` are application data, carried only through the
+notification discriminator here.
 
 ## 2. Explicit method binding and migration
 
@@ -187,10 +188,10 @@ Current room authorization can still prevent disclosure of a prior outcome.
 
 ## 7. Publication and remaining integration gates
 
-Legacy schemas and gRPC services MUST retain their published tags and meaning.
-The unpublished draft RealtimeService is not added as a gRPC service. The draft
-SubscribeResponse connection-ID slot is reserved rather than repurposed. New
-application fields stay in Tinkle, never in Syntra core.
+Pre-release restructuring removed the legacy JSON WebSocket messages. This is an
+intentional breaking change with no external compatibility commitment. No realtime
+gRPC service is added. The draft SubscribeResponse connection-ID slot is reserved
+rather than repurposed. New application fields stay in Tinkle, never in Syntra core.
 
 Release order: review schema/conformance, publish via the normal main-merge/BSR
 workflow, pin the exact generated revision, implement the new dispatch bindings

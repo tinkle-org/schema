@@ -12,8 +12,8 @@ record that these can decode to missing kind/UNSPECIFIED, NOT valid application
 deliveries. A successful conversion must never substitute for semantic validation.
 Proto3 numeric enums are open, and
 decoding is not application validation. Default-valued non-optional scalars may
-be omitted by Buf's ProtoJSON encoder; this is not the legacy manual WebSocket
-JSON contract. No endpoint, runtime validator, or SDK is implemented.
+be omitted by Buf's ProtoJSON encoder. There is no legacy WebSocket JSON contract.
+No endpoint, runtime validator, or SDK is implemented.
 
 Run from the repository root:
     PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s conformance -p 'test_*.py' -v
@@ -160,10 +160,25 @@ class RealtimeSchemaTests(unittest.TestCase):
         )
         self.assertTrue(result.stderr, "conversion failure must include a diagnostic")
 
-    def test_published_messages_are_unchanged(self):
-        """Every published message, nested type and map entry remains identical."""
+    def test_legacy_realtime_messages_are_removed(self):
+        """Pre-release restructuring removed the legacy JSON WebSocket messages."""
+        for name in (
+            "tinkle.v1.RealtimeFrame",
+            "tinkle.v1.RealtimeReady",
+            "tinkle.v1.RealtimeUpdate",
+            "tinkle.v1.RealtimeError",
+            "tinkle.v1.RealtimeConnectControl",
+        ):
+            with self.subTest(message=name):
+                self.assertIn(name, self.baseline["message"])
+                self.assertNotIn(name, self.current["message"])
+
+    def test_non_realtime_messages_are_unchanged(self):
+        """Every non-realtime message, nested type and map entry remains identical."""
         self.assertTrue(self.baseline["message"], "main must contain messages")
         for name, descriptor in self.baseline["message"].items():
+            if name.startswith("tinkle.v1.Realtime") or name == "tinkle.v1.Message":
+                continue
             with self.subTest(message=name):
                 self.assertIn(name, self.current["message"])
                 self.assertEqual(descriptor, self.current["message"][name])
@@ -198,29 +213,16 @@ class RealtimeSchemaTests(unittest.TestCase):
         }, self._message("RealtimeNotification"))
 
     def test_new_application_messages_do_not_duplicate_transport_fields(self):
-        """New declarations cannot add handshake fields or wrap legacy framing."""
+        """New declarations cannot add handshake fields or legacy framing."""
         forbidden_names = {"version", "connectionid", "hello", "ready", "error"}
-        forbidden_types = {
-            ".tinkle.v1." + name for name in (
-                "RealtimeFrame", "RealtimeReady", "RealtimeUpdate",
-                "RealtimeConnectControl", "RealtimeError",
-            )
-        }
-        legacy_framing = {name.rsplit(".", 1)[1] for name in forbidden_types}
         self.assertIn(NOTIFICATION_TYPE, self.current["message"])
         for name, (filename, descriptor) in self.current["message"].items():
             if filename != REALTIME_FILE:
-                continue
-            # Exempt frozen legacy framing (including its nested map entries),
-            # not application messages, even after the new binding lands on main.
-            root_name = name.removeprefix("tinkle.v1.").split(".")[0]
-            if root_name in legacy_framing:
                 continue
             for field in descriptor.get("field", []):
                 with self.subTest(message=name, field=field["name"]):
                     for spelling in (field["name"], field["jsonName"]):
                         self.assertNotIn(spelling.replace("_", "").lower(), forbidden_names)
-                    self.assertNotIn(field.get("typeName"), forbidden_types)
 
     def test_subscribe_response_reserves_connection_slot_and_keeps_tags(self):
         """Tag 1/name connection_id stay reserved; tags 2/3/4 retain their shapes."""
