@@ -130,104 +130,14 @@ These are the same checks the buf-ci action runs on every PR. There
 is no local `buf generate` step — code generation happens on the
 BSR.
 
-## Native realtime protocol (version 1)
+## Realtime Syntra protocol (version 1)
 
-[`tinkle/v1/realtime.proto`](tinkle/v1/realtime.proto) defines application data,
-not just gRPC contracts. Its published legacy JSON shapes for the receive-only
-`/connection/websocket` endpoint remain frozen. The feature-branch batched Syntra
-binding uses generic `RpcRequest`/`RpcResult` and `Notification.payload`, declares
-no new `RealtimeService` gRPC service, and adds no application fields to Syntra core.
+[`tinkle/v1/realtime.proto`](tinkle/v1/realtime.proto) defines Syntra-only
+application data, not gRPC contracts and not a legacy JSON WebSocket. The binding
+uses generic `RpcRequest`/`RpcResult` and `Notification.payload`, declares no
+`RealtimeService` gRPC service, and adds no application fields to Syntra core.
 
-### Strict manual JSON transport
-
-Use `Authorization: Bearer <opaque-session-token>` in the HTTP upgrade header.
-Never put credentials in the URL, cookies, or connect payload. The gateway verifies
-every upgrade itself; client-supplied identity headers are not authoritative.
-
-```text
-GET /connection/websocket?cursor=17&watch=321,456
-```
-
-`cursor` is the own-user stream's last-applied cursor (default `0`); that stream is
-derived from authenticated identity, never client-selected. Optional `watch` contains
-at most 100 raw positive user IDs, comma-separated; the presence authority enforces
-contact/privacy policy. Unknown or repeated query keys are rejected.
-
-The one optional initial client text frame is `RealtimeConnectControl`:
-
-```json
-{"type":"connect","rooms":{"42":"17","43":"0"}}
-```
-
-Room-map keys are positive canonical decimal room IDs and values are last-applied
-cursor strings. At most 15 rooms (or the deployment's lower limit) are allowed, with
-one slot reserved for the own-user stream. The private authority grants room access.
-Send this frame once within the configured connect window after upgrade; it may precede
-or follow `ready`. Unknown fields, duplicate keys, arrays, trailing JSON, binary
-messages, business publications, and second/late controls are rejected.
-
-Server text frames have `type` plus exactly one matching **unwrapped** body field:
-
-```json
-{"type":"ready","ready":{"version":1,"connection_id":"<socket-uuid>","stream":"user:123","after_cursor":"17","ping_interval_ms":5000,"pong_timeout_ms":15000}}
-{"type":"update","update":{"event_id":"<source-uuid>","cursor":"18","stream":"room:42","event_type":"message.snapshot","payload":"<base64-public-Message>","occurred_at":"2026-10-17T12:00:00Z","source_seq":"73","source_revision":"2","message_id":"987","message_created_at":"2026-10-17T11:00:00Z","random_id":"-9007199254740997"}}
-{"type":"update","update":{"cursor":"19","stream":"user:123","event_type":"update.redacted"}}
-{"type":"presence","presence":{"user_id":"321","online":false,"known":false,"revision":"0"}}
-{"type":"reset_required","reset_required":{"stream":"user:123","head":"100"}}
-{"type":"error","error":{"code":"unavailable"}}
-```
-
-The source file explicitly pins snake_case `json_name`s. This transport is a **custom
-strict JSON profile**, not a claim that a default generated ProtoJSON serializer emits
-byte-identical frames. Numeric 64-bit IDs, cursors, revisions and source markers are
-decimal **strings**; `random_id` is signed. Version and millisecond heartbeat settings
-are JSON numbers. Timestamps are RFC 3339 UTC strings with nanosecond precision when
-needed. `payload` is standard padded base64. Omit optional values; include required
-own cursor `"0"`, presence revision `"0"`, and presence `online`/`known` booleans even
-when false. Validate the type/body match and canonical numeric strings in SDK adapters.
-
-### Public payload and outcome contract
-
-| `event_type` | Payload contract |
-| --- | --- |
-| `message.snapshot` | Serialized **existing `tinkle.v1.Message`** from `messages.proto`, never an internal message protobuf. |
-| `message.send_failed` | The same public `Message`, delivered **only to the authenticated sender's user stream**, with no private admission/policy reason. |
-| `update.redacted` | No payload or identifying metadata: only `cursor`, `stream`, and `event_type`. Advance the replay cursor without inventing a visible message. |
-| `dialog.read_advanced` | **No payload**; metadata-only invalidation hint. Refetch dialog/read state through the existing public API. No opaque private source-event bytes are exposed. |
-
-Message projection keeps immutable message ID, sender and original creation time,
-plus edit time and stored text/entities. A room message uses `PeerInput.chat_id`; a
-DM uses the counterparty relative to the authenticated viewer. The gateway decodes the
-stored public `SendMessageRequest` and constructs fresh public values, stripping
-private journal/admission fields and protobuf unknown fields. Malformed or inconsistent
-snapshots fail closed; there is no legacy raw-text fallback.
-
-`random_id` is copied from the stored public send request **only for its sender**.
-It correlates both successful and failed durable outcomes after a lost send-RPC
-response; it is not a replay cursor and is absent for recipient/other room viewers.
-`event_id`, source ordering/revision, and `message_created_at` preserve source identity
-independently of the stream-local replay cursor. Unknown event types are not forwarded.
-
-Order is per stream, not global. Persist the last successfully applied cursor and
-tolerate replay after reconnect. `ready` confirms a registered socket, not room
-authorization or replay completion. `reset_required` stops one subscription; fetch an
-authoritative public snapshot and reconnect with its consistent cursor. `head` is
-optional and omitted when unknown, never guessed from the requested cursor.
-
-Presence is ephemeral and non-replayable. Hidden/unknown users have `known=false`,
-`online=false`, `revision="0"`; that does not prove offline. Clear cached presence on
-disconnect. No gateway-process ID, auth session/identity ID, device count, last-seen
-timestamp, or policy diagnostics are public protocol fields.
-
-Ping, pong, and close use **native WebSocket control frames**, not JSON/protobuf data
-messages. The server pings every 5 seconds and bounds liveness by 15 seconds since an
-actual matching pong. Heartbeats never extend authentication validity. Errors are
-generic and best-effort before close; SDKs must also handle a close without a JSON
-error. Authority outages reject upgrades with 503, rather than claiming the token is
-invalid. Reconnect with backoff as appropriate; no client business publishes or dynamic
-subscription changes are supported.
-
-### Batched Syntra application binding (feature branch)
+### Syntra application binding (feature branch)
 
 This is the feature-branch design on `feat/realtime-sync-recovery`, not a shipped or
 BSR-published binding or an implemented server endpoint. Read [REALTIME.md](REALTIME.md)
@@ -291,11 +201,10 @@ CDC publication/catch-up remain separate blockers to full synchronization.
 
 #### Compatibility and release
 
-Published legacy JSON types, tags, names, and meanings remain unchanged. Existing
-experimental `/tinkle.v1.Realtime/Subscribe` and
-`/tinkle.v1.RealtimeService/Subscribe` keep their separate old formats: neither is
-an alias for `SubscribeBatched`. Select the binding before decoding; do not mix
-bindings on one connection or silently downgrade after an unknown-method error.
+Pre-release restructuring removed the legacy JSON WebSocket messages. This is an
+intentional breaking change with no external compatibility commitment. There are
+no experimental Subscribe aliases to preserve. Select the batched binding before
+decoding; do not mix bindings on one connection.
 
 Review schema/conformance, explicitly publish through the normal main-merge/BSR
 workflow, pin exact generated Go/Rust revisions, implement server dispatch and

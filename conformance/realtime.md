@@ -1,8 +1,9 @@
 # Batched realtime conformance obligations
 
-Applies to the application binding in [REALTIME.md](../REALTIME.md), not the
-frozen legacy JSON WebSocket or Syntra core. This is a specification of expected
-behavior, not a claim that a server/client implementation has passed these cases.
+Applies to the Syntra-only application binding in [REALTIME.md](../REALTIME.md),
+not Syntra core. There is no legacy JSON WebSocket binding. This is a specification
+of expected behavior, not a claim that a server/client implementation has passed
+these cases.
 
 ## Executable schema and codec checks
 
@@ -17,11 +18,11 @@ buf breaking --against '.git#branch=main'
 ```
 
 `test_realtime_schema.py` uses standard-library subprocesses and local Buf images,
-not generated SDKs or network dependencies. It compares all published message,
-enum and service descriptors with local `main`, pins new notification/batch/event
-tags, proves no realtime gRPC service or duplicate transport operations were added,
-and exercises typed binary round trips. Images live in an external temporary
-directory and are deleted on completion; no bindings are generated in this repo.
+not generated SDKs or network dependencies. It pins the Syntra-only notification,
+batch and event tags, proves no realtime gRPC service or duplicate transport
+operations were added, asserts the removed legacy JSON messages are absent, and
+exercises typed binary round trips. Images live in an external temporary directory
+and are deleted on completion; no bindings are generated in this repo.
 
 Round trips preserve optional absent/zero heads, 64-bit values above JavaScript's
 exact integer range, signed random IDs, Unicode public content and full batches.
@@ -42,7 +43,7 @@ store, not just in-memory event fixtures.
 | ID | Case | Required result |
 | --- | --- | --- |
 | APP-001 | SubscribeBatched with valid protobuf request | Exactly one terminal success/error, using Syntra result correlation; no application hello/ready. Success alone does not prove replay completion. |
-| APP-002 | Existing experimental Subscribe method | Keeps its old format; is never treated as SubscribeBatched or guessed by decoding success. |
+| APP-002 | Unknown Subscribe method | Fails explicitly; never guesses another binding by decoding success. |
 | APP-003 | Second subscription or mixed binding on one socket | Explicit failure before additional watches; unrelated RPC semantics unchanged. |
 | APP-004 | Notification with batch, presence, or reset kind | Dispatch only by `RealtimeNotification.kind`. No bare-type or JSON fallback. |
 | APP-005 | Empty/unrecognized notification kind | Stop application without checkpoint progress; no successful decode implies validity. |

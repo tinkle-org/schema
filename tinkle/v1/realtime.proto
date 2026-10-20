@@ -1,8 +1,8 @@
-// Public realtime application data, independent of gRPC transport.
-// The published RealtimeFrame family is frozen for the legacy JSON WebSocket.
-// The batched Syntra binding uses RealtimeNotification inside opaque core
-// Notification.payload; it does not add another handshake or transport frame.
-// See REALTIME.md for application requirements and generic RPC method bindings.
+// Realtime Syntra application data, independent of gRPC transport.
+// RealtimeNotification is carried inside opaque Syntra core Notification.payload;
+// it does not add another handshake or transport frame. There is no legacy JSON
+// WebSocket binding in this file and no realtime gRPC service. See REALTIME.md
+// for application requirements and generic RPC method bindings.
 syntax = "proto3";
 
 package tinkle.v1;
@@ -12,88 +12,16 @@ import "tinkle/v1/messages.proto";
 
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
-// RealtimeFrame is a version-1 server data frame on /connection/websocket.
-// Exactly one body must match type. The wire uses strict snake_case JSON with
-// unwrapped oneof members, not a protobuf binary frame or a new gRPC service.
-message RealtimeFrame {
-  // type is ready, update, presence, reset_required, or error, matching body.
-  string type = 1;
-  // body contains exactly the payload selected by type; unknown combinations fail.
-  oneof body {
-    // ready confirms this socket's presence lease, not room authorization or replay completion.
-    RealtimeReady ready = 2;
-    // update is one public durable delivery or a redacted cursor advance.
-    RealtimeUpdate update = 3;
-    // presence is privacy-filtered ephemeral online/known state for a requested user.
-    RealtimeOnline presence = 4;
-    // reset_required stops this subscription until an authoritative public snapshot is fetched.
-    RealtimeResetRequired reset_required = 5 [json_name = "reset_required"];
-    // error contains a generic terminal code; delivery before socket close is best-effort.
-    RealtimeError error = 6;
-  }
-}
-
-// RealtimeReady is the first server data frame after authentication and lease registration.
-message RealtimeReady {
-  // version is 1, encoded as a JSON number.
-  uint32 version = 1;
-  // connection_id is the random UUID for this socket, never a device or auth-session ID.
-  string connection_id = 2 [json_name = "connection_id"];
-  // stream is user:<verified-user-id>; clients cannot choose another private user stream.
-  string stream = 3;
-  // after_cursor is the requested own-stream resume cursor, always a decimal JSON string.
-  optional uint64 after_cursor = 4 [json_name = "after_cursor"];
-  // ping_interval_ms is the server control-ping interval (5000), a JSON number.
-  uint32 ping_interval_ms = 5 [json_name = "ping_interval_ms"];
-  // pong_timeout_ms is liveness since the last actual accepted pong (15000), a JSON number.
-  uint32 pong_timeout_ms = 6 [json_name = "pong_timeout_ms"];
-}
-
-// RealtimeUpdate is a public delivery, not an internal journal or policy protobuf.
-// For update.redacted, only cursor, stream and event_type appear in manual JSON.
-message RealtimeUpdate {
-  // event_id is the stable source UUID, absent for a redacted cursor advance.
-  string event_id = 1 [json_name = "event_id"];
-  // cursor is the stream-local replay cursor, a positive decimal JSON string, not a source sequence.
-  optional uint64 cursor = 2;
-  // stream is user:<verified-user-id> or an explicitly authorized room:<room-id>.
-  string stream = 3;
-  // event_type is message.snapshot, message.send_failed, update.redacted, or dialog.read_advanced.
-  string event_type = 4 [json_name = "event_type"];
-  // payload is standard padded base64 in JSON. For message.snapshot and
-  // message.send_failed it is serialized tinkle.v1.Message from messages.proto,
-  // mapped to the viewer's DM counterparty or room chat_id. It NEVER contains
-  // internal message/journal/admission/policy protobufs. It is absent for
-  // update.redacted and dialog.read_advanced; the latter is a metadata-only
-  // invalidation hint requiring a public dialog-state refetch. No other payload
-  // type or arbitrary opaque extension is defined by version 1.
-  bytes payload = 5;
-  // occurred_at is the source event occurrence time, an optional RFC 3339 UTC JSON string.
-  google.protobuf.Timestamp occurred_at = 6 [json_name = "occurred_at"];
-  // source_seq is the source ordering marker as a decimal JSON string, including zero when present.
-  optional int64 source_seq = 7 [json_name = "source_seq"];
-  // source_revision is the source revision as a decimal JSON string, independent of cursor.
-  optional int64 source_revision = 8 [json_name = "source_revision"];
-  // message_id is the immutable public message ID as a positive decimal JSON string.
-  optional int64 message_id = 9 [json_name = "message_id"];
-  // message_created_at is original creation time, never an edit/occurrence timestamp.
-  google.protobuf.Timestamp message_created_at = 10 [json_name = "message_created_at"];
-  // random_id is the nonzero signed SendMessageRequest idempotency key as a decimal
-  // JSON string, present only for the authenticated sender. It correlates durable
-  // success/failure after a lost send-RPC response and is absent for other viewers.
-  optional int64 random_id = 11 [json_name = "random_id"];
-}
-
 // RealtimeOnline discloses only aggregate connectivity, never devices or last-seen data.
 message RealtimeOnline {
-  // user_id is a requested positive user ID, encoded as a decimal JSON string.
+  // user_id is a requested positive user ID.
   int64 user_id = 1 [json_name = "user_id"];
-  // online is true only when known and an authorized live connection exists; always present in JSON.
+  // online is true only when known and an authorized live connection exists.
   bool online = 2;
   // known is false for hidden or unknown users; false never proves offline and retracts prior state.
   bool known = 3;
-  // revision is a decimal JSON string scoped to the presence backend generation;
-  // it is always "0" when unknown and is never a durable update replay cursor.
+  // revision is scoped to the presence backend generation;
+  // it is always 0 when unknown and is never a durable update replay cursor.
   optional uint64 revision = 4;
 }
 
@@ -101,31 +29,9 @@ message RealtimeOnline {
 message RealtimeResetRequired {
   // stream is the subscription requiring an authoritative public snapshot before resuming.
   string stream = 1;
-  // head is an optional authoritative server head as a decimal JSON string.
-  // It is omitted when unavailable, never guessed from the client's requested cursor.
+  // head is optional observed stream progress, omitted when unknown and never guessed.
+  // It is diagnostic only, not a source snapshot fence or resume grant.
   optional uint64 head = 2;
-}
-
-// RealtimeError carries no private backend diagnostics or admission-policy reason.
-message RealtimeError {
-  // code is unauthenticated, forbidden, invalid_frame, reconnect_required,
-  // unavailable, lease_expired, slow_client, capacity, or internal. Clients must
-  // also handle close without an error frame and reconnect with backoff as appropriate.
-  string code = 1;
-}
-
-// RealtimeConnectControl is the one optional initial client text data frame.
-// It may be sent immediately after upgrade or after ready, within the configured
-// connect window. It cannot publish business data or select another user stream.
-message RealtimeConnectControl {
-  // type must be the exact string connect; no other client data-frame types are allowed.
-  string type = 1;
-  // rooms maps positive canonical decimal room-ID strings to canonical decimal
-  // last-applied cursor strings. At most STREAMS_MAX-1 (maximum 15) rooms are
-  // permitted, reserving the own-user stream; current backend room policy grants
-  // access. Omitted rooms means no room subscriptions. Duplicate JSON keys,
-  // unknown fields, arrays, trailing JSON and second/late controls are rejected.
-  map<string, string> rooms = 2;
 }
 
 // Batched Syntra application binding; see REALTIME.md for normative behavior.
