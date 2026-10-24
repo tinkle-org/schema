@@ -7,34 +7,31 @@ import sidebars from './sidebars';
 /*
  * Hosting model
  * ─────────────
- * - CI (GitHub Pages): GITHUB_REPOSITORY is set by Actions; the site deploys
- *   to https://<org>.github.io/<repo>/.
- * - Custom domain: set DOCUSAURUS_URL (e.g. https://schema.example.com) and
- *   DOCUSAURUS_BASE_URL (/) before building; these always win.
- * - Local dev: no CI variables, so the site serves at http://localhost:3000/.
+ * The site is built for the canonical URL https://tinkle.me/schema/ and is
+ * deployed by the main website (tinkle-org/tinkle-website-nextjs), which
+ * serves this build artifact under the /schema/ path.
+ *
+ * - Production: url 'https://tinkle.me', baseUrl '/schema/' — every asset,
+ *   link and canonical URL carries the /schema prefix.
+ * - Local dev: `npm run dev` serves the same layout at
+ *   http://localhost:3000/schema/.
+ *
+ * Docs-only mode: the docs plugin owns all routes (routeBasePath '/'); there
+ * is no separate pages plugin. The landing page is website/docs/index.md.
  */
-const envUrl = process.env.DOCUSAURUS_URL;
-const envBaseUrl = process.env.DOCUSAURUS_BASE_URL;
-
-const githubRepository = process.env.GITHUB_REPOSITORY ?? 'tinkle-org/tinkle-proto';
-const [org, repo] = githubRepository.split('/');
-const isCi = process.env.CI === 'true';
-
-const url = envUrl ?? (isCi ? `https://${org}.github.io` : 'http://localhost:3000');
-const baseUrl = envBaseUrl ?? (isCi ? `/${repo}/` : '/');
-
-const repoUrl = `https://github.com/${org}/${repo}`;
+const repoUrl = 'https://github.com/tinkle-org/tinkle-proto';
 
 const docsPreset: Preset.Options = {
   blog: false,
+  pages: false,
   docs: {
-    routeBasePath: 'docs',
+    routeBasePath: '/',
     sidebarPath: './sidebars.ts',
     showLastUpdateTime: false,
     editUrl: ({ docPath }: { docPath: string }) =>
       // Generated pages (reference + synced guides) have no editable source
       // under website/docs; narrative pages do.
-      /^(introduction\.md|getting-started\/)/.test(docPath)
+      /^(index\.md|introduction\.md|getting-started\/)/.test(docPath)
         ? `${repoUrl}/edit/main/website/docs/${docPath}`
         : undefined,
   },
@@ -43,11 +40,9 @@ const docsPreset: Preset.Options = {
 const config: Config = {
   title: 'Tinkle Schema',
   tagline: 'tinkle.v1 — the Protobuf contract for the Tinkle messaging API',
-  url,
-  baseUrl,
+  url: 'https://tinkle.me',
+  baseUrl: '/schema/',
   trailingSlash: true,
-  organizationName: org,
-  projectName: repo,
 
   favicon: 'img/tinkle.svg',
 
@@ -66,7 +61,7 @@ const config: Config = {
       Search,
       {
         hashed: true,
-        docsRouteBasePath: '/docs',
+        docsRouteBasePath: '/',
         language: ['en'],
         indexBlog: false,
       },
@@ -86,6 +81,7 @@ const config: Config = {
       title: 'Tinkle Schema',
       logo: { alt: 'Tinkle logo', src: 'img/tinkle.svg' },
       items: [
+        { type: 'doc', docId: 'index', position: 'left', label: 'Overview' },
         { type: 'doc', docId: 'introduction', position: 'left', label: 'Introduction' },
         { type: 'doc', docId: 'getting-started/consuming-sdks', position: 'left', label: 'SDKs' },
         { type: 'doc', docId: 'reference/index', position: 'left', label: 'Reference' },
@@ -109,8 +105,8 @@ const config: Config = {
         {
           title: 'Contract',
           items: [
-            { label: 'Schema reference', to: '/docs/reference' },
-            { label: 'Realtime binding', to: '/docs/guides/realtime' },
+            { label: 'Schema reference', to: '/reference' },
+            { label: 'Realtime binding', to: '/guides/realtime' },
           ],
         },
         {
@@ -128,7 +124,7 @@ const config: Config = {
           ],
         },
       ],
-      copyright: `Built from the protobuf source of truth in ${org}/${repo}.`,
+      copyright: 'Built from the protobuf source of truth in tinkle-org/tinkle-proto.',
     },
     prism: {
       theme: prismThemes.dracula,

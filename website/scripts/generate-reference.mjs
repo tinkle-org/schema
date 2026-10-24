@@ -232,7 +232,7 @@ function linkFor(full) {
   const rest = full.slice(PKG_PREFIX.length);
   return {
     text: rest,
-    url: `/docs/reference/${entry.kind === 'enum' ? 'enums' : 'messages'}/${rest}/`,
+    url: `/reference/${entry.kind === 'enum' ? 'enums' : 'messages'}/${rest}/`,
   };
 }
 
@@ -320,7 +320,7 @@ function addRef(targetFull, ref) {
 function collectRefs() {
   for (const entry of registry.values()) {
     if (entry.kind === 'service' || !isOwned(entry)) continue;
-    const ownerBase = `/docs/reference/${entry.kind === 'enum' ? 'enums' : 'messages'}/${entry.full.slice(PKG_PREFIX.length)}/`;
+    const ownerBase = `/reference/${entry.kind === 'enum' ? 'enums' : 'messages'}/${entry.full.slice(PKG_PREFIX.length)}/`;
     const fields = entry.kind === 'message' ? entry.msg.field ?? [] : [];
     for (const field of fields) {
       if (['TYPE_MESSAGE', 'TYPE_GROUP', 'TYPE_ENUM'].includes(field.type)) {
@@ -348,7 +348,7 @@ function collectRefs() {
     }
   }
   for (const s of services) {
-    const url = `/docs/reference/methods/${serviceSlugMap.get(s.name)}/`;
+    const url = `/reference/methods/${serviceSlugMap.get(s.name)}/`;
     for (const m of s.svc.method ?? []) {
       const methodUrl = `${url}${methodSlug(m.name)}/`;
       addRef(m.inputType.replace(/^\./, ''), {
@@ -467,7 +467,7 @@ function buildFieldTable(full) {
 
 function writeServicePages() {
   categoryMeta('', 'Schema Reference', 4);
-  categoryMeta('services', 'Services', 1);
+  categoryMeta('services', 'Services', 2);
 
   services.forEach((service, si) => {
     const slug = serviceSlugMap.get(service.name);
@@ -479,7 +479,7 @@ function writeServicePages() {
     body.push('## RPC methods\n\n');
     body.push('| Method | Request | Response |\n| --- | --- | --- |\n');
     (service.svc.method ?? []).forEach((method) => {
-      const methodUrl = `/docs/reference/methods/${slug}/${methodSlug(method.name)}/`;
+      const methodUrl = `/reference/methods/${slug}/${methodSlug(method.name)}/`;
       const reqFull = method.inputType.replace(/^\./, '');
       const respFull = method.outputType.replace(/^\./, '');
       const streaming = [];
@@ -509,7 +509,7 @@ function writeServicePages() {
 // ---------------------------------------------------------------------------
 
 function writeMethodPages() {
-  categoryMeta('methods', 'Methods', 2);
+  categoryMeta('methods', 'Methods', 3);
 
   services.forEach((service, si) => {
     const slug = serviceSlugMap.get(service.name);
@@ -527,7 +527,7 @@ function writeMethodPages() {
       body.push(`# ${m.name}\n\n`);
       if (desc) body.push(mdEscape(desc) + '\n\n');
       body.push(
-        `**Service:** [\`${service.name}\`](/docs/reference/services/${slug}/) · ` +
+        `**Service:** [\`${service.name}\`](/reference/services/${slug}/) · ` +
           sourceLine(service.file) +
           ' · package `tinkle.v1`\n\n',
       );
@@ -579,7 +579,7 @@ function writeMethodPages() {
 // ---------------------------------------------------------------------------
 
 function writeMessagePages() {
-  categoryMeta('messages', 'Messages', 3);
+  categoryMeta('messages', 'Messages', 4);
 
   const messages = [...registry.values()].filter(
     (e) => e.kind === 'message' && isOwned(e) && !e.isSynthetic,
@@ -668,7 +668,7 @@ function ReservedSectionFromEntry(entry) {
 // ---------------------------------------------------------------------------
 
 function writeEnumPages() {
-  categoryMeta('enums', 'Enums', 4);
+  categoryMeta('enums', 'Enums', 5);
 
   const enums = [...registry.values()].filter(
     (e) => e.kind === 'enum' && isOwned(e),
@@ -740,7 +740,7 @@ function writeIndexPage() {
     const slug = serviceSlugMap.get(s.name);
     const count = (s.svc.method ?? []).length;
     body.push(
-      `- [${s.name}](/docs/reference/services/${slug}/) — ${count} method${count === 1 ? '' : 's'}\n`,
+      `- [${s.name}](/reference/services/${slug}/) — ${count} method${count === 1 ? '' : 's'}\n`,
     );
   }
   body.push('\n');
@@ -762,39 +762,9 @@ function writeIndexPage() {
       description:
         'Generated tinkle.v1 API reference: services, RPC methods, messages and enums.',
       sidebar_label: 'Overview',
-      sidebar_position: 0,
+      sidebar_position: 1,
     },
     body.join(''),
-  );
-
-  fs.mkdirSync(outSummaryDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(outSummaryDir, 'schema-summary.json'),
-    JSON.stringify(
-      {
-        repository: REPO,
-        counts: {
-          services: services.length,
-          methods: methodCount,
-          messages: messageCount,
-          enums: enumCount,
-          files: ownedFiles.length,
-        },
-        services: services.map((s) => {
-          const desc = leading(s.full, []).trim();
-          return {
-            name: s.name,
-            slug: serviceSlugMap.get(s.name),
-            file: s.file,
-            methodCount: (s.svc.method ?? []).length,
-            summary: firstSentence(desc) || null,
-          };
-        }),
-      },
-      null,
-      2,
-    ) + '\n',
-    'utf8',
   );
 }
 

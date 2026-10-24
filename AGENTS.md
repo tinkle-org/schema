@@ -21,9 +21,12 @@ repository. Read it fully before making any non-trivial change.
 - **No release-please per-language tags, no generated SDK code in
   the tree.** Bump the schema version by merging a Release PR;
   consumers update via `go get @latest` or `cargo add --registry buf`.
-- The **docs site** (`website/`, Docusaurus on GitHub Pages)
-  rebuilds from the descriptor set on every merge to `main` —
-  independent of the Next.js website and of BSR publication.
+- The **docs site** (`website/`, Docusaurus) is published at
+  **`https://tinkle.me/schema/`** by the main website repo
+  (`tinkle-org/tinkle-website-nextjs`), which serves the built artifact
+  under `/schema/`. It rebuilds from the descriptor set on every merge to
+  `main` — independent of the Next.js website's own app code and of BSR
+  publication.
 
 ## Architecture
 
@@ -40,11 +43,11 @@ tinkle-org/tinkle-proto (this repo)   proto source + Buf config + docs site
 ├── CHANGELOG.md                      maintained by release-please
 ├── LICENSE                           required at module root for pkg.go.dev
 ├── README.md
-├── website/                          Docusaurus site (GitHub Pages)
+├── website/                          Docusaurus site (tinkle.me/schema/)
 ├── .github/workflows/buf-ci.yaml     bufbuild/buf-action: validate only
 ├── .github/workflows/release-please.yaml  Release PRs + gated buf push
 ├── .github/workflows/docs-ci.yaml    site build on PRs
-├── .github/workflows/docs-deploy.yaml     site deploy on main
+├── .github/workflows/docs-build.yaml     site artifact build on main
 └── AGENTS.md
 ```
 
@@ -161,8 +164,10 @@ cd website && npm install && npm run build   # generate + build + typecheck
   release. See `release-please-config.json`, `version.txt`, and
   `.release-please-manifest.json`.
 - `.github/workflows/docs-ci.yaml` builds the docs site on PRs;
-  `.github/workflows/docs-deploy.yaml` deploys it to GitHub Pages on
-  merges to `main`.
+  `.github/workflows/docs-build.yaml` uploads the static build as the
+  `tinkle-schema-site` artifact on merges to `main` — the main website
+  repo (`tinkle-org/tinkle-website-nextjs`) consumes it and serves the
+  site at `https://tinkle.me/schema/`.
 
 ## BSR resource
 

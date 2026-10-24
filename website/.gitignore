@@ -5,4 +5,3 @@ build/
 # Generated before every build (see scripts/):
 docs/reference/
 docs/guides/
-src/lib/schema-summary.json

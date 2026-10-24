@@ -82,10 +82,10 @@ function preprocess(body, { sourceDir }) {
       }
       const resolved = path.posix.normalize(path.posix.join(sourceDir, target));
       if (resolved === 'REALTIME.md') {
-        return '](/docs/guides/realtime/)';
+        return '](/guides/realtime/)';
       }
       if (resolved === 'conformance/realtime.md') {
-        return '](/docs/guides/conformance/realtime/)';
+        return '](/guides/conformance/realtime/)';
       }
       if (resolved.startsWith('tinkle/') || /\.(py|toml|ya?ml|json|txt)$/.test(resolved)) {
         return `](${GITHUB_MAIN}/${resolved})`;
@@ -110,7 +110,7 @@ function main() {
 
   fs.writeFileSync(
     path.join(outGuides, '_category_.json'),
-    JSON.stringify({ label: 'Guides', position: 3, link: { type: 'doc', id: 'guides/realtime' } }, null, 2) + '\n',
+    JSON.stringify({ label: 'Guides', position: 6, link: { type: 'doc', id: 'guides/realtime' } }, null, 2) + '\n',
     'utf8',
   );
 

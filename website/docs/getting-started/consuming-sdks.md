@@ -67,5 +67,5 @@ the module commit id, or a BSR label:
 
 Because BSR publication is gated to release-please releases, registry labels and
 the GitHub release history move together. The schema
-[reference](/docs/reference) reflects the current tree, which may be ahead of
+[reference](/reference) reflects the current tree, which may be ahead of
 the last released SDK contract while work is pre-release.

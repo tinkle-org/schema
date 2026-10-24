@@ -1,0 +1,56 @@
+name: docs-build
+
+# Builds the schema documentation site for https://tinkle.me/schema/ and
+# uploads the static output as an artifact. The artifact is consumed by the
+# main website (tinkle-org/tinkle-website-nextjs), which serves it under the
+# /schema/ path — deployment itself happens there, not here.
+#
+# The build is deterministic given a commit: generated reference pages and
+# synced guides are produced at build time and are not committed.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tinkle/**'
+      - 'buf.yaml'
+      - 'buf.lock'
+      - 'website/**'
+      - 'REALTIME.md'
+      - 'conformance/realtime.md'
+      - '.github/workflows/docs-*.yaml'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: docs-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build schema docs artifact
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: bufbuild/buf-setup-action@v1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - name: Install dependencies
+        working-directory: website
+        run: npm ci
+      - name: Build site (generate + production build)
+        working-directory: website
+        run: npm run build
+      - name: Typecheck
+        working-directory: website
+        run: npm run typecheck
+      - name: Upload schema docs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tinkle-schema-site
+          path: website/build
+          retention-days: 30

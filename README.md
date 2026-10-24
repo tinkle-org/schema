@@ -25,7 +25,7 @@ tinkle-org/tinkle-proto/               ← proto source + Buf config + docs site
 ├── .release-please-manifest.json      bootstrap 0.0.0
 ├── buf.lock                           generated
 ├── LICENSE                            at module root (required for pkg.go.dev)
-├── website/                           Docusaurus docs site (GitHub Pages)
+├── website/                           Docusaurus docs site (tinkle.me/schema/)
 │   ├── scripts/generate-reference.mjs descriptor-set → reference pages
 │   ├── docs/reference/                generated (not committed)
 │   └── docs/guides/                   synced from REALTIME.md (generated)
@@ -33,7 +33,7 @@ tinkle-org/tinkle-proto/               ← proto source + Buf config + docs site
     ├── buf-ci.yaml                    validate only (build/lint/format/breaking)
     ├── release-please.yaml            Release PRs + release-gated buf push
     ├── docs-ci.yaml                   site build on PRs
-    └── docs-deploy.yaml               GitHub Pages deploy on merge to main
+    └── docs-build.yaml                site artifact build on merge to main
 ```
 
 No per-language directories and no generated SDK code in the tree — the
@@ -169,8 +169,9 @@ release.
 
 ## Documentation site
 
-`website/` is a Docusaurus site for the public API reference (independent
-from the Next.js website). The [schema reference](website/docs/reference)
+`website/` is a Docusaurus site published at **<https://tinkle.me/schema/>**
+by the main website (`tinkle-org/tinkle-website-nextjs`), which serves the
+build artifact under the `/schema/` path. The [schema reference](website/docs/reference)
 is generated from `buf build --as-file-descriptor-set` output — proto doc
 comments, deprecations, oneofs and reserved definitions all appear in the
 generated pages. `REALTIME.md` and `conformance/realtime.md` remain
@@ -180,21 +181,18 @@ canonical here and are synced into the site at build time.
 cd website
 npm install
 npm run generate   # descriptor set → docs/reference + synced guides
-npm run dev        # local dev server (localhost:3000)
+npm run dev        # local dev server (http://localhost:3000/schema/)
 npm run build      # generate + production build (broken links fail)
 npm run typecheck
 ```
 
 Generated outputs (`website/docs/reference/`, `website/docs/guides/`,
-`website/src/lib/schema-summary.json`, `website/build/`) are git-ignored.
+`website/build/`) are git-ignored.
 
-Deploy: `.github/workflows/docs-deploy.yaml` publishes to GitHub Pages on
-every merge to `main` (Settings → Pages → Source: GitHub Actions). The
-production URL derives from `GITHUB_REPOSITORY`
-(`https://<org>.github.io/<repo>/`); set `DOCUSAURUS_URL` and
-`DOCUSAURUS_BASE_URL` to serve from a custom domain instead. PRs get a
-build check via `docs-ci.yaml` (no deploy preview — GitHub Pages
-limitation).
+Build: `.github/workflows/docs-build.yaml` runs on merges to `main` and
+uploads the static site as the `tinkle-schema-site` artifact; the website
+repository consumes it and serves it at `https://tinkle.me/schema/`. PRs get
+a build check via `docs-ci.yaml` (no deploy preview from this repo).
 
 ## Local validation
 

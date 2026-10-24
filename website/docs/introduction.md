@@ -25,15 +25,15 @@ Key properties:
   when a [release-please](https://github.com/googleapis/release-please) release PR
   is merged, so the registry and its generated SDKs move only on versioned
   releases.
-- **Documentation is generated, not copied.** The [schema reference](/docs/reference)
+- **Documentation is generated, not copied.** The [schema reference](/reference)
   pages are produced from the protobuf descriptor set — including source comments,
   deprecations and reserved definitions — on every site build. Editing prose about
   the contract means editing the `.proto` shebang comments or the narrative guides.
 - **Realtime is an application binding, not a gRPC service.**
   [`tinkle/v1/realtime.proto`](https://github.com/tinkle-org/tinkle-proto/blob/main/tinkle/v1/realtime.proto)
   defines Syntra-application messages carried inside the Syntra
-  `Notification.payload`; the [Realtime guide](/docs/guides/realtime) documents
-  those dispatcher method bindings, with [conformance](/docs/guides/conformance/realtime)
+  `Notification.payload`; the [Realtime guide](/guides/realtime) documents
+  those dispatcher method bindings, with [conformance](/guides/conformance/realtime)
   notes for implementers.
 
 ## Repository layout

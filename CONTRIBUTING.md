@@ -11,8 +11,8 @@ repositories to change the contract.
 1. PR against `main` editing `tinkle/v1/*.proto`. CI runs
    `build`/`lint`/`format`/`breaking` and posts a summary comment.
 2. Merge to `main`. **Nothing is published to the BSR yet** — plain
-   merges validate only. The docs site reference pages update
-   automatically from the merge (GitHub Pages deploy).
+   merges validate only. The docs site artifact rebuilds automatically
+   from the merge (`docs-build` workflow).
 3. release-please maintains a Release PR containing
    `version.txt` and `CHANGELOG.md` bumps, assembled from Conventional
    Commits since the last release.
@@ -39,11 +39,12 @@ Use standard prefixes so release-please picks the right bump:
 
 ## Documentation site
 
-The [docs site](website/) generates its API reference from the protobuf
-descriptor set on every build — **do not hand-write reference pages**. To
-change reference content, edit the `.proto` doc comments (every message,
-field, enum value, service and method's leading `//` comment) or, for
-generator behavior, `website/scripts/generate-reference.mjs`.
+The [docs site](website/) — published at `https://tinkle.me/schema/` —
+generates its API reference from the protobuf descriptor set on every
+build — **do not hand-write reference pages**. To change reference
+content, edit the `.proto` doc comments (every message, field, enum
+value, service and method's leading `//` comment) or, for generator
+behavior, `website/scripts/generate-reference.mjs`.
 
 Narrative documents stay canonical at the repo root (`REALTIME.md`,
 `conformance/realtime.md`) and are synced into the site at build time;

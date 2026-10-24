@@ -1,0 +1,50 @@
+---
+title: Tinkle Schema
+description: tinkle.v1 — the Protobuf contract for the Tinkle messaging API. Generated reference, guides and SDK consumption.
+sidebar_position: 0
+slug: /
+---
+
+# Tinkle Schema
+
+`tinkle.v1` is the Protobuf contract for the Tinkle messaging API. It is
+maintained as the specification-first source of truth in
+[tinkle-org/tinkle-proto](https://github.com/tinkle-org/tinkle-proto);
+every page on this site is generated from it.
+
+| | |
+| --- | --- |
+| **[Schema reference](/reference)** | Every service, RPC method, message and enum, with doc comments, deprecations and reserved definitions. |
+| **[Consume the SDKs](/getting-started/consuming-sdks)** | Go and Rust SDKs generated and published by the Buf Schema Registry, gated to schema releases. |
+| **[Realtime binding](/guides/realtime)** | The Syntra-only realtime application binding: batched durable updates, cursor rules, conformance checks. |
+| **[Buf Registry](https://buf.build/tinklecorp/tinkle-proto)** | The published module, its version history and generated SDK artifacts. |
+
+## Status
+
+The contract is **pre-release**: intentional restructuring is expected and
+carries no external compatibility commitment.
+
+- This reference is generated on every build from the current `main` tree —
+  it may be ahead of the latest published SDKs.
+- SDK publication on the Buf Schema Registry is **release-gated**: consumers
+  see new versions only when a release-please Release PR is merged.
+
+## How this site is built
+
+```text
+tinkle/v1/*.proto + doc comments        spec source of truth
+        ↓
+buf build (protobuf descriptor set)
+        ↓
+scripts/generate-reference.mjs          generated reference pages
+scripts/sync-docs.mjs                   canonical guides synced in
+        ↓
+Docusaurus build                        static site for /schema/
+        ↓
+tinkle.me/schema/                       served by the main website
+```
+
+To change what appears in the reference, edit the `.proto` doc comments; to
+change narrative documentation, edit `website/docs/` or the canonical guides.
+Do not edit anything under `website/docs/reference/` or `website/docs/guides/`
+— both are generated and git-ignored.
