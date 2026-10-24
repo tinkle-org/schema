@@ -70,7 +70,7 @@ function checkLinks() {
   let checked = 0;
   for (const file of walk(contentRoot)) {
     for (const href of collectLinks(file)) {
-      if (/^https?:\/\//.test(href) || href.startsWith('mailto:')) continue;
+      if (/^https?:\/\//.test(href) || href.startsWith('//') || href.startsWith('mailto:')) continue;
       if (href.startsWith('#')) continue;
       const [pathPart] = href.split('#');
       const isMounted = pathPart === MOUNT || pathPart.startsWith(`${MOUNT}/`);
