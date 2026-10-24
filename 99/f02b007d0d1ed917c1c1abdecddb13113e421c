@@ -1,0 +1,19 @@
+website/scripts/generate-reference.mjs
+  s_d15d4eff8083ad::t_028d42dac3ac93 755-756
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "99f02b007d0d1ed917c1c1abdecddb13113e421c",
+  "prompts": {},
+  "sessions": {
+    "s_d15d4eff8083ad": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e91255c3cffeSDcg7pOBRkwfkK",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "oscarlaw <oscarlaw2010@gmail.com>"
+    }
+  }
+}
