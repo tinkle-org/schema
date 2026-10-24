@@ -8,40 +8,21 @@ updates:
       prefix: "ci"
     labels: ["dependencies", "ci"]
     # This entry covers updates to:
-    #   - bufbuild/buf-setup-action@v1
-    #   - actions/checkout@v4
-    #   - actions/setup-go@v5
-    #   - dtolnay/rust-toolchain@stable
-    #   - erlef/setup-beam@v1
-    #   - arduino/setup-protoc@v3
-    #   - googleapis/release-please-action@v5
-    #   - github/codeql-action/* (when added)
-    # Note: there is no 'buf' package-ecosystem in dependabot. Our
-    # buf.yaml and buf.gen.yaml are not versioned dependencies; the
-    # buf CLI itself is pinned via bufbuild/buf-setup-action above.
-    # An earlier draft of this file had a 'buf' ecosystem entry,
-    # but that is rejected by dependabot as an unknown ecosystem.
+    #   - bufbuild/buf-action@v1 / bufbuild/buf-setup-action@v1
+    #   - actions/checkout
+    #   - actions/setup-node
+    #   - googleapis/release-please-action@v4
+    #   - actions/upload-pages-artifact / actions/deploy-pages
+    # Note: there is no 'buf' package-ecosystem in dependabot. Our buf.yaml
+    # is not a versioned dependency; the buf CLI is pinned via the buf-setup
+    # action above. An earlier draft had a 'buf' ecosystem entry, which
+    # dependabot rejects as an unknown ecosystem.
 
-  - package-ecosystem: "gomod"
-    directory: "/go"
+  # Schema docs site (Docusaurus). Committed lockfile in website/.
+  - package-ecosystem: "npm"
+    directory: "/website"
     schedule:
       interval: "weekly"
     commit-message:
-      prefix: "chore(go)"
-    labels: ["dependencies", "go"]
-
-  - package-ecosystem: "cargo"
-    directory: "/rs"
-    schedule:
-      interval: "weekly"
-    commit-message:
-      prefix: "chore(rs)"
-    labels: ["dependencies", "rs"]
-
-  - package-ecosystem: "mix"
-    directory: "/elixir"
-    schedule:
-      interval: "weekly"
-    commit-message:
-      prefix: "chore(elixir)"
-    labels: ["dependencies", "elixir"]
+      prefix: "chore(website)"
+    labels: ["dependencies", "website"]

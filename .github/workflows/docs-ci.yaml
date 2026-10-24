@@ -1,0 +1,48 @@
+name: docs-ci
+
+# PR validation for the schema documentation site. Builds the
+# generated reference from the protobuf descriptor set and the
+# Docusaurus production build; broken internal links fail the build.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tinkle/**'
+      - 'buf.yaml'
+      - 'buf.lock'
+      - 'website/**'
+      - 'REALTIME.md'
+      - 'conformance/realtime.md'
+      - '.github/workflows/docs-*.yaml'
+
+permissions: {}
+
+concurrency:
+  group: docs-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and validate site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: bufbuild/buf-setup-action@v1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - name: Install dependencies
+        working-directory: website
+        run: npm ci
+      - name: Generate reference pages
+        working-directory: website
+        run: npm run generate
+      - name: Build site
+        working-directory: website
+        run: npm run build:site
+      - name: Typecheck
+        working-directory: website
+        run: npm run typecheck

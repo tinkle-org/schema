@@ -1,20 +1,15 @@
 name: buf-ci
 
-# Validates the proto source and publishes the named module to the
-# Buf Schema Registry (https://buf.build/tinklecorp/tinkle-proto).
+# Validates the proto source on every PR and push (build, lint, format,
+# breaking; PR summary comments included). This workflow does NOT publish:
+# publication to the Buf Schema Registry is release-gated and handled by
+# release-please.yaml when a Release PR merge creates a tagged release.
 #
-# The BSR serves Go and Rust SDKs to consumers directly, so no
-# per-language build jobs run here. Consumers:
+# Consumers (Go/Rust) get SDK updates via published releases:
 #   Go:   go get buf.build/gen/go/tinklecorp/tinkle-proto/{protocolbuffers,grpc}/go
 #   Rust: cargo add --registry buf tinklecorp_tinkle-proto_bufbuild_community_tonic-prost
 #
-# Required secret: BUF_TOKEN (a BSR API token for the tinklecorp
-# org). It must be set BEFORE the first merge to main, otherwise
-# the initial `buf push` will fail and the BSR module will not be
-# created. The action auto-creates the BSR repo on first push;
-# `push_create_visibility: public` makes that explicit so the repo
-# is created with the same visibility as a subsequent explicit
-# `buf push` would produce.
+# BUF_TOKEN is used by release-please.yaml (not this workflow).
 
 on:
   push:
@@ -42,4 +37,5 @@ jobs:
       - uses: bufbuild/buf-action@v1
         with:
           token: ${{ secrets.BUF_TOKEN }}
+          push: false
           push_create_visibility: public

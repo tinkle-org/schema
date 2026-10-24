@@ -1,0 +1,62 @@
+:root {
+  --ifm-color-primary: #2563eb;
+  --ifm-color-primary-dark: #1e56c8;
+  --ifm-color-primary-darker: #1c4dae;
+  --ifm-color-primary-darkest: #17407d;
+  --ifm-color-primary-light: #4475f2;
+  --ifm-color-primary-lighter: #6589f7;
+  --ifm-color-primary-lightest: #94aefb;
+  --ifm-code-font-size: 92%;
+  --docusaurus-highlighted-code-line-bg: rgba(37, 99, 235, 0.18);
+
+  --site-method-chip: #eef2ff;
+  --site-navy: #0b1220;
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #7d9bff;
+  --ifm-color-primary-dark: #5f83fb;
+  --ifm-color-primary-darker: #4f74f0;
+  --ifm-color-primary-darkest: #3a55c9;
+  --ifm-color-primary-light: #96aeff;
+  --ifm-color-primary-lighter: #aec0ff;
+  --ifm-color-primary-lightest: #ccd6ff;
+
+  --site-method-chip: #16224a;
+  --site-navy: #0b1220;
+}
+
+.header-github-link::before {
+  content: '';
+  width: 24px;
+  height: 24px;
+  display: flex;
+  background: url("data:image/svg+xml,%3Csvg viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='rgb(173,181,193)' fill-rule='evenodd' d='M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z'/%3E%3C/svg%3E")
+    no-repeat;
+}
+
+.hero--primary {
+  background: linear-gradient(135deg, var(--site-navy), #16255c);
+}
+
+[class*='siteGrid'] {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (min-width: 769px) {
+  [class*='siteGrid'] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+[class*='siteCard'] {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.deprecated {
+  text-decoration: line-through;
+}

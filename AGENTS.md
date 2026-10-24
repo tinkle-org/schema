@@ -5,32 +5,46 @@ repository. Read it fully before making any non-trivial change.
 
 ## TL;DR
 
-- **`tinklehq/tinkle-proto`** is the source of truth for the
+- **`tinkle-org/tinkle-proto`** is the source of truth for the
   `tinkle.v1` Protobuf contract. The repo contains the `.proto`
-  files and Buf config only.
+  files, Buf config, and the Docusaurus docs site.
 - The schema is published to the Buf Schema Registry at
   **`buf.build/tinklecorp/tinkle-proto`** (public). The BSR
   generates and serves **Go** and **Rust** SDKs to consumers; no
   language-specific code lives in this repo.
+- **BSR publication is release-gated.** Everyday merges only
+  validate. `buf push` runs exclusively when a release-please
+  Release PR is merged (see `release-please.yaml`).
 - The `.proto` files are **maintained directly in this repo** under
   `tinkle/v1/`. There is no upstream mirror; this is the only place
   the contract is edited.
-- **No release-please, no per-language tags, no generated code in
-  the tree.** Bump a version on the BSR by pushing a new commit;
+- **No release-please per-language tags, no generated SDK code in
+  the tree.** Bump the schema version by merging a Release PR;
   consumers update via `go get @latest` or `cargo add --registry buf`.
+- The **docs site** (`website/`, Docusaurus on GitHub Pages)
+  rebuilds from the descriptor set on every merge to `main` —
+  independent of the Next.js website and of BSR publication.
 
 ## Architecture
 
 ```
-tinklehq/tinkle-proto (this repo)    proto source + Buf config
-├── tinkle/v1/*.proto                proto source (owned here)
-├── buf.yaml                         v2 single-module workspace
-│                                    name: buf.build/tinklecorp/tinkle-proto
-├── buf.lock                         generated
-├── LICENSE                          required at module root for pkg.go.dev
+tinkle-org/tinkle-proto (this repo)   proto source + Buf config + docs site
+├── tinkle/v1/*.proto                 proto source (owned here)
+├── conformance/                      schema/codec conformance checks
+├── buf.yaml                          v2 single-module workspace
+│                                     name: buf.build/tinklecorp/tinkle-proto
+├── buf.lock                          generated
+├── version.txt                       schema release version (release-please)
+├── release-please-config.json
+├── .release-please-manifest.json
+├── CHANGELOG.md                      maintained by release-please
+├── LICENSE                           required at module root for pkg.go.dev
 ├── README.md
-├── .github/workflows/buf-ci.yaml    bufbuild/buf-action:
-│                                      build/lint/format/breaking/push
+├── website/                          Docusaurus site (GitHub Pages)
+├── .github/workflows/buf-ci.yaml     bufbuild/buf-action: validate only
+├── .github/workflows/release-please.yaml  Release PRs + gated buf push
+├── .github/workflows/docs-ci.yaml    site build on PRs
+├── .github/workflows/docs-deploy.yaml     site deploy on main
 └── AGENTS.md
 ```
 
@@ -62,56 +76,63 @@ Versions are `{plugin-version}-{module-commit-timestamp}-{module-commit-id}.{plu
    from `tinklehq/tinkle-server` (or anywhere else) — proto changes
    land here directly. Keep the Protobuf `package tinkle.v1;` and
    the `option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";`
-   line consistent across all 11 files in the package.
-2. **`buf push` is automatic on merge to `main`.** The `buf-ci.yaml`
-   workflow uses `bufbuild/buf-action@v1`; on push to `main` it
-   publishes every named module in the workspace to the BSR with
-   the matching Git metadata.
-3. **`BUF_TOKEN` secret is required.** A BSR API token for the
-   `tinklecorp` org must be configured as a repository secret
-   (Settings → Secrets and variables → Actions) before the first
-   merge to `main`, otherwise the initial `buf push` will fail and
-   the BSR module will not be created. The action auto-creates the
-   BSR repo on first push; `push_create_visibility: public` makes
-   that explicit.
-4. **Lint before pushing.** Run `buf format -d` and `buf lint`
+   line consistent across all files in the package.
+2. **`buf push` is release-gated, not automatic.** `buf-ci.yaml`
+   validates only (`push: false`). Publication runs exclusively in
+   `release-please.yaml` when a Release PR merge creates a release:
+   checkout the released sha, `buf build` + `buf lint`, then
+   `buf push --label <tag> --label main`. Do not push manually to
+   the BSR; ordinary merges must not touch the registry.
+3. **`BUF_TOKEN` is required for publication.** A BSR API token for
+   the `tinklecorp` org (repository secret). `RELEASE_PLEASE_TOKEN`
+   (a PAT) is recommended so Release PRs trigger the repo's CI —
+   PRs created with the default token do not run workflows.
+4. **Write proto doc comments for humans.** Every message, field,
+   enum value, service and method's leading `//` comment becomes the
+   generated API reference on the docs site. No separate reference
+   prose is maintained anywhere else.
+5. **Lint before pushing.** Run `buf format -d` and `buf lint`
    locally; the `buf-ci.yaml` action will run them on every PR and
    fail the build on findings.
-5. **Breaking is disabled for pre-release.** `buf.yaml` sets
+6. **Breaking is disabled for pre-release.** `buf.yaml` sets
    `breaking.disable_builtin: true`, so restructuring `tinkle/v1/`
    does not fail CI or local `buf breaking`. Re-enable on first
    stable release by setting it to `false` (intended stable policy
    is `breaking: FILE`). After re-enabling, intentional breaks need
    a `buf skip breaking` label on the PR, and permanent breaks need
    a new package path (`tinkle/v2/`) rather than mutating `tinkle/v1/`.
-6. **No `buf generate`, no `buf.gen.yaml`.** Code generation
-   happens on the BSR. A `buf.gen.yaml` only exists if you need
-   to run `buf generate` against a third-party plugin locally;
-   in this repo, there is none.
+7. **Releases use Conventional Commits + release-please.**
+   `feat:` → minor, `fix:` → patch; `bump-minor-pre-major` is set, so
+   pre-1.0 breaking restructuring bumps the minor. The single schema
+   version lives in `version.txt`; tags are plain `vX.Y.Z` and the
+   publish job also moves the BSR `main` label to the release.
+8. **No `buf generate` for SDKs.** Code generation happens on the
+   BSR. The only generation in this repo is docs:
+   `cd website && npm run generate` (descriptor set → reference
+   pages; `REALTIME.md`/conformance synced into the site). Generated
+   docs outputs are git-ignored and rebuilt on every site build.
 
 ## When asked to "add a new RPC"
 
-1. Open a PR in this repo (`tinklehq/tinkle-proto`) editing the
+1. Open a PR in this repo (`tinkle-org/tinkle-proto`) editing the
    relevant `tinkle/v1/*.proto`. Add the request/response messages
    and the method to the appropriate `service` block. Keep the
    Protobuf `package` and `option go_package` lines as they are.
 2. The buf-ci action on the PR runs `build`, `lint`, `format`, and
    `breaking` (against the base branch) and posts a summary comment.
    Fix any findings.
-3. Merge to `main`. The action runs `buf push`, which publishes a
-   new commit to the BSR. The BSR serves the updated Go and Rust
-   SDKs lazily — consumers pick them up with `go get @latest` or
-   the next `cargo add` (Rust SDKs are generated eagerly, so a new
-   crate version is produced immediately on push to the default
-   label after the initial `cargo add`).
+3. Merge to `main`. The action validates only. To publish, wait for
+   release-please to open/update a Release PR and merge it — that is
+   the only path a schema change takes to the BSR.
 
 ## When asked to "fix generated code"
 
-Don't try to fix generated code in this repo — there is no
-generated code in this repo. Edit the `.proto` source in
-`tinkle/v1/` directly; the BUF_CI push run on merge will republish
-the schema to the BSR, and consumers will pick up the regenerated
-SDKs on their next `go get`/`cargo add`.
+Don't try to fix generated SDK code in this repo — the BSR generates
+Go/Rust SDKs and there is none in the tree. For the docs site's
+generated reference, fix the `.proto` doc comments or
+`website/scripts/generate-reference.mjs`, then `cd website &&
+npm run generate` and commit the script change (generated outputs are
+ignored and rebuilt in CI).
 
 ## Local validation
 
@@ -122,17 +143,26 @@ buf breaking --against ".git#branch=origin/main"
 buf build
 ```
 
-These are the same checks the `buf-ci.yaml` action runs on every
-PR. There is no local `buf generate` step.
+These are the same checks the `buf-ci.yaml` action runs on every PR.
+There is no local `buf generate` step for SDKs. For the docs site:
+
+```bash
+cd website && npm install && npm run build   # generate + build + typecheck
+```
 
 ## CI workflow
 
-`.github/workflows/buf-ci.yaml` runs `bufbuild/buf-action@v1`,
-which on every PR runs `build`, `lint`, `format`, and `breaking`,
-and on every push to `main` also runs `buf push` (publishing to
-the BSR). On a branch delete, the action archives the matching
-BSR label. The action posts a PR summary comment keyed on
-`<workflow>:<job>`.
+- `.github/workflows/buf-ci.yaml` runs `bufbuild/buf-action@v1` with
+  `push: false`; on every PR it runs `build`, `lint`, `format`, and
+  `breaking`, and posts a PR summary comment keyed on
+  `<workflow>:<job>`. On `main` it validates only.
+- `.github/workflows/release-please.yaml` maintains Release PRs and
+  publishes (gated `buf push`) when a Release PR merge creates a
+  release. See `release-please-config.json`, `version.txt`, and
+  `.release-please-manifest.json`.
+- `.github/workflows/docs-ci.yaml` builds the docs site on PRs;
+  `.github/workflows/docs-deploy.yaml` deploys it to GitHub Pages on
+  merges to `main`.
 
 ## BSR resource
 

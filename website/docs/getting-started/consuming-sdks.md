@@ -1,0 +1,71 @@
+---
+title: Consume the SDKs
+description: Install and pin the Buf-generated Go and Rust SDKs for tinkle.v1.
+sidebar_position: 1
+---
+
+The Buf Schema Registry generates and serves SDKs for this module; there is no
+generated code committed here. Everything below is distributed from
+[buf.build/tinklecorp/tinkle-proto](https://buf.build/tinklecorp/tinkle-proto).
+
+## Go
+
+```bash
+go get buf.build/gen/go/tinklecorp/tinkle-proto/protocolbuffers/go@latest
+go get buf.build/gen/go/tinklecorp/tinkle-proto/grpc/go@latest
+```
+
+Import shape:
+
+```go
+import (
+    tinklev1   "buf.build/gen/go/tinklecorp/tinkle-proto/protocolbuffers/go/tinkle/v1"
+    tinklegrpc "buf.build/gen/go/tinklecorp/tinkle-proto/grpc/go/tinkle/v1;tinklev1grpc"
+)
+```
+
+Pin the two modules to the **same module commit** (the timestamp and short-id
+segments of the version) so message types and the gRPC stubs stay in sync.
+
+## Rust
+
+Configure the Buf Cargo registry:
+
+```toml
+[registries.buf]
+index = "sparse+https://buf.build/gen/cargo/"
+credential-provider = "cargo:token"
+```
+
+Add the crate:
+
+```bash
+cargo add --registry buf tinklecorp_tinkle-proto_bufbuild_community_tonic-prost
+```
+
+Buf generates Rust SDKs eagerly: the first `cargo add` triggers initial
+generation, then every release push produces a new crate version.
+
+## Other ecosystems
+
+TypeScript/JavaScript, Python, Java/Kotlin, and Swift SDKs are also published
+from the same module — see
+[buf.build/tinklecorp/tinkle-proto/sdks](https://buf.build/tinklecorp/tinkle-proto/sdks).
+
+## Version semantics
+
+SDK versions follow
+`{plugin-version}-{module-commit-timestamp}-{module-commit-id}.{plugin-revision}`
+—for example `v1.36.11-20260617120000-abc123def456.1`. Pin via the full version,
+the module commit id, or a BSR label:
+
+- `@<tag>` — release-gated tag label, e.g. `@v0.2.0`. The canonical way to pin a
+  stable consumer.
+- `@main` — the default label, updated on every **schema release**. Use it when
+  tracking the most recent published contract.
+- `@<commit-id>` — exact commit on the registry, useful for reproducing a build.
+
+Because BSR publication is gated to release-please releases, registry labels and
+the GitHub release history move together. The schema
+[reference](/docs/reference) reflects the current tree, which may be ahead of
+the last released SDK contract while work is pre-release.
