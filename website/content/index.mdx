@@ -1,0 +1,48 @@
+---
+title: Tinkle Schema
+description: tinkle.v1 — the Protobuf contract for the Tinkle messaging API. Generated reference, guides and SDK consumption.
+---
+
+# Tinkle Schema
+
+`tinkle.v1` is the Protobuf contract for the Tinkle messaging API. It is
+maintained as the specification-first source of truth in
+[tinkle-org/schema](https://github.com/tinkle-org/schema);
+the reference and guides on this site are generated from it.
+
+| | |
+| --- | --- |
+| **[Schema reference](/schema/reference)** | Every service, RPC method, message and enum, with doc comments, deprecations and reserved definitions. |
+| **[Buf Registry](https://buf.build/tinkle-org/schema)** | Go and Rust SDKs generated and published by the Buf Schema Registry, gated to schema releases. |
+| **[Realtime binding](/schema/guides/realtime)** | The Syntra-only realtime application binding: batched durable updates, cursor rules, conformance checks. |
+
+## Status
+
+The contract is **pre-release**: intentional restructuring is expected and
+carries no external compatibility commitment.
+
+- This reference is generated on every site build from the current `main` tree —
+  it may be ahead of the latest published SDKs.
+- SDK publication on the Buf Schema Registry is **release-gated**: consumers
+  see new versions only when a release-please Release PR is merged.
+
+## How this site is built
+
+```text
+tinkle/v1/*.proto + doc comments        spec source of truth
+        ↓
+buf build (protobuf descriptor set)
+        ↓
+website/scripts/generate-reference.mjs   generated reference pages
+website/scripts/sync-docs.mjs            canonical guides synced in
+        ↓
+content/ (Nextra content directory)
+        ↓
+tinkle.me/schema/                        served by the main website
+```
+
+To change what appears in the reference, edit the `.proto` doc comments; to
+change narrative documentation, edit the hand-written pages in
+`website/content/` or the canonical guides. Do not edit anything under
+`website/content/reference/` or `website/content/guides/` — both are generated
+and git-ignored.

@@ -12,3 +12,7 @@
 
 # Buf caches
 .buf-cache/
+
+# Schema docs content (website/) — see website/.gitignore for nested rules
+website/content/reference/
+website/content/guides/

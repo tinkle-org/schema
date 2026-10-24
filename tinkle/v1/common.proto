@@ -4,9 +4,9 @@
 // Contains common enums and messages shared across tinkle.v1 services.
 // Import this file when you need access to shared types.
 //
-// Distribution: this package is auto-mirrored to tinklehq/tinkle-proto on
-// every push to main that changes a .proto file under proto/tinkle/.
-// See proto/tinkle/PUBLISHING.md.
+// Distribution: the contract is published to the Buf Schema Registry at
+// buf.build/tinkle-org/schema; SDKs are generated there. See README.md
+// for the release-gated publication flow.
 
 syntax = "proto3";
 

@@ -2,125 +2,103 @@
 
 ## Source of truth
 
-The `.proto` files under `tinkle/v1/` are auto-mirrored from
-[`tinklehq/tinkle-server`](https://github.com/tinklehq/tinkle-server).
-Do not edit them in this repository — your changes will be
-overwritten on the next mirror sync. Open a PR against
-`tinklehq/tinkle-server` instead.
+The `.proto` files under `tinkle/v1/` are maintained **directly in this
+repository**. There is no mirror: do not open PRs against other
+repositories to change the contract.
 
 ## How a proto change flows to consumers
 
-1. Edit `tinkle/v1/*.proto` in `tinklehq/tinkle-server`.
-2. PR merged → `proto-publish.yml` mirror pushes the new protos
-   to `tinklehq/tinkle-proto:main`.
-3. **No follow-up PR is required here.** The PR to `tinkle-server`
-   is enough; CI on this repo will regenerate the bindings
-   against the new protos in `ci.yml` and verify they build and
-   test cleanly. There is no generated code to commit.
-4. The next `feat:` or `fix:` PR (with a releasable conventional
-   commit) will cause release-please to open a Release PR per
-   language; merging those cuts tags and `release.yml` publishes
-   the regenerated bindings to `release/<component>` branches.
-
-## Local validation
-
-From the repo root:
-
-```bash
-buf format -d
-buf lint
-buf breaking --against ".git#branch=origin/main"
-buf generate
-# protoc-gen-elixir emits a doubled output path (see "Flatten
-# elixir generated output" in .github/workflows/ci.yml); collapse
-# it to match the Go and Rust layout. Idempotent.
-if [ -d elixir/lib/tinkle/v1/tinkle ]; then
-  mv elixir/lib/tinkle/v1/tinkle/v1/*.pb.ex elixir/lib/tinkle/v1/
-  rmdir elixir/lib/tinkle/v1/tinkle/v1 elixir/lib/tinkle/v1/tinkle
-fi
-# Generated files (go/tinkle/, elixir/lib/tinkle/) are not
-# committed; they're fine to leave in your working tree or clean
-# up with `git clean -fdx` if you prefer.
-(cd go && go mod tidy && go build ./... && go vet ./...)
-(cd rs  && cargo build --locked && cargo test --locked)
-(cd elixir && mix deps.get && mix compile --warnings-as-errors && mix test)
-```
-
-These run in `ci.yml` on every PR + push to `main`.
+1. PR against `main` editing `tinkle/v1/*.proto`. CI runs
+   `build`/`lint`/`format`/`breaking` and posts a summary comment.
+2. Merge to `main`. **Nothing is published to the BSR yet** — plain
+   merges validate only. The `docs-build` workflow regenerates and
+   validates the docs content, then dispatches an update to the website
+   repository when `RELEASE_PLEASE_TOKEN` is configured (it skips the
+   dispatch without it; the website still picks up the content on its
+   next build).
+3. release-please maintains a Release PR containing
+   `version.txt` and `CHANGELOG.md` bumps, assembled from Conventional
+   Commits since the last release.
+4. **Merging the Release PR publishes:** the release workflow checks
+   out the released commit, validates it (`buf build`, `buf lint`),
+   and `buf push`es it to
+   [buf.build/tinkle-org/schema](https://buf.build/tinkle-org/schema)
+   labeled with the release tag (and the `main` default label).
+   Consumers then pick up regenerated Go/Rust SDKs via `go get @latest`
+   or `cargo add --registry buf`.
 
 ## Conventional Commits
 
 Releases are driven by [Conventional Commits](https://www.conventionalcommits.org/).
-Use the standard prefixes so release-please can pick up the right
-bump type per language:
+Use standard prefixes so release-please picks the right bump:
 
-| Prefix              | SemVer bump | Notes                                      |
-|---------------------|-------------|--------------------------------------------|
-| `feat:`             | MINOR       | New RPC, new message, new field            |
-| `fix:`              | PATCH       | Behavior-preserving bug fix                |
-| `feat!:` / `BREAKING CHANGE:` | MAJOR | Reserved for `tinkle/v2/`; do not use in `v1` |
-| `perf:`             | PATCH       | Performance improvement                    |
-| `refactor:`         | — (hidden)  | Internal refactor; no release entry        |
-| `chore:` / `build:` / `ci:` / `docs:` / `style:` / `test:` | — (hidden) | Never trigger a release |
+| Prefix | SemVer bump | Notes |
+|---|---|---|
+| `feat:` | MINOR | New RPC, new message, new field |
+| `fix:` | PATCH | Behavior-preserving contract fix |
+| `feat!:` / `BREAKING CHANGE:` | MAJOR (pre-1.0: minor, via `bump-minor-pre-major`) | Pre-release restructuring intended |
+| `perf:` | PATCH | — |
+| `docs:` / `chore:` / `ci:` / `refactor:` / `test:` / `style:` / `build:` | — (no release) | Never trigger a release |
 
-Hidden types are marked as such in `release-please-config.json`
-and won't accumulate in a Release PR.
+## Documentation site
+
+The [docs content](website/) — rendered at `https://tinkle.me/schema/` by
+the main website — generates its API reference from the protobuf
+descriptor set on every build — **do not hand-write reference pages**. To
+change reference content, edit the `.proto` doc comments (every message,
+field, enum value, service and method's leading `//` comment) or, for
+generator behavior, `website/scripts/generate-reference.mjs`.
+
+Narrative documents stay canonical at the repo root (`REALTIME.md`,
+`conformance/realtime.md`) and are synced into the content at build time;
+edit them there. Hand-written site pages live in `website/content/`.
+
+Content commands (from `website/`; no dependencies to install):
+
+```bash
+npm run generate   # descriptor set → content/reference/ + synced guides
+npm run check      # internal /schema/... links resolve; structure is sane
+```
+
+To preview the rendered result, build the website repo locally
+(`tinkle-org/tinkle-website-nextjs`) — it fetches this repo and runs the
+same generators before its own build.
+
+Generated outputs are git-ignored and rebuilt on every build — do not
+commit them.
 
 ## Cutting a release
 
-1. **Don't push a tag manually.** Release-please manages tags.
-2. After enough releasable commits (`feat:`/`fix:`/`perf:`) have
-   landed on `main`, release-please has already opened or updated
-   a Release PR per language. The PR title looks like
-   `chore: release X.Y.Z` (Go), `chore: release rust: X.Y.Z`
-   (Rust), or `chore: release elixir: X.Y.Z`.
-3. Review the PR — it updates:
-   - `go/version.go` (`const Version = "X.Y.Z"`)
-   - `rs/Cargo.toml` (`version = "X.Y.Z"`)
-   - `elixir/mix.exs` (`version: "X.Y.Z"`)
-   - `<component>/CHANGELOG.md`
-   - `.release-please-manifest.json`
-4. Merge the Release PR. release-please will:
-   - Tag the merge commit on `main` with `<component>/vX.Y.Z`.
-   - Create a GitHub Release.
-5. The tag push triggers `release.yml` for post-tag verification
-   and publish:
-   - Regenerate from protos at the tagged commit.
-   - Build and test the binding.
-   - Force-push a `release/<component>` branch with the generated
-     code.
-   - Force-move the tag to the tip of `release/<component>`.
-6. Consumers now `go get`/`cargo add`/`mix deps.get` from the tag
-   and get a commit that contains the generated code.
-
-You can land multiple Release PRs back-to-back (Go, then Rust, then
-Elixir) — release-please keeps them independent.
+1. **Do not push release tags manually.** release-please owns tags.
+2. Once enough `feat:`/`fix:`/`perf:` commits land on `main`,
+   release-please opens or updates a Release PR (`chore: release X.Y.Z`)
+   bumping `version.txt` and `CHANGELOG.md`.
+3. Review and merge the Release PR. The release workflow then:
+   - tags the release,
+   - checks out the released sha,
+   - validates (`buf build`, `buf lint`),
+   - publishes to the BSR with the release tag label.
+4. Consumers pick up new SDK versions from the BSR; the docs site
+   reference is already updated (it follows `main`, not releases).
 
 ## Hotfixing a release
 
-To force a specific version (e.g. cutting a `1.2.4` patch release
-without any new commits), push an empty commit on `main` with a
-`Release-As: 1.2.4` trailer and let `release-please` open a Release
-PR at the requested version:
+To force a specific version, push an empty commit with a
+`Release-As: X.Y.Z` trailer so release-please opens a Release PR at that
+version:
 
 ```bash
-git commit --allow-empty -m "chore: release 1.2.4" -m "Release-As: 1.2.4"
+git commit --allow-empty -m "chore: release X.Y.Z" -m "Release-As: X.Y.Z"
 git push origin HEAD
 ```
 
-The same pattern handles bootstrap releases (e.g. `1.0.0` for the
-first release of a new major) and major version transitions
-(e.g. `2.0.0`). See `AGENTS.md` → "Forcing a specific release
-version" for the pre-flight checklist and when to use it.
-
 ## Common tasks
 
-| Task | Where to make the change |
+| Task | Where |
 |---|---|
-| Add/change an RPC | `tinklehq/tinkle-server` (the proto source) — no follow-up PR here |
-| Change Go module path | `go/go.mod` + `buf.gen.yaml` (`go_package_prefix` override) |
-| Change Rust dependency versions | `rs/Cargo.toml` |
-| Change Elixir package metadata | `elixir/mix.exs` |
-| Add a new language | new directory at root + `buf.gen.yaml` entry + `release-please-config.json` `packages` entry + new `release-branch` mapping in `release.yml` |
-| Adjust release-please config | `release-please-config.json` (and `.release-please-manifest.json` for initial version) |
-| Add a new tool to the proto-source CI | `.github/workflows/ci.yml` (or a new file in `.github/workflows/`) |
+| Add/change an RPC or message | `tinkle/v1/*.proto` here |
+| Docs content generation/checks | `website/scripts/*.mjs` |
+| Narrative/protocol docs | `REALTIME.md`, `conformance/realtime.md` |
+| Add conformance checks | `conformance/test_realtime_schema.py` |
+| Adjust release behavior | `release-please-config.json`, `.github/workflows/release-please.yaml` |
+| Docs styling/navigation | `tinkle-org/tinkle-website-nextjs` (not this repo) |

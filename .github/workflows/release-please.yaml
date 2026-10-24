@@ -1,0 +1,74 @@
+name: release-please
+
+# Releases are versioned once per schema and opened/maintained by
+# release-please (driven by Conventional Commits on main). Merging the
+# Release PR is what publishes: the publish job runs buf push against
+# the exact released commit, labeled with the release tag (plus the
+# default "main" label so @main tracks the latest release).
+#
+# Plain merges to main validate the schema but never publish to the
+# Buf Schema Registry; buf-ci.yaml therefore never pushes.
+#
+# Secrets:
+#   BUF_TOKEN              required            BSR API token for tinkle-org
+#   RELEASE_PLEASE_TOKEN   recommended (PAT)   GitHub PAT so Release PRs
+#                                              trigger repo CI checks
+#                                              (GITHUB_TOKEN PRs do not).
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Maintain Release PR
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  publish:
+    name: Publish released schema to BSR
+    needs: release
+    if: needs.release.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout the released commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release.outputs.sha }}
+      - name: Set up Buf
+        uses: bufbuild/buf-setup-action@v1
+      - name: Validate the released schema
+        run: |
+          buf build
+          buf lint
+      - name: Publish to the BSR
+        env:
+          BUF_TOKEN: ${{ secrets.BUF_TOKEN }}
+          TAG: ${{ needs.release.outputs.tag_name }}
+        run: |
+          buf push \
+            --create --create-visibility public \
+            --label "${TAG}" \
+            --label "main" \
+            --source-control-url "https://github.com/${GITHUB_REPOSITORY}/commit/${{ needs.release.outputs.sha }}"
