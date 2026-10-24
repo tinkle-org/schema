@@ -272,13 +272,17 @@ function inlineScalarOrLink(field) {
 function renderFieldType(field) {
   const repeated = field.label === 'LABEL_REPEATED' || field.label === 3;
   let base;
+  let isMap = false;
   if (field.type === 'TYPE_MESSAGE' || field.type === 'TYPE_GROUP') {
     const full = field.typeName.replace(/^\./, '');
     const target = registry.get(full);
     if (target?.isSynthetic) {
       const key = target.msg.field.find((f) => f.number === 1);
       const value = target.msg.field.find((f) => f.number === 2);
-      base = `map<${inlineScalarOrLink(key)}, ${inlineScalarOrLink(value)}>`;
+      // Angle brackets are escaped for MDX; a map is inherently repeated, so
+      // the `repeated` label must not be added on top of it.
+      isMap = true;
+      base = `map&lt;${inlineScalarOrLink(key)}, ${inlineScalarOrLink(value)}&gt;`;
     } else {
       base = typeLink(full);
     }
@@ -288,7 +292,7 @@ function renderFieldType(field) {
     base = `\`${SCALARS[field.type] ?? field.type}\``;
   }
   const withOptional = field.proto3Optional ? `optional ${base}` : base;
-  return repeated ? `repeated ${withOptional}` : withOptional;
+  return repeated && !isMap ? `repeated ${withOptional}` : withOptional;
 }
 
 // ---------------------------------------------------------------------------
@@ -337,7 +341,10 @@ function addRef(targetFull, ref) {
 
 function collectRefs() {
   for (const entry of registry.values()) {
-    if (entry.kind === 'service' || !isOwned(entry)) continue;
+    // Synthetic map-entry messages have no page of their own; their value
+    // types are linked from the owning message instead (see `target?.isSynthetic`
+    // in the field loop below).
+    if (entry.kind === 'service' || entry.isSynthetic || !isOwned(entry)) continue;
     const ownerBase = `${LINK_BASE}/reference/${entry.kind === 'enum' ? 'enums' : 'messages'}/${entry.full.slice(PKG_PREFIX.length)}`;
     const fields = entry.kind === 'message' ? entry.msg.field ?? [] : [];
     for (const field of fields) {
@@ -444,7 +451,9 @@ function sourceLine(file) {
 }
 
 function shortName(full) {
-  return full.slice(PKG_PREFIX.length);
+  // Only strip the package prefix for types in this package; imported
+  // well-known types keep their fully qualified name (e.g. google.protobuf.Empty).
+  return full.startsWith(PKG_PREFIX) ? full.slice(PKG_PREFIX.length) : full;
 }
 
 // ---------------------------------------------------------------------------

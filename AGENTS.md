@@ -9,7 +9,7 @@ repository. Read it fully before making any non-trivial change.
   `tinkle.v1` Protobuf contract. The repo contains the `.proto`
   files, Buf config, and the schema docs content (Nextra-rendered).
 - The schema is published to the Buf Schema Registry at
-  **`buf.build/tinklecorp/tinkle-proto`** (public). The BSR
+  **`buf.build/tinkle-org/schema`** (public). The BSR
   generates and serves **Go** and **Rust** SDKs to consumers; no
   language-specific code lives in this repo.
 - **BSR publication is release-gated.** Everyday merges only
@@ -35,7 +35,7 @@ tinkle-org/schema (this repo)   proto source + Buf config + docs site
 ├── tinkle/v1/*.proto                 proto source (owned here)
 ├── conformance/                      schema/codec conformance checks
 ├── buf.yaml                          v2 single-module workspace
-│                                     name: buf.build/tinklecorp/tinkle-proto
+│                                     name: buf.build/tinkle-org/schema
 ├── buf.lock                          generated
 ├── version.txt                       schema release version (release-please)
 ├── release-please-config.json
@@ -53,7 +53,7 @@ tinkle-org/schema (this repo)   proto source + Buf config + docs site
 
 The BSR takes care of everything else: published module, generated
 SDKs, version history, generated documentation, and dependency
-resolution. See <https://buf.build/tinklecorp/tinkle-proto> for the
+resolution. See <https://buf.build/tinkle-org/schema> for the
 live state.
 
 The server (`tinklehq/tinkle-server`) and any other microservice
@@ -64,9 +64,9 @@ not edit or mirror `.proto` files from this repo.
 
 | Language | Command |
 |----------|---------|
-| Go       | `go get buf.build/gen/go/tinklecorp/tinkle-proto/protocolbuffers/go` |
-| Go (gRPC) | `go get buf.build/gen/go/tinklecorp/tinkle-proto/grpc/go` |
-| Rust     | `cargo add --registry buf tinklecorp_tinkle-proto_bufbuild_community_tonic-prost` |
+| Go       | `go get buf.build/gen/go/tinkle-org/schema/protocolbuffers/go` |
+| Go (gRPC) | `go get buf.build/gen/go/tinkle-org/schema/grpc/go` |
+| Rust     | `cargo add --registry buf tinkle-org_schema_bufbuild_community_tonic-prost` |
 
 Versions are `{plugin-version}-{module-commit-timestamp}-{module-commit-id}.{plugin-revision}`
 (e.g. `v1.36.11-20260617120000-abc123def456.1`). Pin with
@@ -87,7 +87,7 @@ Versions are `{plugin-version}-{module-commit-timestamp}-{module-commit-id}.{plu
    `buf push --label <tag> --label main`. Do not push manually to
    the BSR; ordinary merges must not touch the registry.
 3. **`BUF_TOKEN` is required for publication.** A BSR API token for
-   the `tinklecorp` org (repository secret). `RELEASE_PLEASE_TOKEN`
+   the `tinkle-org` org (repository secret). `RELEASE_PLEASE_TOKEN`
    (a PAT) is recommended so Release PRs trigger the repo's CI —
    PRs created with the default token do not run workflows.
 4. **Write proto doc comments for humans.** Every message, field,
@@ -175,6 +175,6 @@ cd website && npm run generate && npm run check   # content + link validation
 
 ## BSR resource
 
-- Module: <https://buf.build/tinklecorp/tinkle-proto>
-- Generated SDKs: <https://buf.build/tinklecorp/tinkle-proto/sdks>
-- Documentation: <https://buf.build/tinklecorp/tinkle-proto/docs>
+- Module: <https://buf.build/tinkle-org/schema>
+- Generated SDKs: <https://buf.build/tinkle-org/schema/sdks>
+- Documentation: <https://buf.build/tinkle-org/schema/docs>

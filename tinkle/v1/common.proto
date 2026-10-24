@@ -5,7 +5,7 @@
 // Import this file when you need access to shared types.
 //
 // Distribution: the contract is published to the Buf Schema Registry at
-// buf.build/tinklecorp/tinkle-proto; SDKs are generated there. See README.md
+// buf.build/tinkle-org/schema; SDKs are generated there. See README.md
 // for the release-gated publication flow.
 
 syntax = "proto3";

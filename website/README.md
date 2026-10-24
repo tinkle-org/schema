@@ -4,6 +4,10 @@ Hand-written pages + generators producing the Nextra content for the
 `tinkle.v1` protobuf contract docs, rendered by the main website
 (`tinkle-org/tinkle-website-nextjs`) at **https://tinkle.me/schema/**.
 
+Reference prose comes from the `.proto` doc comments (via the descriptor
+set); narrative documentation lives at the repository root (`REALTIME.md`,
+`conformance/realtime.md`) and in the hand-written pages under `content/`.
+
 ## Layout
 
 - `content/` — the Nextra content directory. This is what the website

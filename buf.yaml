@@ -1,5 +1,5 @@
 version: v2
-name: buf.build/tinklecorp/tinkle-proto
+name: buf.build/tinkle-org/schema
 lint:
   use:
     - STANDARD

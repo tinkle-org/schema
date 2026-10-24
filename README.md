@@ -1,7 +1,7 @@
 # tinkle-proto
 
 Source of truth for the `tinkle.v1` Protobuf contract. The schema is
-published to the [Buf Schema Registry](https://buf.build/tinklecorp/tinkle-proto)
+published to the [Buf Schema Registry](https://buf.build/tinkle-org/schema)
 (public), which generates and serves **Go** and **Rust** SDKs to
 consumers. The repo holds the proto source, the Buf config, and the
 documentation content for the schema docs at tinkle.me/schema/ — its API
@@ -19,7 +19,7 @@ tinkle-org/schema/               ← proto source + Buf config + docs site
 ├── conformance/                       schema/codec checks (pure Python)
 ├── REALTIME.md                        normative realtime binding doc
 ├── buf.yaml                           v2 workspace; module published to
-│                                      buf.build/tinklecorp/tinkle-proto
+│                                      buf.build/tinkle-org/schema
 ├── version.txt                        schema release version (release-please)
 ├── release-please-config.json         release config (simple type)
 ├── .release-please-manifest.json      bootstrap 0.0.0
@@ -27,8 +27,8 @@ tinkle-org/schema/               ← proto source + Buf config + docs site
 ├── LICENSE                            at module root (required for pkg.go.dev)
 ├── website/                           docs content sources (tinkle.me/schema/)
 │   ├── scripts/generate-reference.mjs descriptor-set → reference pages
-│   ├── docs/reference/                generated (not committed)
-│   └── docs/guides/                   synced from REALTIME.md (generated)
+│   ├── content/reference/             generated (not committed)
+│   └── content/guides/                synced from REALTIME.md (generated)
 └── .github/workflows/
     ├── buf-ci.yaml                    validate only (build/lint/format/breaking)
     ├── release-please.yaml            Release PRs + release-gated buf push
@@ -64,7 +64,7 @@ release-please.yaml publish job:
 - Bump semantics follow [Conventional Commits](https://www.conventionalcommits.org/)
   (`feat:` minor, `fix:` patch); `bump-minor-pre-major` is on, so breaking
   restructuring bumps the pre-1.0 minor instead of the major.
-- Secrets: `BUF_TOKEN` (BSR token for `tinklecorp`) and, recommended,
+- Secrets: `BUF_TOKEN` (BSR token for `tinkle-org`) and, recommended,
   `RELEASE_PLEASE_TOKEN` (a PAT so Release PRs trigger repository CI —
   PRs created with the default token do not trigger workflows).
 
@@ -72,11 +72,11 @@ release-please.yaml publish job:
 main (proto source + Buf config)
    │
    ▼  release-please Release PR merge → buf push (release only)
-buf.build/tinklecorp/tinkle-proto (public)
+buf.build/tinkle-org/schema (public)
    │
    ▼  consumer reads
-go get buf.build/gen/go/tinklecorp/tinkle-proto/{protocolbuffers,grpc}/go
-cargo add --registry buf tinklecorp_tinkle-proto_bufbuild_community_tonic-prost
+go get buf.build/gen/go/tinkle-org/schema/{protocolbuffers,grpc}/go
+cargo add --registry buf tinkle-org_schema_bufbuild_community_tonic-prost
 ```
 
 ## Consuming the bindings
@@ -89,14 +89,14 @@ The BSR auto-versions each push. SDK versions are
 ### Go
 
 ```bash
-go get buf.build/gen/go/tinklecorp/tinkle-proto/protocolbuffers/go@latest
-go get buf.build/gen/go/tinklecorp/tinkle-proto/grpc/go@latest
+go get buf.build/gen/go/tinkle-org/schema/protocolbuffers/go@latest
+go get buf.build/gen/go/tinkle-org/schema/grpc/go@latest
 ```
 
 ```go
 import (
-    tinklev1   "buf.build/gen/go/tinklecorp/tinkle-proto/protocolbuffers/go/tinkle/v1"
-    tinklegrpc "buf.build/gen/go/tinklecorp/tinkle-proto/grpc/go/tinkle/v1;tinklev1grpc"
+    tinklev1   "buf.build/gen/go/tinkle-org/schema/protocolbuffers/go/tinkle/v1"
+    tinklegrpc "buf.build/gen/go/tinkle-org/schema/grpc/go/tinkle/v1"
 )
 ```
 
@@ -117,7 +117,7 @@ credential-provider = "cargo:token"
 Then add the crate:
 
 ```bash
-cargo add --registry buf tinklecorp_tinkle-proto_bufbuild_community_tonic-prost
+cargo add --registry buf tinkle-org_schema_bufbuild_community_tonic-prost
 ```
 
 > **First-`cargo-add` priming.** Rust SDKs are generated eagerly on
@@ -130,7 +130,7 @@ cargo add --registry buf tinklecorp_tinkle-proto_bufbuild_community_tonic-prost
 
 The BSR also serves TypeScript/JavaScript, Python, Java/Kotlin, and
 Swift SDKs against the same module — see
-[buf.build/tinklecorp/tinkle-proto/sdks](https://buf.build/tinklecorp/tinkle-proto/sdks).
+[buf.build/tinkle-org/schema/sdks](https://buf.build/tinkle-org/schema/sdks).
 
 ## CI
 
@@ -147,7 +147,7 @@ Two independent workflows:
 
 ### Required secrets
 
-- `BUF_TOKEN` — a BSR API token for the `tinklecorp` org, used by the
+- `BUF_TOKEN` — a BSR API token for the `tinkle-org` org, used by the
   release workflow's publish job. Without it, release merges fail to
   publish.
 - `RELEASE_PLEASE_TOKEN` (recommended) — a personal access token with
@@ -298,9 +298,9 @@ source identities; do not switch decoders or reset Kafka groups to claim recover
 
 ## BSR resource
 
-- Module: <https://buf.build/tinklecorp/tinkle-proto>
-- Generated SDKs: <https://buf.build/tinklecorp/tinkle-proto/sdks>
-- Documentation: <https://buf.build/tinklecorp/tinkle-proto/docs>
+- Module: <https://buf.build/tinkle-org/schema>
+- Generated SDKs: <https://buf.build/tinkle-org/schema/sdks>
+- Documentation: <https://buf.build/tinkle-org/schema/docs>
 
 ## Source
 

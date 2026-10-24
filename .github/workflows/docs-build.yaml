@@ -57,7 +57,7 @@ jobs:
       # notification: the website picks up the content on its next image
       # build either way.
       - name: Notify website repository
-        if: github.repository == 'tinkle-org/tinkle-proto'
+        if: github.repository == 'tinkle-org/schema'
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           SHA: ${{ github.sha }}

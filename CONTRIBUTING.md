@@ -11,15 +11,16 @@ repositories to change the contract.
 1. PR against `main` editing `tinkle/v1/*.proto`. CI runs
    `build`/`lint`/`format`/`breaking` and posts a summary comment.
 2. Merge to `main`. **Nothing is published to the BSR yet** — plain
-   merges validate only. The docs site artifact rebuilds automatically
-   from the merge (`docs-build` workflow).
+   merges validate only. The `docs-build` workflow regenerates and
+   validates the docs content, then dispatches an update to the website
+   repository.
 3. release-please maintains a Release PR containing
    `version.txt` and `CHANGELOG.md` bumps, assembled from Conventional
    Commits since the last release.
 4. **Merging the Release PR publishes:** the release workflow checks
    out the released commit, validates it (`buf build`, `buf lint`),
    and `buf push`es it to
-   [buf.build/tinklecorp/tinkle-proto](https://buf.build/tinklecorp/tinkle-proto)
+   [buf.build/tinkle-org/schema](https://buf.build/tinkle-org/schema)
    labeled with the release tag (and the `main` default label).
    Consumers then pick up regenerated Go/Rust SDKs via `go get @latest`
    or `cargo add --registry buf`.

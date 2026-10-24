@@ -10,7 +10,7 @@ name: release-please
 # Buf Schema Registry; buf-ci.yaml therefore never pushes.
 #
 # Secrets:
-#   BUF_TOKEN              required            BSR API token for tinklecorp
+#   BUF_TOKEN              required            BSR API token for tinkle-org
 #   RELEASE_PLEASE_TOKEN   recommended (PAT)   GitHub PAT so Release PRs
 #                                              trigger repo CI checks
 #                                              (GITHUB_TOKEN PRs do not).

@@ -6,8 +6,8 @@ name: buf-ci
 # release-please.yaml when a Release PR merge creates a tagged release.
 #
 # Consumers (Go/Rust) get SDK updates via published releases:
-#   Go:   go get buf.build/gen/go/tinklecorp/tinkle-proto/{protocolbuffers,grpc}/go
-#   Rust: cargo add --registry buf tinklecorp_tinkle-proto_bufbuild_community_tonic-prost
+#   Go:   go get buf.build/gen/go/tinkle-org/schema/{protocolbuffers,grpc}/go
+#   Rust: cargo add --registry buf tinkle-org_schema_bufbuild_community_tonic-prost
 #
 # BUF_TOKEN is used by release-please.yaml (not this workflow).
 
@@ -38,4 +38,8 @@ jobs:
         with:
           token: ${{ secrets.BUF_TOKEN }}
           push: false
+          # The action archives by default on `delete` events (this workflow
+          # listens to branch/tag deletes). Never mutate BSR state here:
+          # archiving is part of the release-publishing workflow, not CI.
+          archive: false
           push_create_visibility: public

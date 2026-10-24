@@ -19,7 +19,9 @@ const websiteRoot = path.resolve(scriptDir, '..');
 const contentRoot =
   process.env.SCHEMA_CONTENT_DIR ?? path.join(websiteRoot, 'content');
 
-const MOUNT = '/schema';
+// Must match the generators' link base (SCHEMA_LINK_BASE / --link-base),
+// defaulting to the path the website mounts this content under.
+const MOUNT = (process.env.SCHEMA_LINK_BASE ?? '/schema').replace(/\/+$/, '');
 
 const errors = [];
 const warnings = [];
