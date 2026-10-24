@@ -59,6 +59,7 @@ function preprocess(body, { sourceDir }) {
     (match, target, anchor = '', title = '') => {
       if (
         /^https?:\/\//.test(target) ||
+        target.startsWith('//') ||
         target.startsWith('#') ||
         target.startsWith('mailto:')
       ) {

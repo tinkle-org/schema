@@ -37,7 +37,7 @@ export function resolveRepoSlug({ argv, repoRootArg, fallback = 'tinkle-org/sche
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();
-    const match = raw.match(/(?:github\.com[/:])([^/]+)\/([^.@/#]+?)(?:\.git)?$/);
+    const match = raw.match(/(?:github\.com[/:])([^/]+)\/([^/@#]+?)(?:\.git)?$/);
     if (match) return `${match[1]}/${match[2]}`;
   } catch {
     /* fall through to fallback */
@@ -65,15 +65,19 @@ export function resolveContentRoot(argv, websiteRoot) {
  * escape characters that MDX would treat as JSX/HTML everywhere else.
  */
 export function mdEscape(text) {
-  return String(text)
-    .split(/(```[\s\S]*?```|`[^`\n]*`)/g)
-    .map((part) =>
-      part.startsWith('`')
-        ? part
-        : part
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/{/g, '&#123;'),
-    )
-    .join('');
+  const source = String(text);
+  const re = /```[\s\S]*?```|(`+)[^\n]*?\1/g;
+  let last = 0;
+  let out = '';
+  let m;
+  const escapePart = (s) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/{/g, '&#123;');
+  while ((m = re.exec(source)) !== null) {
+    if (m.index > last) out += escapePart(source.slice(last, m.index));
+    out += m[0];
+    last = m.index + m[0].length;
+    if (m[0].length === 0) re.lastIndex += 1;
+  }
+  if (last < source.length) out += escapePart(source.slice(last));
+  return out;
 }
