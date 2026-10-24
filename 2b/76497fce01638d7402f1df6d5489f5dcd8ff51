@@ -1,0 +1,55 @@
+.github/workflows/release-please.yaml
+  s_d15d4eff8083ad::t_02328c7316f28f 13
+website/scripts/generate-reference.mjs
+  s_d15d4eff8083ad::t_af7ea1ccd8f2ae 454-456
+  s_d15d4eff8083ad::t_e296c32bee847d 275,282-285,295
+  s_d15d4eff8083ad::t_cfbdccb9446824 344-347
+.github/workflows/docs-build.yaml
+  s_d15d4eff8083ad::t_49c4709e5d5d38 60
+website/README.md
+  s_d15d4eff8083ad::t_d066fecabb7b3c 7-10
+buf.yaml
+  s_d15d4eff8083ad::t_d8ccae53d20615 2
+tinkle/v1/common.proto
+  s_d15d4eff8083ad::t_d087c5fae9b369 8
+.github/workflows/buf-ci.yaml
+  s_d15d4eff8083ad::t_ddfce27dbc3935 9-10
+  s_d15d4eff8083ad::t_712578533d99a8 41-44
+website/scripts/check-content.mjs
+  s_d15d4eff8083ad::t_21f9fc5e515fd1 22-24
+website/content/introduction.mdx
+  s_d15d4eff8083ad::t_8dedaecba1b1f1 55
+  s_d15d4eff8083ad::t_758ada9d227bdf 17
+  s_d15d4eff8083ad::t_91ec3b0373bbe7 30
+CONTRIBUTING.md
+  s_d15d4eff8083ad::t_943ca6220f1590 14-16
+  s_d15d4eff8083ad::t_25525620990dbe 23
+website/content/index.mdx
+  s_d15d4eff8083ad::t_85d7ca745ea30a 16
+README.md
+  s_d15d4eff8083ad::t_80c25e5a40d8a4 30-31
+  s_d15d4eff8083ad::t_21486e3906acda 4,22,75,78,92-93,98,133,301-303
+  s_d15d4eff8083ad::t_b3f96949531d86 67,150
+  s_d15d4eff8083ad::t_04dcbdd0b40369 99
+  s_d15d4eff8083ad::t_6b73889c98e0fa 79,120
+AGENTS.md
+  s_d15d4eff8083ad::t_a6834c24de8400 90
+  s_d15d4eff8083ad::t_9acb7799f179b3 69
+  s_d15d4eff8083ad::t_9fb8eec6b15e74 12,38,56,67-68,178-180
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2b76497fce01638d7402f1df6d5489f5dcd8ff51",
+  "prompts": {},
+  "sessions": {
+    "s_d15d4eff8083ad": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e91255c3cffeSDcg7pOBRkwfkK",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "oscarlaw <oscarlaw2010@gmail.com>"
+    }
+  }
+}
