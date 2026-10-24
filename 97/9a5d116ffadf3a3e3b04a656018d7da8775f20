@@ -1,0 +1,50 @@
+.github/workflows/docs-build.yaml
+  s_d15d4eff8083ad::t_34cb256f26d8e3 1-56
+website/docusaurus.config.ts
+  s_d15d4eff8083ad::t_dbc1d1a1e9e46d 10-20,22,26,28,34,43-44,64,84,108-109,127
+website/scripts/sync-docs.mjs
+  s_d15d4eff8083ad::t_ca60be8a10e56b 85,88
+  s_d15d4eff8083ad::t_31d727054bb34a 113
+AGENTS.md
+  s_d15d4eff8083ad::t_90adbe824ab39c 24-29
+  s_d15d4eff8083ad::t_0b1fadd4b2b00e 46,50
+  s_d15d4eff8083ad::t_a8363761c584a0 167-170
+CONTRIBUTING.md
+  s_d15d4eff8083ad::t_56591b7ac8379d 14-15
+  s_d15d4eff8083ad::t_fb0875845a23b5 42-47
+website/README.md
+  s_d15d4eff8083ad::t_08345b1256bcb6 1-31
+website/scripts/generate-reference.mjs
+  s_d15d4eff8083ad::t_5cdcd7377a5128 765
+  s_d15d4eff8083ad::t_98461e5b463468 582
+  s_d15d4eff8083ad::t_573e7c94ae9198 470
+  s_d15d4eff8083ad::t_c5340a88c3a355 235,323,351,482,530,743
+  s_d15d4eff8083ad::t_30e5a9aa853737 512
+  s_d15d4eff8083ad::t_5aaeb1c8c3024d 671
+README.md
+  s_d15d4eff8083ad::t_33a881c75431e4 28
+  s_d15d4eff8083ad::t_9ed897c43f30b7 172-174,184,190-195
+  s_d15d4eff8083ad::t_63fc2a9c643ee7 36
+website/docs/index.md
+  s_d15d4eff8083ad::t_e452d12c9c4823 1-50
+website/docs/introduction.md
+  s_d15d4eff8083ad::t_74614ce0c0b008 28,35-36
+website/docs/getting-started/consuming-sdks.md
+  s_d15d4eff8083ad::t_23ccc76675dd14 70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "979a5d116ffadf3a3e3b04a656018d7da8775f20",
+  "prompts": {},
+  "sessions": {
+    "s_d15d4eff8083ad": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e91255c3cffeSDcg7pOBRkwfkK",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "oscarlaw <oscarlaw2010@gmail.com>"
+    }
+  }
+}
