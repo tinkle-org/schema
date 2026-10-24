@@ -39,26 +39,27 @@ Use standard prefixes so release-please picks the right bump:
 
 ## Documentation site
 
-The [docs site](website/) — published at `https://tinkle.me/schema/` —
-generates its API reference from the protobuf descriptor set on every
-build — **do not hand-write reference pages**. To change reference
-content, edit the `.proto` doc comments (every message, field, enum
-value, service and method's leading `//` comment) or, for generator
-behavior, `website/scripts/generate-reference.mjs`.
+The [docs content](website/) — rendered at `https://tinkle.me/schema/` by
+the main website — generates its API reference from the protobuf
+descriptor set on every build — **do not hand-write reference pages**. To
+change reference content, edit the `.proto` doc comments (every message,
+field, enum value, service and method's leading `//` comment) or, for
+generator behavior, `website/scripts/generate-reference.mjs`.
 
 Narrative documents stay canonical at the repo root (`REALTIME.md`,
-`conformance/realtime.md`) and are synced into the site at build time;
-edit them there.
+`conformance/realtime.md`) and are synced into the content at build time;
+edit them there. Hand-written site pages live in `website/content/`.
 
-Site commands (from `website/`):
+Content commands (from `website/`; no dependencies to install):
 
 ```bash
-npm install
-npm run generate   # descriptor set → docs/reference/ + synced guides
-npm run dev        # local dev server
-npm run build      # generate + production build; broken links fail the build
-npm run typecheck
+npm run generate   # descriptor set → content/reference/ + synced guides
+npm run check      # internal /schema/... links resolve; structure is sane
 ```
+
+To preview the rendered result, build the website repo locally
+(`tinkle-org/tinkle-website-nextjs`) — it fetches this repo and runs the
+same generators before its own build.
 
 Generated outputs are git-ignored and rebuilt on every build — do not
 commit them.
@@ -93,8 +94,8 @@ git push origin HEAD
 | Task | Where |
 |---|---|
 | Add/change an RPC or message | `tinkle/v1/*.proto` here |
-| Update generated reference layout | `website/scripts/generate-reference.mjs` |
+| Docs content generation/checks | `website/scripts/*.mjs` |
 | Narrative/protocol docs | `REALTIME.md`, `conformance/realtime.md` |
 | Add conformance checks | `conformance/test_realtime_schema.py` |
 | Adjust release behavior | `release-please-config.json`, `.github/workflows/release-please.yaml` |
-| Site styling/navigation | `website/src/`, `website/docusaurus.config.ts` |
+| Docs styling/navigation | `tinkle-org/tinkle-website-nextjs` (not this repo) |

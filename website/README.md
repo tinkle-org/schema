@@ -1,31 +1,37 @@
-# Schema docs site
+# Schema docs content
 
-Docusaurus site for the `tinkle.v1` protobuf contract, published at
-**https://tinkle.me/schema/** — the main website repo
-(`tinkle-org/tinkle-website-nextjs`) consumes the `tinkle-schema-site`
-build artifact and serves it under `/schema/`.
+Hand-written pages + generators producing the Nextra content for the
+`tinkle.v1` protobuf contract docs, rendered by the main website
+(`tinkle-org/tinkle-website-nextjs`) at **https://tinkle.me/schema/**.
 
 ## Layout
 
-- `docs/` — hand-written pages (`index.md` landing, `introduction.md`,
-  `getting-started/`).
-- `docs/reference/` — **generated** by `scripts/generate-reference.mjs`
-  from the protobuf descriptor set. Do not edit; git-ignored.
-- `docs/guides/` — **generated** by `scripts/sync-docs.mjs` from the
-  canonical `REALTIME.md` and `conformance/realtime.md` at the repo root.
-  Do not edit; git-ignored.
+- `content/` — the Nextra content directory. This is what the website
+  build consumes.
+  - Hand-written (committed): `index.mdx` landing, `introduction.mdx`,
+    `getting-started/`, plus `_meta.js` sidebar files.
+  - Generated (git-ignored): `reference/`, `guides/` and their
+    `_meta.js` files.
+- `scripts/generate-reference.mjs` — descriptor set → reference pages.
+- `scripts/sync-docs.mjs` — canonical `REALTIME.md` /
+  `conformance/realtime.md` → guides.
+- `scripts/check-content.mjs` — link + structure validation.
 
 ## Commands
 
 ```bash
-npm install
-npm run generate   # descriptor set → docs/reference/ + synced guides
-npm run dev        # dev server at http://localhost:3000/schema/
-npm run build      # generate + production build (broken links fail)
-npm run build:site # production build only (uses existing generated pages)
-npm run typecheck
+npm run generate   # regenerate content/reference/ + content/guides/
+npm run check      # validate internal /schema/... links + structure
 ```
 
-The build targets `url: https://tinkle.me` / `baseUrl: /schema/` (see
-`docusaurus.config.ts`). Docs-only mode: the docs plugin owns all routes;
-there is no `src/pages/` plugin.
+No npm dependencies — the scripts use only Node built-ins (plus `buf`
+for the descriptor set, which must be on `PATH`).
+
+## Cross-repo contract
+
+The website repo fetches this repo (default ref `main`, overridable via
+`SCHEMA_DOCS_REF`) at its build time and runs the same generator scripts
+with `--out content` and `--proto-dir <checkout>`. Internal links are
+emitted with the `/schema` prefix — that is the path under which the
+website mounts this content. Changing the prefix requires updating the
+website's `contentDirBasePath` too.

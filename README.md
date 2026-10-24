@@ -3,9 +3,9 @@
 Source of truth for the `tinkle.v1` Protobuf contract. The schema is
 published to the [Buf Schema Registry](https://buf.build/tinklecorp/tinkle-proto)
 (public), which generates and serves **Go** and **Rust** SDKs to
-consumers. The repo holds the proto source, the Buf config, and a
-Docusaurus documentation site whose API reference is generated from the
-proto descriptor set.
+consumers. The repo holds the proto source, the Buf config, and the
+documentation content for the schema docs at tinkle.me/schema/ — its API
+reference is generated from the proto descriptor set.
 
 The public `.proto` files are maintained directly here under `tinkle/v1/`.
 This repository is the source of truth, not a mirror of the server repository.
@@ -25,7 +25,7 @@ tinkle-org/tinkle-proto/               ← proto source + Buf config + docs site
 ├── .release-please-manifest.json      bootstrap 0.0.0
 ├── buf.lock                           generated
 ├── LICENSE                            at module root (required for pkg.go.dev)
-├── website/                           Docusaurus docs site (tinkle.me/schema/)
+├── website/                           docs content sources (tinkle.me/schema/)
 │   ├── scripts/generate-reference.mjs descriptor-set → reference pages
 │   ├── docs/reference/                generated (not committed)
 │   └── docs/guides/                   synced from REALTIME.md (generated)
@@ -33,7 +33,7 @@ tinkle-org/tinkle-proto/               ← proto source + Buf config + docs site
     ├── buf-ci.yaml                    validate only (build/lint/format/breaking)
     ├── release-please.yaml            Release PRs + release-gated buf push
     ├── docs-ci.yaml                   site build on PRs
-    └── docs-build.yaml                site artifact build on merge to main
+    └── docs-build.yaml                content build + website dispatch on main
 ```
 
 No per-language directories and no generated SDK code in the tree — the
@@ -169,30 +169,32 @@ release.
 
 ## Documentation site
 
-`website/` is a Docusaurus site published at **<https://tinkle.me/schema/>**
-by the main website (`tinkle-org/tinkle-website-nextjs`), which serves the
-build artifact under the `/schema/` path. The [schema reference](website/docs/reference)
+`website/` holds the docs **content sources and generators** for the schema
+documentation published at **<https://tinkle.me/schema/>**. Rendering happens
+in the main website repo (`tinkle-org/tinkle-website-nextjs`), which serves
+the content as a Nextra section at the `/schema/` path. The [schema reference](website/content/reference)
 is generated from `buf build --as-file-descriptor-set` output — proto doc
 comments, deprecations, oneofs and reserved definitions all appear in the
 generated pages. `REALTIME.md` and `conformance/realtime.md` remain
-canonical here and are synced into the site at build time.
+canonical here and are synced into the content at build time.
 
 ```bash
 cd website
-npm install
-npm run generate   # descriptor set → docs/reference + synced guides
-npm run dev        # local dev server (http://localhost:3000/schema/)
-npm run build      # generate + production build (broken links fail)
-npm run typecheck
+npm run generate   # descriptor set → content/reference + synced guides
+npm run check      # internal /schema/... links resolve + structure is sane
 ```
 
-Generated outputs (`website/docs/reference/`, `website/docs/guides/`,
-`website/build/`) are git-ignored.
+Hand-written pages live in `website/content/` (`index.mdx`,
+`introduction.mdx`, `getting-started/`) and are committed; generated
+outputs (`website/content/reference/`, `website/content/guides/`) are
+git-ignored. To preview the rendered site, run the website repo locally —
+it fetches this repo and generates the content as part of its build.
 
-Build: `.github/workflows/docs-build.yaml` runs on merges to `main` and
-uploads the static site as the `tinkle-schema-site` artifact; the website
-repository consumes it and serves it at `https://tinkle.me/schema/`. PRs get
-a build check via `docs-ci.yaml` (no deploy preview from this repo).
+Build: `.github/workflows/docs-build.yaml` runs on merges to `main`,
+validates the generated content, and dispatches a `schema-docs-updated`
+event to the website repo, which rebuilds and re-validates against the
+fresh content (deploy follows the website's own release flow). PRs get
+the same checks via `docs-ci.yaml`.
 
 ## Local validation
 
@@ -203,8 +205,8 @@ buf breaking --against ".git#branch=origin/main"
 buf build
 # Additional schema/codec conformance; no SDK generation or server runtime.
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s conformance -p 'test_*.py' -v
-# Documentation site (optional; see "Documentation site" above)
-cd website && npm install && npm run build
+# Documentation site content (optional; see "Documentation site" above)
+cd website && npm run generate && npm run check
 ```
 
 Buf checks mirror the buf-ci PR workflow. There is no local `buf generate`

@@ -1,7 +1,3 @@
-node_modules/
-build/
-.docusaurus/
-
 # Generated before every build (see scripts/):
-docs/reference/
-docs/guides/
+content/reference/
+content/guides/

@@ -7,7 +7,7 @@ repository. Read it fully before making any non-trivial change.
 
 - **`tinkle-org/tinkle-proto`** is the source of truth for the
   `tinkle.v1` Protobuf contract. The repo contains the `.proto`
-  files, Buf config, and the Docusaurus docs site.
+  files, Buf config, and the schema docs content (Nextra-rendered).
 - The schema is published to the Buf Schema Registry at
   **`buf.build/tinklecorp/tinkle-proto`** (public). The BSR
   generates and serves **Go** and **Rust** SDKs to consumers; no
@@ -21,12 +21,12 @@ repository. Read it fully before making any non-trivial change.
 - **No release-please per-language tags, no generated SDK code in
   the tree.** Bump the schema version by merging a Release PR;
   consumers update via `go get @latest` or `cargo add --registry buf`.
-- The **docs site** (`website/`, Docusaurus) is published at
+- The **docs content** lives in `website/` and is rendered at
   **`https://tinkle.me/schema/`** by the main website repo
-  (`tinkle-org/tinkle-website-nextjs`), which serves the built artifact
-  under `/schema/`. It rebuilds from the descriptor set on every merge to
-  `main` — independent of the Next.js website's own app code and of BSR
-  publication.
+  (`tinkle-org/tinkle-website-nextjs`, Nextra). This repo is the content
+  source: hand-written pages in `website/content/`, generated reference
+  pages built from the descriptor set at website-build time. The website
+  repo runs these generators — it does not edit content.
 
 ## Architecture
 
@@ -43,11 +43,11 @@ tinkle-org/tinkle-proto (this repo)   proto source + Buf config + docs site
 ├── CHANGELOG.md                      maintained by release-please
 ├── LICENSE                           required at module root for pkg.go.dev
 ├── README.md
-├── website/                          Docusaurus site (tinkle.me/schema/)
+├── website/                          docs content sources (tinkle.me/schema/)
 ├── .github/workflows/buf-ci.yaml     bufbuild/buf-action: validate only
 ├── .github/workflows/release-please.yaml  Release PRs + gated buf push
-├── .github/workflows/docs-ci.yaml    site build on PRs
-├── .github/workflows/docs-build.yaml     site artifact build on main
+├── .github/workflows/docs-ci.yaml    docs content validation on PRs
+├── .github/workflows/docs-build.yaml     content build + website dispatch on main
 └── AGENTS.md
 ```
 
@@ -110,10 +110,11 @@ Versions are `{plugin-version}-{module-commit-timestamp}-{module-commit-id}.{plu
    version lives in `version.txt`; tags are plain `vX.Y.Z` and the
    publish job also moves the BSR `main` label to the release.
 8. **No `buf generate` for SDKs.** Code generation happens on the
-   BSR. The only generation in this repo is docs:
-   `cd website && npm run generate` (descriptor set → reference
-   pages; `REALTIME.md`/conformance synced into the site). Generated
-   docs outputs are git-ignored and rebuilt on every site build.
+   BSR. The only generation in this repo is docs content:
+   `cd website && npm run generate` (descriptor set → Nextra content
+   under `website/content/`; `REALTIME.md`/conformance synced as
+   guides). Generated outputs are git-ignored; the website repo
+   regenerates them from this repo at its own build time.
 
 ## When asked to "add a new RPC"
 
@@ -131,11 +132,12 @@ Versions are `{plugin-version}-{module-commit-timestamp}-{module-commit-id}.{plu
 ## When asked to "fix generated code"
 
 Don't try to fix generated SDK code in this repo — the BSR generates
-Go/Rust SDKs and there is none in the tree. For the docs site's
-generated reference, fix the `.proto` doc comments or
-`website/scripts/generate-reference.mjs`, then `cd website &&
-npm run generate` and commit the script change (generated outputs are
-ignored and rebuilt in CI).
+Go/Rust SDKs and there is none in the tree. For the docs reference, fix
+the `.proto` doc comments or `website/scripts/generate-reference.mjs`,
+then `cd website && npm run generate` and commit the script change
+(generated outputs are ignored; the website repo regenerates them at
+build time). Rendering/layout of the docs UI lives in
+`tinkle-org/tinkle-website-nextjs`, not here.
 
 ## Local validation
 
@@ -150,7 +152,7 @@ These are the same checks the `buf-ci.yaml` action runs on every PR.
 There is no local `buf generate` step for SDKs. For the docs site:
 
 ```bash
-cd website && npm install && npm run build   # generate + build + typecheck
+cd website && npm run generate && npm run check   # content + link validation
 ```
 
 ## CI workflow
@@ -163,11 +165,13 @@ cd website && npm install && npm run build   # generate + build + typecheck
   publishes (gated `buf push`) when a Release PR merge creates a
   release. See `release-please-config.json`, `version.txt`, and
   `.release-please-manifest.json`.
-- `.github/workflows/docs-ci.yaml` builds the docs site on PRs;
-  `.github/workflows/docs-build.yaml` uploads the static build as the
-  `tinkle-schema-site` artifact on merges to `main` — the main website
-  repo (`tinkle-org/tinkle-website-nextjs`) consumes it and serves the
-  site at `https://tinkle.me/schema/`.
+- `.github/workflows/docs-ci.yaml` regenerates + validates the docs
+  content on PRs (determinism, internal links). `.github/workflows/docs-build.yaml`
+  does the same on merges to `main` and dispatches
+  `schema-docs-updated` to the website repo
+  (`tinkle-org/tinkle-website-nextjs`), which re-validates the site
+  build against the fresh content; the rendered site lives at
+  `https://tinkle.me/schema/` and updates with website image releases.
 
 ## BSR resource
 

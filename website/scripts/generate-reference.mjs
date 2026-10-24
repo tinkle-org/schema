@@ -6,12 +6,20 @@
  *   1. `buf build --as-file-descriptor-set -o -#format=json` — emits a
  *      FileDescriptorSet as JSON, including source comments and locations.
  *   2. Walk every tinkle/ file (imported google.protobuf types are indexed too,
- *      for linking) and emit one Docusaurus MDX page per service, RPC method,
- *      message and enum, plus an index page, category metadata and a summary
- *      JSON consumed by the landing page.
+ *      for linking) and emit one Nextra MDX page per service, RPC method,
+ *      message and enum, plus an index page and Nextra `_meta.js` files for
+ *      sidebar structure.
  *
- * Output is deterministic: identical descriptor input produces identical
- * output. Stale generated files are deleted before writing.
+ * Output targets a Nextra `content/` directory (consumed by the main website
+ * at tinkle.me/schema/ — see tinkle-org/tinkle-website-nextjs). Paths:
+ *   --out <dir>        content root (default: <repo>/website/content)
+ *   --proto-dir <dir>  protobuf source root (default: <repo>)
+ *   --repo owner/name  repository slug used for "Source" links
+ *
+ * Internal links are emitted as `/schema/...` (the site-root path under which
+ * the main website mounts this content). Output is deterministic: identical
+ * descriptor input produces identical output. Stale generated files are
+ * deleted before writing.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -21,10 +29,20 @@ import { fileURLToPath } from 'node:url';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const websiteRoot = path.resolve(scriptDir, '..');
-const repoRoot = path.resolve(websiteRoot, '..');
-const docsRoot = path.join(websiteRoot, 'docs');
-const outDocs = path.join(docsRoot, 'reference');
-const outSummaryDir = path.join(websiteRoot, 'src', 'lib');
+
+// -- CLI ------------------------------------------------------------------
+
+const argv = process.argv.slice(2);
+function arg(name) {
+  const i = argv.indexOf(name);
+  return i !== -1 && argv[i + 1] ? argv[i + 1] : undefined;
+}
+
+const repoRootArg = arg('--proto-dir') ?? process.env.SCHEMA_PROTO_DIR ?? path.resolve(websiteRoot, '..');
+const contentRoot =
+  arg('--out') ?? process.env.SCHEMA_CONTENT_DIR ?? path.join(websiteRoot, 'content');
+const outDocs = path.join(contentRoot, 'reference');
+const LINK_BASE = (arg('--link-base') ?? process.env.SCHEMA_LINK_BASE ?? '/schema').replace(/\/+$/, '');
 
 const PACKAGE = 'tinkle.v1';
 const PKG_PREFIX = `${PACKAGE}.`;
@@ -35,10 +53,10 @@ const WKB_DOCS_URL = 'https://protobuf.dev/reference/protobuf/google.protobuf/';
 // ---------------------------------------------------------------------------
 
 function resolveRepo() {
-  const fallback = process.env.DOCS_REPO ?? 'tinkle-org/tinkle-proto';
+  const fallback = arg('--repo') ?? process.env.DOCS_REPO ?? 'tinkle-org/tinkle-proto';
   try {
     const raw = execFileSync('git', ['config', '--get', 'remote.origin.url'], {
-      cwd: repoRoot,
+      cwd: repoRootArg,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();
@@ -61,7 +79,7 @@ function buildDescriptorSet() {
   const stdout = execFileSync(
     'buf',
     ['build', '--as-file-descriptor-set', '-o', '-#format=json'],
-    { cwd: repoRoot, maxBuffer: 1 << 26, encoding: 'utf8' },
+    { cwd: repoRootArg, maxBuffer: 1 << 26, encoding: 'utf8' },
   );
   return JSON.parse(stdout);
 }
@@ -232,7 +250,7 @@ function linkFor(full) {
   const rest = full.slice(PKG_PREFIX.length);
   return {
     text: rest,
-    url: `/reference/${entry.kind === 'enum' ? 'enums' : 'messages'}/${rest}/`,
+    url: `${LINK_BASE}/reference/${entry.kind === 'enum' ? 'enums' : 'messages'}/${rest}`,
   };
 }
 
@@ -320,7 +338,7 @@ function addRef(targetFull, ref) {
 function collectRefs() {
   for (const entry of registry.values()) {
     if (entry.kind === 'service' || !isOwned(entry)) continue;
-    const ownerBase = `/reference/${entry.kind === 'enum' ? 'enums' : 'messages'}/${entry.full.slice(PKG_PREFIX.length)}/`;
+    const ownerBase = `${LINK_BASE}/reference/${entry.kind === 'enum' ? 'enums' : 'messages'}/${entry.full.slice(PKG_PREFIX.length)}`;
     const fields = entry.kind === 'message' ? entry.msg.field ?? [] : [];
     for (const field of fields) {
       if (['TYPE_MESSAGE', 'TYPE_GROUP', 'TYPE_ENUM'].includes(field.type)) {
@@ -348,9 +366,9 @@ function collectRefs() {
     }
   }
   for (const s of services) {
-    const url = `/reference/methods/${serviceSlugMap.get(s.name)}/`;
+    const url = `${LINK_BASE}/reference/methods/${serviceSlugMap.get(s.name)}`;
     for (const m of s.svc.method ?? []) {
-      const methodUrl = `${url}${methodSlug(m.name)}/`;
+      const methodUrl = `${url}/${methodSlug(m.name)}`;
       addRef(m.inputType.replace(/^\./, ''), {
         label: `${s.name}.${m.name}`,
         url: methodUrl,
@@ -386,26 +404,33 @@ function referencedBy(full) {
 // Emission helpers
 // ---------------------------------------------------------------------------
 
-function writePage(rel, { title, description = '', sidebar_label = '', sidebar_position = null }, body) {
+function writePage(rel, { title, description = '', asIndexPage = false }, body) {
   const file = path.join(outDocs, rel);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const front =
     '---\n' +
     `title: "${yamlQuote(title)}"\n` +
     (description ? `description: "${yamlQuote(description)}"\n` : '') +
-    (sidebar_label ? `sidebar_label: "${yamlQuote(sidebar_label)}"\n` : '') +
-    (sidebar_position != null ? `sidebar_position: ${sidebar_position}\n` : '') +
+    (asIndexPage ? 'asIndexPage: true\n' : '') +
     '---\n';
   fs.writeFileSync(file, front + body, 'utf8');
 }
 
-function categoryMeta(dir, label, position, linkDocId = null) {
-  const file = path.join(outDocs, dir, '_category_.json');
+/** Emit a Nextra `_meta.js` for sidebar structure/ordering. */
+function writeMeta(dir, entries) {
+  const file = path.join(outDocs, dir, '_meta.js');
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const payload = linkDocId
-    ? { label, position, link: { type: 'doc', id: linkDocId } }
-    : { label, position };
-  fs.writeFileSync(file, JSON.stringify(payload, null, 2) + '\n', 'utf8');
+  const lines = Object.entries(entries).map(([key, value]) => {
+    if (typeof value === 'string') return `  ${JSON.stringify(key)}: ${JSON.stringify(value)},`;
+    // Object form: { title, items? }
+    const props = [`title: ${JSON.stringify(value.title)}`];
+    return `  ${JSON.stringify(key)}: { ${props.join(', ')} },`;
+  });
+  fs.writeFileSync(
+    file,
+    `// Generated by website/scripts/generate-reference.mjs — do not edit.\nexport default {\n${lines.join('\n')}\n}\n`,
+    'utf8',
+  );
 }
 
 function firstSentence(text) {
@@ -466,9 +491,6 @@ function buildFieldTable(full) {
 // ---------------------------------------------------------------------------
 
 function writeServicePages() {
-  categoryMeta('', 'Schema Reference', 4);
-  categoryMeta('services', 'Services', 2);
-
   services.forEach((service, si) => {
     const slug = serviceSlugMap.get(service.name);
     const body = [];
@@ -479,7 +501,7 @@ function writeServicePages() {
     body.push('## RPC methods\n\n');
     body.push('| Method | Request | Response |\n| --- | --- | --- |\n');
     (service.svc.method ?? []).forEach((method) => {
-      const methodUrl = `/reference/methods/${slug}/${methodSlug(method.name)}/`;
+      const methodUrl = `${LINK_BASE}/reference/methods/${slug}/${methodSlug(method.name)}`;
       const reqFull = method.inputType.replace(/^\./, '');
       const respFull = method.outputType.replace(/^\./, '');
       const streaming = [];
@@ -496,8 +518,6 @@ function writeServicePages() {
       {
         title: service.name,
         description: firstSentence(desc) || `The ${PACKAGE}.${service.name} gRPC service.`,
-        sidebar_label: service.name,
-        sidebar_position: si + 1,
       },
       body.join(''),
     );
@@ -509,16 +529,13 @@ function writeServicePages() {
 // ---------------------------------------------------------------------------
 
 function writeMethodPages() {
-  categoryMeta('methods', 'Methods', 3);
-
   services.forEach((service, si) => {
     const slug = serviceSlugMap.get(service.name);
-    categoryMeta(`methods/${slug}`, service.name, si + 1);
     const methods = (service.svc.method ?? [])
       .map((m, mi) => ({ m, mi }))
       .sort((a, b) => a.m.name.localeCompare(b.m.name));
 
-    methods.forEach(({ m, mi }, position) => {
+    methods.forEach(({ m, mi }) => {
       const reqFull = m.inputType.replace(/^\./, '');
       const respFull = m.outputType.replace(/^\./, '');
       const desc = leading(service.full, [2, mi]).trim();
@@ -527,7 +544,7 @@ function writeMethodPages() {
       body.push(`# ${m.name}\n\n`);
       if (desc) body.push(mdEscape(desc) + '\n\n');
       body.push(
-        `**Service:** [\`${service.name}\`](/reference/services/${slug}/) · ` +
+        `**Service:** [\`${service.name}\`](${LINK_BASE}/reference/services/${slug}) · ` +
           sourceLine(service.file) +
           ' · package `tinkle.v1`\n\n',
       );
@@ -565,8 +582,6 @@ function writeMethodPages() {
         {
           title: `${service.name}.${m.name}`,
           description: firstSentence(desc) || `The ${PACKAGE}.${service.name}.${m.name} RPC.`,
-          sidebar_label: m.name,
-          sidebar_position: position + 1,
         },
         body.join(''),
       );
@@ -579,14 +594,12 @@ function writeMethodPages() {
 // ---------------------------------------------------------------------------
 
 function writeMessagePages() {
-  categoryMeta('messages', 'Messages', 4);
-
   const messages = [...registry.values()].filter(
     (e) => e.kind === 'message' && isOwned(e) && !e.isSynthetic,
   );
   messages.sort((a, b) => a.full.localeCompare(b.full));
 
-  messages.forEach((entry, i) => {
+  messages.forEach((entry) => {
     const rest = entry.full.slice(PKG_PREFIX.length);
     const body = [];
     const desc = leading(entry.full, []).trim();
@@ -638,8 +651,6 @@ function writeMessagePages() {
       {
         title: rest,
         description: firstSentence(desc) || `The ${entry.full} message.`,
-        sidebar_label: entry.short,
-        sidebar_position: i + 1,
       },
       body.join(''),
     );
@@ -668,14 +679,12 @@ function ReservedSectionFromEntry(entry) {
 // ---------------------------------------------------------------------------
 
 function writeEnumPages() {
-  categoryMeta('enums', 'Enums', 5);
-
   const enums = [...registry.values()].filter(
     (e) => e.kind === 'enum' && isOwned(e),
   );
   enums.sort((a, b) => a.full.localeCompare(b.full));
 
-  enums.forEach((entry, i) => {
+  enums.forEach((entry) => {
     const rest = entry.full.slice(PKG_PREFIX.length);
     const body = [];
     const desc = leading(entry.full, []).trim();
@@ -698,8 +707,6 @@ function writeEnumPages() {
       {
         title: rest,
         description: firstSentence(desc) || `The ${entry.full} enum.`,
-        sidebar_label: entry.short,
-        sidebar_position: i + 1,
       },
       body.join(''),
     );
@@ -707,7 +714,7 @@ function writeEnumPages() {
 }
 
 // ---------------------------------------------------------------------------
-// Index page + landing summary
+// Index page + sidebar structure
 // ---------------------------------------------------------------------------
 
 function writeIndexPage() {
@@ -740,7 +747,7 @@ function writeIndexPage() {
     const slug = serviceSlugMap.get(s.name);
     const count = (s.svc.method ?? []).length;
     body.push(
-      `- [${s.name}](/reference/services/${slug}/) — ${count} method${count === 1 ? '' : 's'}\n`,
+      `- [${s.name}](${LINK_BASE}/reference/services/${slug}) — ${count} method${count === 1 ? '' : 's'}\n`,
     );
   }
   body.push('\n');
@@ -761,11 +768,23 @@ function writeIndexPage() {
       title: 'Schema reference',
       description:
         'Generated tinkle.v1 API reference: services, RPC methods, messages and enums.',
-      sidebar_label: 'Overview',
-      sidebar_position: 1,
+      asIndexPage: true,
     },
     body.join(''),
   );
+}
+
+function writeSidebarMeta() {
+  writeMeta('', {
+    index: { title: 'Overview' },
+    services: { title: 'Services' },
+    methods: { title: 'Methods' },
+    messages: { title: 'Messages' },
+    enums: { title: 'Enums' },
+  });
+  writeMeta('methods', Object.fromEntries(
+    services.map((s) => [serviceSlugMap.get(s.name), { title: s.name }]),
+  ));
 }
 
 // ---------------------------------------------------------------------------
@@ -783,6 +802,7 @@ function main() {
   writeMethodPages();
   writeMessagePages();
   writeEnumPages();
+  writeSidebarMeta();
 
   const methodCount = services.reduce((sum, s) => sum + (s.svc.method ?? []).length, 0);
   const messageCount = [...registry.values()].filter(
@@ -793,7 +813,7 @@ function main() {
   ).length;
 
   console.log(
-    `generate-reference: wrote ${1 + services.length + methodCount + messageCount + enumCount} reference pages (${services.length} services, ${methodCount} methods, ${messageCount} messages, ${enumCount} enums) to docs/reference/`,
+    `generate-reference: wrote ${1 + services.length + methodCount + messageCount + enumCount} reference pages (${services.length} services, ${methodCount} methods, ${messageCount} messages, ${enumCount} enums) to ${path.relative(process.cwd(), outDocs) || outDocs}`,
   );
 }
 

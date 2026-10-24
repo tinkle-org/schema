@@ -1,7 +1,6 @@
 ---
 title: Introduction
 description: The tinkle.v1 protobuf contract, how it is published, and how this documentation site relates to the Buf Schema Registry.
-sidebar_position: 1
 ---
 
 The `tinkle.v1` package is the public Protobuf contract of the Tinkle messaging
@@ -16,7 +15,7 @@ there is no upstream mirror; every contract change is authored here.
 | Protobuf source | `tinkle/v1/*.proto` in this repo | Commit |
 | Validation (lint/format/breaking/build) | GitHub Actions on every PR | Every push |
 | Schema distribution (Go/Rust SDKs) | [Buf Schema Registry](https://buf.build/tinklecorp/tinkle-proto) | Release PR merge |
-| This documentation site | GitHub Pages reference generated from descriptors | Every merge to `main` |
+| This documentation site | Generated reference served by the main website at `tinkle.me/schema/` | Website image build |
 
 Key properties:
 
@@ -25,15 +24,15 @@ Key properties:
   when a [release-please](https://github.com/googleapis/release-please) release PR
   is merged, so the registry and its generated SDKs move only on versioned
   releases.
-- **Documentation is generated, not copied.** The [schema reference](/reference)
+- **Documentation is generated, not copied.** The [schema reference](/schema/reference)
   pages are produced from the protobuf descriptor set — including source comments,
   deprecations and reserved definitions — on every site build. Editing prose about
   the contract means editing the `.proto` shebang comments or the narrative guides.
 - **Realtime is an application binding, not a gRPC service.**
   [`tinkle/v1/realtime.proto`](https://github.com/tinkle-org/tinkle-proto/blob/main/tinkle/v1/realtime.proto)
   defines Syntra-application messages carried inside the Syntra
-  `Notification.payload`; the [Realtime guide](/guides/realtime) documents
-  those dispatcher method bindings, with [conformance](/guides/conformance/realtime)
+  `Notification.payload`; the [Realtime guide](/schema/guides/realtime) documents
+  those dispatcher method bindings, with [conformance](/schema/guides/conformance/realtime)
   notes for implementers.
 
 ## Repository layout
@@ -43,8 +42,8 @@ tinkle/v1/        authoritative .proto sources
 conformance/      schema + codec checks (pure Python, no bindings)
 buf.yaml          v2 module config
 REALTIME.md       normative realtime binding doc (canonical)
-website/          this Docusaurus site (independent from the Next.js site)
-.github/          workflows: buf-ci (validate), release-please, docs-ci, docs-deploy
+website/          docs content sources + generators (rendered by the main website)
+.github/          workflows: buf-ci (validate), release-please, docs-ci, docs-build
 ```
 
 ## Status
