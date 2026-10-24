@@ -5,7 +5,7 @@ repository. Read it fully before making any non-trivial change.
 
 ## TL;DR
 
-- **`tinkle-org/tinkle-proto`** is the source of truth for the
+- **`tinkle-org/schema`** is the source of truth for the
   `tinkle.v1` Protobuf contract. The repo contains the `.proto`
   files, Buf config, and the schema docs content (Nextra-rendered).
 - The schema is published to the Buf Schema Registry at
@@ -31,7 +31,7 @@ repository. Read it fully before making any non-trivial change.
 ## Architecture
 
 ```
-tinkle-org/tinkle-proto (this repo)   proto source + Buf config + docs site
+tinkle-org/schema (this repo)   proto source + Buf config + docs site
 ├── tinkle/v1/*.proto                 proto source (owned here)
 ├── conformance/                      schema/codec conformance checks
 ├── buf.yaml                          v2 single-module workspace
@@ -118,7 +118,7 @@ Versions are `{plugin-version}-{module-commit-timestamp}-{module-commit-id}.{plu
 
 ## When asked to "add a new RPC"
 
-1. Open a PR in this repo (`tinkle-org/tinkle-proto`) editing the
+1. Open a PR in this repo (`tinkle-org/schema`) editing the
    relevant `tinkle/v1/*.proto`. Add the request/response messages
    and the method to the appropriate `service` block. Keep the
    Protobuf `package` and `option go_package` lines as they are.

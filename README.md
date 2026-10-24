@@ -14,7 +14,7 @@ Consumers use BSR-generated SDKs; no language-specific generated code is stored 
 ## Architecture
 
 ```
-tinkle-org/tinkle-proto/               ← proto source + Buf config + docs site
+tinkle-org/schema/               ← proto source + Buf config + docs site
 ├── tinkle/v1/*.proto                  authoritative public proto source
 ├── conformance/                       schema/codec checks (pure Python)
 ├── REALTIME.md                        normative realtime binding doc
@@ -185,7 +185,7 @@ npm run check      # internal /schema/... links resolve + structure is sane
 ```
 
 Hand-written pages live in `website/content/` (`index.mdx`,
-`introduction.mdx`, `getting-started/`) and are committed; generated
+`introduction.mdx`) and are committed; generated
 outputs (`website/content/reference/`, `website/content/guides/`) are
 git-ignored. To preview the rendered site, run the website repo locally —
 it fetches this repo and generates the content as part of its build.

@@ -42,7 +42,7 @@ const outGuides = path.join(contentRoot, 'guides');
 const LINK_BASE = (arg('--link-base') ?? process.env.SCHEMA_LINK_BASE ?? '/schema').replace(/\/+$/, '');
 
 function gitRepo() {
-  const fallback = arg('--repo') ?? process.env.DOCS_REPO ?? 'tinkle-org/tinkle-proto';
+  const fallback = arg('--repo') ?? process.env.DOCS_REPO ?? 'tinkle-org/schema';
   try {
     const raw = execFileSync('git', ['config', '--get', 'remote.origin.url'], {
       cwd: repoRootArg,

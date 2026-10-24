@@ -53,7 +53,7 @@ const WKB_DOCS_URL = 'https://protobuf.dev/reference/protobuf/google.protobuf/';
 // ---------------------------------------------------------------------------
 
 function resolveRepo() {
-  const fallback = arg('--repo') ?? process.env.DOCS_REPO ?? 'tinkle-org/tinkle-proto';
+  const fallback = arg('--repo') ?? process.env.DOCS_REPO ?? 'tinkle-org/schema';
   try {
     const raw = execFileSync('git', ['config', '--get', 'remote.origin.url'], {
       cwd: repoRootArg,
@@ -775,8 +775,10 @@ function writeIndexPage() {
 }
 
 function writeSidebarMeta() {
+  // Note: the folder index page (reference/index.mdx, `asIndexPage: true`)
+  // is represented by the parent-level `reference` key, not an `index`
+  // child item — Nextra validates meta keys against folder children.
   writeMeta('', {
-    index: { title: 'Overview' },
     services: { title: 'Services' },
     methods: { title: 'Methods' },
     messages: { title: 'Messages' },

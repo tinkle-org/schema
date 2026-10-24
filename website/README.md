@@ -9,7 +9,7 @@ Hand-written pages + generators producing the Nextra content for the
 - `content/` — the Nextra content directory. This is what the website
   build consumes.
   - Hand-written (committed): `index.mdx` landing, `introduction.mdx`,
-    `getting-started/`, plus `_meta.js` sidebar files.
+    plus `_meta.js` files (page titles; sidebar/pagination disabled).
   - Generated (git-ignored): `reference/`, `guides/` and their
     `_meta.js` files.
 - `scripts/generate-reference.mjs` — descriptor set → reference pages.

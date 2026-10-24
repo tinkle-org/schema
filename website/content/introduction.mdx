@@ -5,7 +5,7 @@ description: The tinkle.v1 protobuf contract, how it is published, and how this 
 
 The `tinkle.v1` package is the public Protobuf contract of the Tinkle messaging
 API. Its single source of truth lives in this repository under
-[`tinkle/v1/`](https://github.com/tinkle-org/tinkle-proto/tree/main/tinkle/v1) —
+[`tinkle/v1/`](https://github.com/tinkle-org/schema/tree/main/tinkle/v1) —
 there is no upstream mirror; every contract change is authored here.
 
 ## What is published where
@@ -29,7 +29,7 @@ Key properties:
   deprecations and reserved definitions — on every site build. Editing prose about
   the contract means editing the `.proto` shebang comments or the narrative guides.
 - **Realtime is an application binding, not a gRPC service.**
-  [`tinkle/v1/realtime.proto`](https://github.com/tinkle-org/tinkle-proto/blob/main/tinkle/v1/realtime.proto)
+  [`tinkle/v1/realtime.proto`](https://github.com/tinkle-org/schema/blob/main/tinkle/v1/realtime.proto)
   defines Syntra-application messages carried inside the Syntra
   `Notification.payload`; the [Realtime guide](/schema/guides/realtime) documents
   those dispatcher method bindings, with [conformance](/schema/guides/conformance/realtime)
