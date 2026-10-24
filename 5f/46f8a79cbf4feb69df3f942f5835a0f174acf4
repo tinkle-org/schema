@@ -1,0 +1,94 @@
+website/src/components/SiteGrid.tsx
+  s_d15d4eff8083ad::t_76316b81fcb38d 1-23
+website/static/img/tinkle.svg
+  s_d15d4eff8083ad::t_69d0ea9a1df25a 1-5
+website/docusaurus.config.ts
+  s_d15d4eff8083ad::t_b759edb6bb07ce 34-39
+  s_d15d4eff8083ad::t_848f5ab3038d1b 1,3,5,12-14,23-24,28-33,40-41,62,80,87,119-120,127,131,134-135
+  s_d15d4eff8083ad::t_e57d66e2fa7714 2,4,6-11,15-22,25-27,42-61,63-79,81-86,88-118,121-126,128-130,132-133,136-140
+AGENTS.md
+  s_d15d4eff8083ad::t_872bf9c72fda8f 8,10,15-17,21-22,24-26
+  s_d15d4eff8083ad::t_2091119775844e 79-94,97,104-113
+  s_d15d4eff8083ad::t_1874538c774960 117,124-126,130-135,146-151,155-165
+  s_d15d4eff8083ad::t_037fee29cfd4c7 31-41,43-47
+.github/dependabot.yml
+  s_d15d4eff8083ad::t_f6f8645111a223 11-19,21-23,27-28
+.release-please-manifest.json
+  s_d15d4eff8083ad::t_6f0bc030ebdc78 1-3
+README.md
+  s_d15d4eff8083ad::t_483cd2686fd02f 6-8,17,19-25,28-36,39-69,74
+  s_d15d4eff8083ad::t_d1ca5a748a4da5 137-146,148,150-156,166-197,208-209,212-214
+website/scripts/sync-docs.mjs
+  s_d15d4eff8083ad::t_a702ae0e8f65e7 1-15,20-60,62-66,69-70,72-84,86-87,89,92-122,128-130,133-137,143-145,148-152,154-156
+  s_d15d4eff8083ad::t_92ecef120b6756 16-19,61,67-68,71,90,123-127,131-132,138-142,146-147,153
+  s_d15d4eff8083ad::t_bae06de3544e89 85,88,91
+website/docs/getting-started/consuming-sdks.md
+  s_d15d4eff8083ad::t_b0922b2f2d5150 1-21,24-71
+  s_d15d4eff8083ad::t_05bb4195b9b7d8 22-23
+version.txt
+  s_d15d4eff8083ad::t_e6c488ce01f367 1
+website/sidebars.ts
+  s_d15d4eff8083ad::t_eefa91ac271f5d 1-11
+.github/workflows/docs-ci.yaml
+  s_d15d4eff8083ad::t_3f8cfd8da92f7c 1-48
+website/README.md
+  s_d15d4eff8083ad::t_4dc8dc3ce38236 1-2
+release-please-config.json
+  s_d15d4eff8083ad::t_f266d7c13b621a 1-11
+.github/workflows/release-please.yaml
+  s_d15d4eff8083ad::t_989f305782216d 1-73
+CONTRIBUTING.md
+  s_d15d4eff8083ad::t_22f65c1186e479 5-7,11-25,27,29-30,32-38,40,42-46,48-50,52,54-63,67-77,81-83,86,92,94-99
+.github/workflows/docs-deploy.yaml
+  s_d15d4eff8083ad::t_c64c9bba9c4ccb 1-68
+website/tsconfig.json
+  s_d15d4eff8083ad::t_6e47d93ebb0be3 1-9
+website/src/css/custom.css
+  s_d15d4eff8083ad::t_fc01930a6be80e 1-62
+website/package.json
+  s_d15d4eff8083ad::t_77755d50ed41b0 1-30
+.github/workflows/buf-ci.yaml
+  s_d15d4eff8083ad::t_28017785e5ffba 40
+  s_d15d4eff8083ad::t_7d8ad3f888dd42 3-6,8,12
+website/src/pages/index.tsx
+  s_d15d4eff8083ad::t_4349ec4ed624ef 4,31,33-35,38-42,45,47-49,56,58-61,63-65,68,71,76,78-86,92,97,101-121
+  s_d15d4eff8083ad::t_aa1fe5525a028d 16
+  s_d15d4eff8083ad::t_79fcdc2d2ab8c2 1-3,5-15,17-30,32,36-37,43-44,46,50-55,57,62,66-67,69-70,72-75,77,87-91,93-96,98-100,122-128
+website/docs/getting-started/_category_.json
+  s_d15d4eff8083ad::t_5a4a65881b87da 1-5
+.gitignore
+  s_d15d4eff8083ad::t_82105d08092441 15-22
+tinkle/v1/common.proto
+  s_d15d4eff8083ad::t_9aa973ad63e8b9 7-9
+website/src/lib/sizing.ts
+  s_d15d4eff8083ad::t_ae532590e7f183 1-5
+website/.gitignore
+  s_d15d4eff8083ad::t_fb8ff8780322b2 1-8
+website/scripts/generate-reference.mjs
+  s_d15d4eff8083ad::t_e8499bfdd606fa 1-6,12,15-26,28-44,46-47,49-72,76-79,83-125,127,129-146,148-162,164-166,168-169,174-175,177-185,188-191,194-200,216,221-229,231-238,245-246,250,303-308,310-311,314-321,324-325,327-329,332-336,338-339,342-350,352,366-369,383-385,387-388,390-393,397-401,403-404,409-411,415-416,419-420,467-470,474,503,522-523,538,572,631,745,828-829
+  s_d15d4eff8083ad::t_cca8af408eb96e 748-749
+  s_d15d4eff8083ad::t_cbeca4b918a070 7-11,13-14,27,45,48,73-75,126,128,147,167,170-173,186-187,192-193,217-220,239,247,249,252-256,258-266,268-269,271-298,309,312-313,322-323,326,330-331,337,340-341,354-355,357-361,363-365,370-378,386,389,394-396,402,405-408,425,427-432,438,447-450,455-456,462-466,471-473,475-480,482-487,489-497,499-502,504-513,519,525,527-528,540,546-547,549,551,553,555-556,558,560,562-565,568-571,573-577,579-592,594-597,599-600,603,605,607-609,611-613,615-617,619-624,626-627,629-630,632-648,650,652-653,655-656,664-665,670-684,687,691-709,711-728,734-735,737-741,746-747,750-751,756-816,824-825,827,830
+  s_d15d4eff8083ad::t_114e8a30239ced 163,176,230,240-244,248,251,257,267,270,299-302,351,353,356,362,379-382,412-414,417-418,421-424,426,433-437,439-446,451-454,457-461,481,488,498,514-518,520-521,524,526,529-537,539,541-545,548,550,552,554,557,559,561,566-567,578,593,598,601-602,604,606,610,614,618,625,628,649,651,654,657-663,666-669,685-686,688-690,710,729-733,736,742-744,752-755,817-823,826
+  s_d15d4eff8083ad::t_64730f4cb2eb04 201-215
+  s_d15d4eff8083ad::t_fe70e1b8a5aaeb 80-82
+website/docs/introduction.md
+  s_d15d4eff8083ad::t_3babc788c01a86 1-56
+website/package-lock.json
+  s_d15d4eff8083ad::t_50c14a4aa6c7e2 1-19113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5f46f8a79cbf4feb69df3f942f5835a0f174acf4",
+  "prompts": {},
+  "sessions": {
+    "s_d15d4eff8083ad": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e91255c3cffeSDcg7pOBRkwfkK",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "oscarlaw <oscarlaw2010@gmail.com>"
+    }
+  }
+}
