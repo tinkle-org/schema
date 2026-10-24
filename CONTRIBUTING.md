@@ -13,7 +13,9 @@ repositories to change the contract.
 2. Merge to `main`. **Nothing is published to the BSR yet** — plain
    merges validate only. The `docs-build` workflow regenerates and
    validates the docs content, then dispatches an update to the website
-   repository.
+   repository when `RELEASE_PLEASE_TOKEN` is configured (it skips the
+   dispatch without it; the website still picks up the content on its
+   next build).
 3. release-please maintains a Release PR containing
    `version.txt` and `CHANGELOG.md` bumps, assembled from Conventional
    Commits since the last release.

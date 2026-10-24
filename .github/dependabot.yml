@@ -10,15 +10,13 @@ updates:
     # This entry covers updates to:
     #   - bufbuild/buf-action@v1 / bufbuild/buf-setup-action@v1
     #   - actions/checkout
-    #   - actions/setup-node
     #   - googleapis/release-please-action@v4
-    #   - actions/upload-pages-artifact / actions/deploy-pages
     # Note: there is no 'buf' package-ecosystem in dependabot. Our buf.yaml
     # is not a versioned dependency; the buf CLI is pinned via the buf-setup
     # action above. An earlier draft had a 'buf' ecosystem entry, which
     # dependabot rejects as an unknown ecosystem.
 
-  # Schema docs site (Docusaurus). Committed lockfile in website/.
+  # Schema docs content (Nextra). No dependencies in website/, so no lockfile.
   - package-ecosystem: "npm"
     directory: "/website"
     schedule:

@@ -19,10 +19,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createRequire } from 'node:module';
-
-const require = createRequire(import.meta.url);
-const { execFileSync } = require('node:child_process');
+import {
+  mdEscape,
+  resolveContentRoot,
+  resolveLinkBase,
+  resolveRepoRoot,
+  resolveRepoSlug,
+} from './common.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const websiteRoot = path.resolve(scriptDir, '..');
@@ -30,51 +33,14 @@ const websiteRoot = path.resolve(scriptDir, '..');
 // -- CLI ------------------------------------------------------------------
 
 const argv = process.argv.slice(2);
-function arg(name) {
-  const i = argv.indexOf(name);
-  return i !== -1 && argv[i + 1] ? argv[i + 1] : undefined;
-}
 
-const repoRootArg = arg('--proto-dir') ?? process.env.SCHEMA_PROTO_DIR ?? path.resolve(websiteRoot, '..');
-const contentRoot =
-  arg('--out') ?? process.env.SCHEMA_CONTENT_DIR ?? path.join(websiteRoot, 'content');
+const repoRootArg = resolveRepoRoot(argv, websiteRoot);
+const contentRoot = resolveContentRoot(argv, websiteRoot);
 const outGuides = path.join(contentRoot, 'guides');
-const LINK_BASE = (arg('--link-base') ?? process.env.SCHEMA_LINK_BASE ?? '/schema').replace(/\/+$/, '');
+const LINK_BASE = resolveLinkBase(argv);
 
-function gitRepo() {
-  const fallback = arg('--repo') ?? process.env.DOCS_REPO ?? 'tinkle-org/schema';
-  try {
-    const raw = execFileSync('git', ['config', '--get', 'remote.origin.url'], {
-      cwd: repoRootArg,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-    const match = raw.match(/(?:github\.com[/:])([^/]+)\/([^.@/#]+?)(?:\.git)?$/);
-    if (match) return `${match[1]}/${match[2]}`;
-  } catch {
-    /* fall through */
-  }
-  return fallback;
-}
-
-const REPO = gitRepo();
+const REPO = resolveRepoSlug({ argv, repoRootArg });
 const GITHUB_MAIN = `https://github.com/${REPO}/blob/main`;
-
-// --------------------------------------------------------------- utilities
-
-function mdEscape(text) {
-  return String(text)
-    .split(/(```[\s\S]*?```|`[^`\n]*`)/g)
-    .map((part) =>
-      part.startsWith('`')
-        ? part
-        : part
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/{/g, '&#123;'),
-    )
-    .join('');
-}
 
 /** Strip the first top-level `# heading`; return {title, description, body}. */
 function splitTitle(source, title, description) {
@@ -89,8 +55,8 @@ function splitTitle(source, title, description) {
 /** Turn repo-relative source-file links into GitHub links, escape MDX. */
 function preprocess(body, { sourceDir }) {
   const rewritten = String(body).replace(
-    /\]\(([^)#\s]+)\)/g,
-    (match, target) => {
+    /\]\(([^)\s#]+)(#[^)\s]*)?(\s+["'][^"')]*["'])?\)/g,
+    (match, target, anchor = '', title = '') => {
       if (
         /^https?:\/\//.test(target) ||
         target.startsWith('#') ||
@@ -99,14 +65,15 @@ function preprocess(body, { sourceDir }) {
         return match;
       }
       const resolved = path.posix.normalize(path.posix.join(sourceDir, target));
+      const suffix = `${anchor}${title}`;
       if (resolved === 'REALTIME.md') {
-        return `](${LINK_BASE}/guides/realtime)`;
+        return `](${LINK_BASE}/guides/realtime${suffix})`;
       }
       if (resolved === 'conformance/realtime.md') {
-        return `](${LINK_BASE}/guides/conformance/realtime)`;
+        return `](${LINK_BASE}/guides/conformance/realtime${suffix})`;
       }
-      if (resolved.startsWith('tinkle/') || /\.(py|toml|ya?ml|json|txt)$/.test(resolved)) {
-        return `](${GITHUB_MAIN}/${resolved})`;
+      if (resolved.startsWith('tinkle/') || /\.(py|toml|ya?ml|json|txt|md|sh|mjs)$/.test(resolved)) {
+        return `](${GITHUB_MAIN}/${resolved}${suffix})`;
       }
       return match;
     },

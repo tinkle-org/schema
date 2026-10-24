@@ -22,7 +22,8 @@ on:
       - '.github/workflows/docs-*.yaml'
   workflow_dispatch:
 
-permissions: {}
+permissions:
+  contents: read
 
 concurrency:
   group: docs-build-${{ github.ref }}

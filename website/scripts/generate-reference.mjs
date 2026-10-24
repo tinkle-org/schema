@@ -26,6 +26,13 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  mdEscape,
+  resolveContentRoot,
+  resolveLinkBase,
+  resolveRepoRoot,
+  resolveRepoSlug,
+} from './common.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const websiteRoot = path.resolve(scriptDir, '..');
@@ -33,16 +40,11 @@ const websiteRoot = path.resolve(scriptDir, '..');
 // -- CLI ------------------------------------------------------------------
 
 const argv = process.argv.slice(2);
-function arg(name) {
-  const i = argv.indexOf(name);
-  return i !== -1 && argv[i + 1] ? argv[i + 1] : undefined;
-}
 
-const repoRootArg = arg('--proto-dir') ?? process.env.SCHEMA_PROTO_DIR ?? path.resolve(websiteRoot, '..');
-const contentRoot =
-  arg('--out') ?? process.env.SCHEMA_CONTENT_DIR ?? path.join(websiteRoot, 'content');
+const repoRootArg = resolveRepoRoot(argv, websiteRoot);
+const contentRoot = resolveContentRoot(argv, websiteRoot);
 const outDocs = path.join(contentRoot, 'reference');
-const LINK_BASE = (arg('--link-base') ?? process.env.SCHEMA_LINK_BASE ?? '/schema').replace(/\/+$/, '');
+const LINK_BASE = resolveLinkBase(argv);
 
 const PACKAGE = 'tinkle.v1';
 const PKG_PREFIX = `${PACKAGE}.`;
@@ -52,23 +54,7 @@ const WKB_DOCS_URL = 'https://protobuf.dev/reference/protobuf/google.protobuf/';
 // Repository id (for source links)
 // ---------------------------------------------------------------------------
 
-function resolveRepo() {
-  const fallback = arg('--repo') ?? process.env.DOCS_REPO ?? 'tinkle-org/schema';
-  try {
-    const raw = execFileSync('git', ['config', '--get', 'remote.origin.url'], {
-      cwd: repoRootArg,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-    const match = raw.match(/(?:github\.com[/:])([^/]+)\/([^.@/#]+?)(?:\.git)?$/);
-    if (match) return `${match[1]}/${match[2]}`;
-  } catch {
-    /* fall through to fallback */
-  }
-  return fallback;
-}
-
-const REPO = resolveRepo();
+const REPO = resolveRepoSlug({ argv, repoRootArg });
 const GITHUB_MAIN = `https://github.com/${REPO}/blob/main`;
 
 // ---------------------------------------------------------------------------
@@ -184,22 +170,6 @@ function leading(full, suffixPath) {
 // ---------------------------------------------------------------------------
 // Escaping helpers
 // ---------------------------------------------------------------------------
-
-function mdEscape(text) {
-  // Protect fenced code blocks and inline code spans; escape characters that
-  // MDX would treat as JSX/HTML everywhere else.
-  return String(text)
-    .split(/(```[\s\S]*?```|`[^`\n]*`)/g)
-    .map((part) =>
-      part.startsWith('`')
-        ? part
-        : part
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/{/g, '&#123;'),
-    )
-    .join('');
-}
 
 function cell(text) {
   return mdEscape(text)

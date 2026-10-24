@@ -44,6 +44,7 @@ function resolveLink(href) {
   if (fs.existsSync(`${base}.mdx`)) return `${base}.mdx`;
   if (fs.existsSync(`${base}.md`)) return `${base}.md`;
   if (fs.existsSync(path.join(base, 'index.mdx'))) return path.join(base, 'index.mdx');
+  if (fs.existsSync(path.join(base, 'index.md'))) return path.join(base, 'index.md');
   return null;
 }
 
@@ -53,10 +54,13 @@ function collectLinks(file) {
   const outsideFences = source.split(/(```[\s\S]*?```)/g).map((part, i) =>
     i % 2 === 1 ? '' : part,
   ).join('');
+  // Skip inline code spans too, so link-shaped text in `code` is ignored.
+  // This keeps the `](` of real links intact.
+  const outsideCode = outsideFences.replace(/`[^`\n]*`/g, '');
   const links = [];
-  const re = /\]\(([^)\s]+)\)/g;
+  const re = /\]\(([^)\s]+)(?:\s+["'][^"')]*["'])?\)/g;
   let match;
-  while ((match = re.exec(outsideFences))) {
+  while ((match = re.exec(outsideCode))) {
     links.push(match[1]);
   }
   return links;
@@ -69,17 +73,16 @@ function checkLinks() {
       if (/^https?:\/\//.test(href) || href.startsWith('mailto:')) continue;
       if (href.startsWith('#')) continue;
       const [pathPart] = href.split('#');
-      if (!pathPart.startsWith(MOUNT) || pathPart === MOUNT && href.length > MOUNT.length && !href.startsWith(`${MOUNT}/`)) {
+      const isMounted = pathPart === MOUNT || pathPart.startsWith(`${MOUNT}/`);
+      if (!isMounted) {
         // Only enforce site-mounted links; anything else that is neither
         // absolute-external nor an anchor is suspicious.
         errors.push(`${path.relative(contentRoot, file)}: unexpected link target "${href}"`);
         continue;
       }
-      if (pathPart === MOUNT || pathPart.startsWith(`${MOUNT}/`)) {
-        checked += 1;
-        if (!resolveLink(pathPart)) {
-          errors.push(`${path.relative(contentRoot, file)}: broken link "${href}"`);
-        }
+      checked += 1;
+      if (!resolveLink(pathPart)) {
+        errors.push(`${path.relative(contentRoot, file)}: broken link "${href}"`);
       }
     }
   }

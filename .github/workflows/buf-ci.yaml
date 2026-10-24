@@ -9,7 +9,8 @@ name: buf-ci
 #   Go:   go get buf.build/gen/go/tinkle-org/schema/{protocolbuffers,grpc}/go
 #   Rust: cargo add --registry buf tinkle-org_schema_bufbuild_community_tonic-prost
 #
-# BUF_TOKEN is used by release-please.yaml (not this workflow).
+# BUF_TOKEN authenticates buf-action here and is also used by
+# release-please.yaml for publishing.
 
 on:
   push:

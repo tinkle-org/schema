@@ -68,6 +68,7 @@ jobs:
           TAG: ${{ needs.release.outputs.tag_name }}
         run: |
           buf push \
+            --create --create-visibility public \
             --label "${TAG}" \
             --label "main" \
             --source-control-url "https://github.com/${GITHUB_REPOSITORY}/commit/${{ needs.release.outputs.sha }}"

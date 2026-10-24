@@ -18,7 +18,8 @@ on:
       - 'conformance/realtime.md'
       - '.github/workflows/docs-*.yaml'
 
-permissions: {}
+permissions:
+  contents: read
 
 concurrency:
   group: docs-ci-${{ github.ref }}

@@ -37,5 +37,7 @@ The website repo fetches this repo (default ref `main`, overridable via
 `SCHEMA_DOCS_REF`) at its build time and runs the same generator scripts
 with `--out content` and `--proto-dir <checkout>`. Internal links are
 emitted with the `/schema` prefix — that is the path under which the
-website mounts this content. Changing the prefix requires updating the
-website's `contentDirBasePath` too.
+website mounts this content. The prefix is set by `SCHEMA_LINK_BASE` or
+`--link-base` in the generators (read by `check-content` from the env
+var); changing it requires updating the website's
+`contentDirBasePath` too.
