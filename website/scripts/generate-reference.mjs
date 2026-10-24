@@ -752,8 +752,8 @@ function writeIndexPage() {
   }
   body.push('\n');
   body.push(
-    'The sidebar lists every message and enum; method pages inline compact ' +
-      'field tables for request and response types.\n\n',
+    'Every service, message and enum has its own page; method pages inline ' +
+      'compact field tables for request and response types.\n\n',
   );
   body.push(
     mdEscape(
