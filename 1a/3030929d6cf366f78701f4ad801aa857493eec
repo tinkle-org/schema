@@ -1,0 +1,25 @@
+website/content/index.mdx
+  s_81352b22cc4fe6::t_58dae5b78de65b 16
+CONTRIBUTING.md
+  s_81352b22cc4fe6::t_40909dc6c53353 81-82
+  s_81352b22cc4fe6::t_a16bf688bf7290 13-20,24-29
+website/content/introduction.mdx
+  s_81352b22cc4fe6::t_13cf0ca88236a4 17
+  s_81352b22cc4fe6::t_096b30be2c3cf2 20-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1a3030929d6cf366f78701f4ad801aa857493eec",
+  "prompts": {},
+  "sessions": {
+    "s_81352b22cc4fe6": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e8fdeddc3ffeVmLkkhc3XadvmM",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "oscarlaw <oscarlaw2010@gmail.com>"
+    }
+  }
+}
