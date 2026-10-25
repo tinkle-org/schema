@@ -1,16 +1,19 @@
 name: release-please
 
 # Releases are versioned once per schema and opened/maintained by
-# release-please (driven by Conventional Commits on main). Merging the
-# Release PR is what publishes: the publish job runs buf push against
-# the exact released commit, labeled with the release tag (plus the
-# default "main" label so @main tracks the latest release).
-#
-# Plain merges to main validate the schema but never publish to the
-# Buf Schema Registry; buf-ci.yaml therefore never pushes.
+# release-please (driven by Conventional Commits on main). Merging a
+# Release PR tags the release (e.g. v1.2.0) and updates version.txt +
+# CHANGELOG.md. BSR publishing is primarily trunk-based via buf-ci.yaml
+# on every main push, so other repos can test against BSR commits and
+# the moving main label before a formal release. This workflow retains
+# a version-label job because tag pushes do not always trigger buf-ci:
+# tags created with GITHUB_TOKEN do not trigger workflows, and
+# version-only tag commits can miss buf-ci's proto paths filter. The job
+# below is idempotent with any tag-triggered buf-ci run.
 #
 # Secrets:
-#   BUF_TOKEN              required            BSR API token for tinkle-org
+#   BUF_TOKEN                required            BSR API token for tinkle-org
+#                                              (version-label publish job)
 #   RELEASE_PLEASE_TOKEN   recommended (PAT)   GitHub PAT so Release PRs
 #                                              trigger repo CI checks
 #                                              (GITHUB_TOKEN PRs do not).
@@ -18,6 +21,12 @@ name: release-please
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to publish (e.g. v1.2.0); must already exist, never created here'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -31,6 +40,7 @@ concurrency:
 jobs:
   release:
     name: Maintain Release PR
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
@@ -45,30 +55,60 @@ jobs:
           manifest-file: .release-please-manifest.json
 
   publish:
-    name: Publish released schema to BSR
+    name: Publish version label to BSR
     needs: release
-    if: needs.release.outputs.release_created == 'true'
+    if: always() && (needs.release.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - name: Checkout the released commit
+      - name: Checkout with tags
         uses: actions/checkout@v7
         with:
-          ref: ${{ needs.release.outputs.sha }}
+          fetch-depth: 0
+      - name: Resolve and validate tag
+        id: target
+        env:
+          AUTO_TAG: ${{ needs.release.outputs.tag_name }}
+          AUTO_SHA: ${{ needs.release.outputs.sha }}
+          MANUAL_TAG: ${{ inputs.tag }}
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            TAG="${MANUAL_TAG}"
+            if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "::error::tag must look like vX.Y.Z (got '${TAG}')"
+              exit 1
+            fi
+            if ! git rev-parse --verify --quiet "refs/tags/${TAG}^{commit}" >/dev/null; then
+              echo "::error::tag ${TAG} does not exist locally; it must already exist, never created here"
+              exit 1
+            fi
+            SHA="$(git rev-parse "refs/tags/${TAG}^{commit}")"
+          else
+            TAG="${AUTO_TAG}"
+            SHA="${AUTO_SHA}"
+            if [ -z "$TAG" ] || [ -z "$SHA" ]; then
+              echo "::error::missing release outputs for automatic publish"
+              exit 1
+            fi
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+      - name: Checkout the target commit
+        run: git checkout "${{ steps.target.outputs.sha }}"
       - name: Set up Buf
         uses: bufbuild/buf-setup-action@v1
       - name: Validate the released schema
         run: |
           buf build
           buf lint
-      - name: Publish to the BSR
+      - name: Publish version label to the BSR
         env:
           BUF_TOKEN: ${{ secrets.BUF_TOKEN }}
-          TAG: ${{ needs.release.outputs.tag_name }}
+          TAG: ${{ steps.target.outputs.tag }}
+          SHA: ${{ steps.target.outputs.sha }}
         run: |
           buf push \
             --create --create-visibility public \
             --label "${TAG}" \
-            --label "main" \
-            --source-control-url "https://github.com/${GITHUB_REPOSITORY}/commit/${{ needs.release.outputs.sha }}"
+            --source-control-url "https://github.com/${GITHUB_REPOSITORY}/commit/${SHA}"

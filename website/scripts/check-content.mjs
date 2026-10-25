@@ -96,7 +96,7 @@ function checkStructure() {
   if (!fs.existsSync(path.join(contentRoot, '_meta.js'))) {
     errors.push('content/_meta.js (root sidebar structure) is missing');
   }
-  for (const section of ['reference', 'guides']) {
+  for (const section of ['reference']) {
     if (!fs.existsSync(path.join(contentRoot, section))) {
       warnings.push(`content/${section}/ has not been generated yet (run npm run generate)`);
       continue;

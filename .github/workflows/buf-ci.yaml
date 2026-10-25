@@ -1,20 +1,24 @@
 name: buf-ci
 
-# Validates the proto source on every PR and push (build, lint, format,
-# breaking; PR summary comments included). This workflow does NOT publish:
-# publication to the Buf Schema Registry is release-gated and handled by
-# release-please.yaml when a Release PR merge creates a tagged release.
+# Trunk-based publishing: PRs validate only, merges to main publish.
+# On pull_request the action runs build, lint, format, breaking plus
+# a summary comment and never touches the BSR. On push to main it runs
+# build plus buf push, publishing every named module with matching
+# Git metadata so other repos can test against BSR commits and the
+# moving main label. Tag pushes (v*) publish version labels when they
+# trigger this workflow; release-please.yaml also ensures the version
+# label for GITHUB_TOKEN-created or paths-filtered tags. Delete events
+# archive the matching BSR labels.
 #
-# Consumers (Go/Rust) get SDK updates via published releases:
-#   Go:   go get buf.build/gen/go/tinkle-org/schema/{protocolbuffers,grpc}/go
+# Consumers (Go/Rust) test unreleased changes via BSR commits/main:
+#   Go:   go get buf.build/gen/go/tinkle-org/schema/protocolbuffers/go@main
 #   Rust: cargo add --registry buf tinkle-org_schema_bufbuild_community_tonic-prost
-#
-# BUF_TOKEN authenticates buf-action here and is also used by
-# release-please.yaml for publishing.
+# Formal versions remain Git tags + release-please releases.
 
 on:
   push:
     branches: [main]
+    tags: ['v*']
     paths:
       - 'tinkle/**'
       - 'buf.yaml'
@@ -38,9 +42,4 @@ jobs:
       - uses: bufbuild/buf-action@v1
         with:
           token: ${{ secrets.BUF_TOKEN }}
-          push: false
-          # The action archives by default on `delete` events (this workflow
-          # listens to branch/tag deletes). Never mutate BSR state here:
-          # archiving is part of the release-publishing workflow, not CI.
-          archive: false
           push_create_visibility: public

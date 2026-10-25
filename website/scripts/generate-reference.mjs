@@ -736,7 +736,7 @@ function writeIndexPage() {
   );
   body.push(
     mdEscape(
-      'This reference regenerates on every site build from the protobuf source of truth and reflects the current schema. Published SDK changes are gated to schema releases (see the introduction).',
+      'This reference regenerates on every site build from the protobuf source of truth and reflects the current schema. Published SDKs track trunk-based BSR pushes and version labels (see the introduction).',
     ) +
       '\n',
   );

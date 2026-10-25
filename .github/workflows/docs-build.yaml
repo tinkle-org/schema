@@ -1,7 +1,7 @@
 name: docs-build
 
-# On merges to main: regenerate the docs content (reference + synced
-# guides), validate it, and notify the consuming website
+# On merges to main: regenerate the schema reference,
+# validate the content, and notify the consuming website
 # (tinkle-org/tinkle-website-nextjs) via a `repository_dispatch` so it can
 # rebuild and re-validate the site with fresh schema docs.
 #
@@ -17,8 +17,6 @@ on:
       - 'buf.yaml'
       - 'buf.lock'
       - 'website/**'
-      - 'REALTIME.md'
-      - 'conformance/realtime.md'
       - '.github/workflows/docs-*.yaml'
   workflow_dispatch:
 

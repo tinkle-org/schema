@@ -1,11 +1,6 @@
 #!/usr/bin/env node
 /**
- * Shared helpers for the schema docs generators.
- *
- * `generate-reference.mjs` and `sync-docs.mjs` previously duplicated the
- * CLI/`LINK_BASE` handling, the repository-slug detection, and the MDX
- * escaping. They now import from here so the two generators cannot drift
- * on escaping or link rules.
+ * CLI options, repository-slug detection, and MDX escaping for schema docs.
  */
 
 import { execFileSync } from 'node:child_process';

@@ -10,22 +10,23 @@ repositories to change the contract.
 
 1. PR against `main` editing `tinkle/v1/*.proto`. CI runs
    `build`/`lint`/`format`/`breaking` and posts a summary comment.
-2. Merge to `main`. **Nothing is published to the BSR yet** — plain
-   merges validate only. The `docs-build` workflow regenerates and
-   validates the docs content, then dispatches an update to the website
-   repository when `RELEASE_PLEASE_TOKEN` is configured (it skips the
-   dispatch without it; the website still picks up the content on its
-   next build).
+2. Merge to `main`. `buf-ci.yaml` validates and, when the push matches
+   its paths (`tinkle/**`, `buf.yaml`, `buf.lock`, `LICENSE`, `README.md`),
+   publishes to the BSR with Git metadata and the moving `main` label, so
+   other repos can test against the BSR commit or `@main`. The `docs-build`
+   workflow regenerates and validates the docs content, then dispatches an
+   update to the website repository when `RELEASE_PLEASE_TOKEN` is configured
+   (it skips the dispatch without it; the website still picks up the content
+   on its next build).
 3. release-please maintains a Release PR containing
    `version.txt` and `CHANGELOG.md` bumps, assembled from Conventional
    Commits since the last release.
-4. **Merging the Release PR publishes:** the release workflow checks
-   out the released commit, validates it (`buf build`, `buf lint`),
-   and `buf push`es it to
-   [buf.build/tinkle-org/schema](https://buf.build/tinkle-org/schema)
-   labeled with the release tag (and the `main` default label).
-   Consumers then pick up regenerated Go/Rust SDKs via `go get @latest`
-   or `cargo add --registry buf`.
+4. **Merging the Release PR versions:** the release workflow tags the release
+   (e.g. `v1.2.0`). `v*` tag pushes publish the version label via `buf-ci.yaml`;
+   the `release-please.yaml` version-label job covers tags that do not trigger
+   `buf-ci` (GITHUB_TOKEN-created or paths-filtered tags) and supports manual
+   tag recovery. Consumers then pick up regenerated Go/Rust SDKs via a BSR
+   commit, `@main`, or a version label.
 
 ## Conventional Commits
 
@@ -49,14 +50,14 @@ change reference content, edit the `.proto` doc comments (every message,
 field, enum value, service and method's leading `//` comment) or, for
 generator behavior, `website/scripts/generate-reference.mjs`.
 
-Narrative documents stay canonical at the repo root (`REALTIME.md`,
-`conformance/realtime.md`) and are synced into the content at build time;
-edit them there. Hand-written site pages live in `website/content/`.
+Hand-written site pages live in `website/content/`. Keep them focused on the
+transport-independent schema and link to the generated reference for contract
+details. Runtime transport bindings belong in their implementation repositories.
 
 Content commands (from `website/`; no dependencies to install):
 
 ```bash
-npm run generate   # descriptor set → content/reference/ + synced guides
+npm run generate   # descriptor set → content/reference/
 npm run check      # internal /schema/... links resolve; structure is sane
 ```
 
@@ -77,7 +78,8 @@ commit them.
    - tags the release,
    - checks out the released sha,
    - validates (`buf build`, `buf lint`),
-   - publishes to the BSR with the release tag label.
+   - publishes the version label to the BSR (idempotent with any
+     tag-triggered `buf-ci.yaml` run).
 4. Consumers pick up new SDK versions from the BSR; the docs site
    reference is already updated (it follows `main`, not releases).
 
@@ -98,7 +100,7 @@ git push origin HEAD
 |---|---|
 | Add/change an RPC or message | `tinkle/v1/*.proto` here |
 | Docs content generation/checks | `website/scripts/*.mjs` |
-| Narrative/protocol docs | `REALTIME.md`, `conformance/realtime.md` |
-| Add conformance checks | `conformance/test_realtime_schema.py` |
+| Schema overview pages | `website/content/` |
+| Add conformance checks | `conformance/test_*.py` |
 | Adjust release behavior | `release-please-config.json`, `.github/workflows/release-please.yaml` |
 | Docs styling/navigation | `tinkle-org/tinkle-website-nextjs` (not this repo) |
