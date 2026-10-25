@@ -230,9 +230,9 @@ implementation-internal.
 See the [generated reference](https://tinkle.me/schema/reference) for field and
 method semantics.
 
-Public connectivity bindings are presence-backed in Chorus. Internal replay,
-watch, and presence capabilities also exist beyond this contract; runtime
-bindings are documented in their implementation repositories.
+Public UpdatesService bindings are not implemented in Chorus. Internal
+replay, watch, and presence capabilities exist; runtime bindings are documented
+in their implementation repositories.
 
 To support clients reconciling without a durable feed,
 [`messages.proto`](tinkle/v1/messages.proto) adds `GetMessages` batch fetch by
