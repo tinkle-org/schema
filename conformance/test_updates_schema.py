@@ -171,15 +171,18 @@ class UpdatesSchemaTests(unittest.TestCase):
             ("stream", 1, "STRING", "", False, False),
             ("after_cursor", 2, "UINT64", "", False, False),
             ("limit", 3, "INT32", "", False, False),
+            ("resume_token", 4, "BYTES", "", False, False),
         ])
         self.assert_fields("ReadUpdatesResponse", [
             ("updates", 1, "MESSAGE", "Update", True, False),
             ("replay_floor", 2, "UINT64", "", False, False),
             ("head", 3, "UINT64", "", False, False),
+            ("resume_token", 4, "BYTES", "", False, False),
         ])
         self.assert_fields("FollowUpdatesRequest", [
             ("stream", 1, "STRING", "", False, False),
             ("after_cursor", 2, "UINT64", "", False, False),
+            ("resume_token", 3, "BYTES", "", False, False),
         ])
 
     def test_stream_result_shapes(self):
@@ -188,11 +191,14 @@ class UpdatesSchemaTests(unittest.TestCase):
             ("head", 2, "UINT64", "", False, True),
             ("update", 3, "MESSAGE", "Update", False, False),
             ("rebuild_needed", 4, "MESSAGE", "RebuildNeeded", False, False),
+            ("resume_token", 5, "BYTES", "", False, False),
         ])
         result = self.message("FollowUpdatesResponse")
         self.assertEqual("result", result["oneofDecl"][0]["name"])
-        for field in result["field"][2:]:
+        # update and rebuild_needed share the result oneof; resume_token sits outside it.
+        for field in result["field"][2:4]:
             self.assertEqual(0, field["oneofIndex"])
+        self.assertNotIn("oneofIndex", result["field"][4])
 
     def test_connectivity_is_separate_from_replay(self):
         self.assert_fields("ConnectivityChanged", [
@@ -224,10 +230,15 @@ class UpdatesSchemaTests(unittest.TestCase):
         self.assertEqual({"google/protobuf/timestamp.proto", "tinkle/v1/messages.proto"},
                          set(self.updates["dependency"]))
         forbidden = {"connection_id", "request_id", "handshake", "version", "error", "type"}
+        allowed_bytes = {"resume_token"}
+        token_owners = {"ReadUpdatesRequest", "ReadUpdatesResponse",
+                        "FollowUpdatesRequest", "FollowUpdatesResponse"}
         for message in self.updates["messageType"]:
             for field in message.get("field", []):
                 self.assertNotIn(field["name"], forbidden)
-                self.assertNotEqual("TYPE_BYTES", field["type"])
+                if field["type"] == "TYPE_BYTES":
+                    self.assertIn(field["name"], allowed_bytes)
+                    self.assertIn(message["name"], token_owners)
                 self.assertNotIn("internal.", field.get("typeName", ""))
 
     @staticmethod
@@ -277,6 +288,21 @@ class UpdatesSchemaTests(unittest.TestCase):
             self.assertNotIn("head", self.round_trip(fixture, "FollowUpdatesResponse"))
             fixture["head"] = "0"
             self.assertEqual("0", self.round_trip(fixture, "FollowUpdatesResponse")["head"])
+
+    def test_resume_token_is_opaque_bytes_round_trip(self):
+        # Opaque continuation evidence survives the codec; empty means absent.
+        fixture = {"stream": "user:42", "after_cursor": "1", "resume_token": "AQID"}
+        self.assertEqual("AQID",
+                         self.round_trip(fixture, "ReadUpdatesRequest")["resume_token"])
+        page = {"updates": [], "replay_floor": "0", "head": "1", "resume_token": "AQID"}
+        self.assertEqual("AQID",
+                         self.round_trip(page, "ReadUpdatesResponse")["resume_token"])
+        follow = {"stream": "room:7", "after_cursor": "5", "resume_token": "AQID"}
+        self.assertEqual("AQID",
+                         self.round_trip(follow, "FollowUpdatesRequest")["resume_token"])
+        progress = {"stream": "room:7", "resume_token": "AQID"}
+        self.assertEqual("AQID",
+                         self.round_trip(progress, "FollowUpdatesResponse")["resume_token"])
 
     def test_connectivity_round_trip(self):
         fixture = {"update": {"user_id": "42", "online": True, "known": True,

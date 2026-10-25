@@ -36,6 +36,8 @@ channels, bots, stickers, and help APIs, with shared types in `common.proto`.
 defines `UpdatesService`: `ReadUpdates` returns a replay page,
 `FollowUpdates` streams individual durable updates, progress, and rebuild signals, and
 `ObserveConnectivity` streams ephemeral per-user `ConnectivityChanged` events.
+`ReadUpdates` and `FollowUpdates` carry an opaque `resume_token` alongside the
+applied cursor; clients store it with the checkpoint and return it unchanged.
 See the [reference](/schema/reference) for the contract details.
 
 This repository documents the transport-independent schema. Runtime transport
