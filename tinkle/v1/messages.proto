@@ -16,12 +16,17 @@ option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
 // MessagesService provides client-facing messaging operations.
 service MessagesService {
-  // ---- Dialog & History (5 RPCs) ----
+  // ---- Dialog & History (7 RPCs) ----
 
   // GetDialogs returns the authenticated user's dialog list.
   rpc GetDialogs(GetDialogsRequest) returns (GetDialogsResponse);
   // GetHistory returns message history for a conversation with cursor-based pagination.
   rpc GetHistory(GetHistoryRequest) returns (GetHistoryResponse);
+  // GetMessages fetches specific messages by ID in one conversation.
+  rpc GetMessages(GetMessagesRequest) returns (GetMessagesResponse);
+  // GetTargetChanges lists retained edits, deletions, and revocations of one
+  // conversation strictly after a caller-supplied acceptance position.
+  rpc GetTargetChanges(GetTargetChangesRequest) returns (GetTargetChangesResponse);
   // ReadHistory marks messages as read up to a specified message_id.
   rpc ReadHistory(ReadHistoryRequest) returns (ReadHistoryResponse);
   // DeleteHistory deletes conversation history with optional bilateral revocation.
@@ -201,6 +206,19 @@ enum ChatRestrictedScope {
   CHAT_RESTRICTED_SCOPE_PIN_MESSAGES = 12;
 }
 
+// TargetChangeKind describes how a single message changed in one conversation.
+// It enumerates the mutation markers retained in the enquiry journal at the
+// change's original acceptance position.
+enum TargetChangeKind {
+  TARGET_CHANGE_KIND_UNSPECIFIED = 0;
+  // The message body was edited; TargetChange.message carries the current body.
+  TARGET_CHANGE_KIND_EDITED = 1;
+  // The message was removed for this viewer and peer visibility unchanged for others.
+  TARGET_CHANGE_KIND_DELETED = 2;
+  // The message was removed for every participant (bilateral revocation).
+  TARGET_CHANGE_KIND_REVOKED = 3;
+}
+
 // =============================================================================
 // Core entity messages
 // =============================================================================
@@ -240,6 +258,14 @@ message Message {
   MessageReplies replies = 11;
   bool pinned = 12;
   int32 ttl_period = 13;
+  // accept_seq is the server-assigned acceptance position of this message within
+  // its conversation. It is nonnegative and monotonically increasing per
+  // conversation, and is the ordering and deduplication token for messages in
+  // that conversation; it is not globally comparable across conversations and
+  // is not a replay cursor. Compare and dedup messages per conversation only.
+  // Absent for messages accepted before the token was introduced; treat absent
+  // as "order with date, never as a dedup vote".
+  optional int64 accept_seq = 14;
 }
 
 // MessageReplyHeader contains reply context for a message.
@@ -579,6 +605,85 @@ message GetHistoryResponse {
   repeated Chat chats = 3;
   int32 count = 4;
   optional int64 offset_id_offset = 5;
+  // more_available is the server's confirmation that further history exists
+  // beyond the returned window in the direction the request paginated. False
+  // does not assert that nothing will ever become available, and a true value
+  // never precedes paginating again. Use offset_id_offset or the window's last
+  // message_id for the next request; count alone remains informational.
+  bool more_available = 6;
+}
+
+// GetMessagesRequest fetches specific messages by ID in one conversation.
+message GetMessagesRequest {
+  // peer identifies the conversation the IDs belong to (required). All IDs
+  // must reference this same conversation.
+  PeerInput peer = 1;
+  // message_ids lists message IDs to retrieve, at most 100 per request.
+  repeated int64 message_ids = 2;
+}
+
+// GetMessagesResponse contains the retrieved messages with entity hydration
+// identical in shape to GetHistoryResponse. Messages that cannot be disclosed
+// in full (unknown ID, deleted, revoked, or below the caller's history
+// visibility) are omitted rather than reported as errors; omitted IDs carry no
+// information about their past existence or deletion reason. Returned order is
+// unspecified; compare by message_id and dedup per conversation using accept_seq.
+message GetMessagesResponse {
+  repeated Message messages = 1;
+  repeated User users = 2;
+  repeated Chat chats = 3;
+}
+
+// GetTargetChangesRequest lists retained conversation mutations strictly after
+// one acceptance position. The journal keeps mutations at their original
+// acceptance order; use this to reconcile edits and removals without a durable
+// update feed.
+message GetTargetChangesRequest {
+  // peer identifies the conversation whose changes are listed (required).
+  PeerInput peer = 1;
+  // after_accept_seq is the exclusive lower bound on the conversation's
+  // acceptance positions. Zero lists changes from the start of retained
+  // history; no other paging state is honored.
+  int64 after_accept_seq = 2;
+  // limit bounds one response, 1..500. Zero chooses the deployment's default.
+  // Server budgets may shorten a page further, in which case more_available is set.
+  int32 limit = 3;
+}
+
+// GetTargetChangesResponse carries one page of retained conversation mutations.
+message GetTargetChangesResponse {
+  // changes are ordered ascending by accept_seq. Edits are disclosed with the
+  // current body; deletions and revocations disclose identity and kind only,
+  // never a deleted body. Retention windows may drop older positions entirely:
+  // a page that starts higher than the requested bound does not imply the
+  // skipped past was disclosed, and full-history repair stays the
+  // responsibility of history fetches, not of this response alone.
+  repeated TargetChange changes = 1;
+  // more_available is true when retained changes exist strictly after
+  // last_accept_seq; request the next page with after_accept_seq equal to that
+  // value. False means the caller is caught up to the retained head.
+  bool more_available = 2;
+  // last_accept_seq is the acceptance position of the last returned change,
+  // needed to continue. Zero when the page is empty and means no change was
+  // disclosed; empty pages never entitle ignored state advancement beyond
+  // what last_accept_seq carries.
+  int64 last_accept_seq = 3;
+}
+
+// TargetChange is one retained conversation mutation at one acceptance position.
+message TargetChange {
+  // message_id identifies the message the change applies to.
+  int64 message_id = 1;
+  // kind distinguishes an edit, a one-sided deletion, and a bilateral revocation.
+  TargetChangeKind kind = 2;
+  // message is the authorized hydrated current body; set only for
+  // TARGET_CHANGE_KIND_EDITED and never for deleted or revoked messages.
+  Message message = 3;
+  // accept_seq is the original acceptance position of this mutation within the
+  // conversation, on the same token vocabulary as message.accept_seq; for
+  // edits it matches the returned body's message.accept_seq. Positions are
+  // conversation-local and gapless only within retained history.
+  int64 accept_seq = 4;
 }
 
 // ReadHistoryRequest marks messages as read in a conversation.
