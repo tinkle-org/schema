@@ -36,7 +36,7 @@ channels, bots, stickers, and help APIs, with shared types in `common.proto`.
 defines `UpdatesService`: `ReadUpdates` returns a bounded replay page,
 `FollowUpdates` streams individual durable updates, progress, and rebuild signals, and
 `ObserveConnectivity` streams ephemeral per-user `ConnectivityChanged` events.
-`ReadUpdates` resumes strictly after the caller's applied cursor with `page_size`
+`ReadUpdates` resumes strictly after the caller's applied cursor with `limit`
 and an optional `max_replay_distance` catch-up threshold; responses report the
 replay floor, observed head, and whether more replay remains.
 See the [reference](/schema/reference) for the contract details.

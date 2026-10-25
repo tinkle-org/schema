@@ -170,7 +170,7 @@ class UpdatesSchemaTests(unittest.TestCase):
         self.assert_fields("ReadUpdatesRequest", [
             ("stream", 1, "STRING", "", False, False),
             ("after_cursor", 2, "UINT64", "", False, False),
-            ("page_size", 3, "INT32", "", False, False),
+            ("limit", 3, "INT32", "", False, False),
             ("max_replay_distance", 4, "UINT64", "", False, True),
         ])
         self.assert_fields("ReadUpdatesResponse", [
@@ -284,10 +284,10 @@ class UpdatesSchemaTests(unittest.TestCase):
             self.assertEqual("0", self.round_trip(fixture, "FollowUpdatesResponse")["head"])
 
     def test_bounded_replay_fields_round_trip(self):
-        request = {"stream": "user:42", "after_cursor": "1", "page_size": 100,
+        request = {"stream": "user:42", "after_cursor": "1", "limit": 100,
                    "max_replay_distance": "1000"}
         decoded_request = self.round_trip(request, "ReadUpdatesRequest")
-        self.assertEqual(100, decoded_request["page_size"])
+        self.assertEqual(100, decoded_request["limit"])
         self.assertEqual("1000", decoded_request["max_replay_distance"])
         # Threshold is optional; absent means no caller-imposed catch-up bound.
         minimal = {"stream": "user:42", "after_cursor": "1"}
@@ -315,13 +315,13 @@ class UpdatesSchemaTests(unittest.TestCase):
             self.assertNotEqual(0, self.convert(fixture, "Update", check=False).returncode)
 
     def test_decoding_is_not_semantic_validation(self):
-        # Missing payload, an invalid privacy combination, and a negative page size
+        # Missing payload, an invalid privacy combination, and a negative limit
         # remain representable. Runtime adapters must validate them separately.
         self.assertEqual({}, self.round_trip({}))
         private = {"event_id": "must-not-be-disclosed", "content_omitted": {}}
         self.assertEqual(private, self.round_trip(private))
-        self.assertEqual({"page_size": -1},
-                         self.round_trip({"page_size": -1}, "ReadUpdatesRequest"))
+        self.assertEqual({"limit": -1},
+                         self.round_trip({"limit": -1}, "ReadUpdatesRequest"))
 
 
 if __name__ == "__main__":

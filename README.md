@@ -227,7 +227,7 @@ durable updates, progress, and rebuild signals, and `ObserveConnectivity` stream
 ephemeral per-user `ConnectivityChanged` events. Each `Update` has one payload:
 `MessageRefresh`, `SendAttemptFailed`, `ContentOmitted`, or `ReadStateInvalidated`.
 Message effects, hydration, and order hints belong to the message constructor.
-`ReadUpdates` resumes strictly after the caller's applied cursor with `page_size`
+`ReadUpdates` resumes strictly after the caller's applied cursor with `limit`
 and an optional `max_replay_distance` catch-up threshold; responses report the
 replay floor, observed head, and whether more replay remains.
 See the [generated reference](https://tinkle.me/schema/reference) for field and

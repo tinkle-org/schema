@@ -134,10 +134,10 @@ message ReadUpdatesRequest {
   // after_cursor is the last fully applied position, 0..9223372036854775807.
   // Zero requests retained history after zero; it never means start at the head.
   uint64 after_cursor = 2 [json_name = "after_cursor"];
-  // page_size bounds the updates in one response, 1..500; zero chooses the
+  // limit bounds the updates in one response, 1..500; zero chooses the
   // deployment's default. Server byte and hydration budgets may shorten a page
   // further; a short page never implies completion.
-  int32 page_size = 3 [json_name = "page_size"];
+  int32 limit = 3;
   // max_replay_distance bounds incremental catch-up. When set, and the observed
   // head lies farther ahead than this distance, the server returns a
   // recovery-required outcome instead of replaying the backlog. Unset means the
