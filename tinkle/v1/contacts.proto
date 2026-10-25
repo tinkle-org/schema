@@ -40,10 +40,10 @@ service ContactsService {
   // ResetSaved clears all non-Tinkle saved contacts.
   rpc ResetSaved(ResetSavedRequest) returns (ResetSavedResponse);
 
-  // Block blocks a peer (user targets only; chat targets are not yet supported).
+  // Block blocks a target (user targets only; chat targets are not yet supported).
   rpc Block(BlockRequest) returns (BlockResponse);
 
-  // Unblock removes a peer from the block list.
+  // Unblock removes a target from the block list.
   rpc Unblock(UnblockRequest) returns (UnblockResponse);
 
   // GetBlocked retrieves paginated list of blocked peers.
@@ -234,25 +234,25 @@ message ResetSavedResponse {
 
 // BlockRequest is the request for Block.
 message BlockRequest {
-  // The peer to block (user only — chat not yet supported).
-  PeerInput peer = 1;
+  // The target to block (user only — chat not yet supported).
+  Target target = 1;
 }
 
 // BlockResponse is the response for Block.
 message BlockResponse {
-  // True if the peer was blocked.
+  // True if the target was blocked.
   bool blocked = 1;
 }
 
 // UnblockRequest is the request for Unblock.
 message UnblockRequest {
-  // The peer to unblock.
-  PeerInput peer = 1;
+  // The target to unblock.
+  Target target = 1;
 }
 
 // UnblockResponse is the response for Unblock.
 message UnblockResponse {
-  // True if the peer was unblocked.
+  // True if the target was unblocked.
   bool unblocked = 1;
 }
 

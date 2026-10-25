@@ -145,10 +145,10 @@ message User {
   }
 }
 
-// PeerInput specifies a peer target using either user_id or chat_id.
+// Target specifies a conversation destination using either user_id or chat_id.
 // The type is implicitly determined by which field is set (oneof).
-message PeerInput {
-  oneof target {
+message Target {
+  oneof kind {
     // User ID for direct message targets
     int64 user_id = 1;
     // Chat ID for group/channel targets

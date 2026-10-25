@@ -18,14 +18,19 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 UPDATES_FILE = "tinkle/v1/updates.proto"
 # Files and declarations excluded from the baseline-collision comparison,
-# because the in-flight branch intentionally changes them. updates.proto is
-# file-level (full retirement rewrite; pinned by the tests below).
-# messages.proto is narrowed to the descriptors this branch touches, so edits
-# to any other part of the file still fail the suite. Trim entries on branches
-# that touch other files, and drop entries once included in origin/main.
+# because the in-flight branch stack intentionally changes them. updates.proto
+# is file-level (full retirement rewrite; pinned by the tests below). The
+# declaration sets cover (1) the reconciliation additions and (2) the
+# PeerInput → Target rename touching common/messages/contacts. Anything else
+# drifting from origin/main fails the suite. Trim entries on branches that
+# touch other files, and drop entries once included in the merge base.
 CHANGED_FILES = {"tinkle/v1/updates.proto"}
 CHANGED_DECLARATIONS = {
+    "tinkle.v1.PeerInput",
+    "tinkle.v1.Target",
     "tinkle.v1.Message",
+    "tinkle.v1.Dialog",
+    "tinkle.v1.GetHistoryRequest",
     "tinkle.v1.GetHistoryResponse",
     "tinkle.v1.MessagesService",
     "tinkle.v1.GetMessagesRequest",
@@ -34,6 +39,33 @@ CHANGED_DECLARATIONS = {
     "tinkle.v1.GetTargetChangesResponse",
     "tinkle.v1.TargetChange",
     "tinkle.v1.TargetChangeKind",
+    "tinkle.v1.ReadHistoryRequest",
+    "tinkle.v1.DeleteHistoryRequest",
+    "tinkle.v1.DeleteMessagesRequest",
+    "tinkle.v1.SetHistoryTTLRequest",
+    "tinkle.v1.UpdatePinnedMessageRequest",
+    "tinkle.v1.UnpinAllMessagesRequest",
+    "tinkle.v1.SendMessageRequest",
+    "tinkle.v1.SendMediaRequest",
+    "tinkle.v1.SendMultiMediaRequest",
+    "tinkle.v1.EditMessageRequest",
+    "tinkle.v1.SetTypingRequest",
+    "tinkle.v1.SendStartBotRequest",
+    "tinkle.v1.SearchRequest",
+    "tinkle.v1.GetMessagesReactionsRequest",
+    "tinkle.v1.GetMessageReactionsListRequest",
+    "tinkle.v1.SendReactionRequest",
+    "tinkle.v1.GetUnreadMentionsRequest",
+    "tinkle.v1.ReadMentionsRequest",
+    "tinkle.v1.GetUnreadReactionsRequest",
+    "tinkle.v1.ReadReactionsRequest",
+    "tinkle.v1.SendVoteRequest",
+    "tinkle.v1.GetPollVotesRequest",
+    "tinkle.v1.GetPollResultsRequest",
+    "tinkle.v1.ReadThreadRequest",
+    "tinkle.v1.GetThreadMessageRequest",
+    "tinkle.v1.BlockRequest",
+    "tinkle.v1.UnblockRequest",
 }
 REPLACED_FILES = {"tinkle/v1/realtime.proto"}
 
