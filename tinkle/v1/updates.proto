@@ -15,12 +15,13 @@ option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 // access is evaluated against current authorization and history visibility.
 // Chorus implements the underlying internal replay, watch, and presence operations;
 // these public methods require controller adapters and are not deployed by this schema.
+// Each stream has one ordered cursor. Clients persist the last fully applied cursor
+// per stream and resume strictly after it; duplicates, older positions, and gaps
+// are reconciled against that checkpoint, never against message content or timing.
 // No method establishes an authoritative source snapshot or snapshot-to-feed fence.
-// Continuity across calls uses an opaque resume token alongside the applied cursor.
-// The token carries no client-readable meaning; clients store it with the checkpoint
-// and return it unchanged. Servers may reject continuation when the token is missing,
-// stale, or no longer valid for the current authorization and history scope.
-// A numeric cursor alone does not prove that cached history is still valid.
+// A numeric cursor alone does not prove that cached history is still valid when
+// authorization or history visibility may have changed; room continuation stays
+// fail-closed unless the implementation can establish that continuity.
 service UpdatesService {
   // ReadUpdates reads a bounded page strictly after an applied stream cursor.
   // Expired or future cursors fail with OutOfRange, rather than skipping history.
@@ -133,14 +134,16 @@ message ReadUpdatesRequest {
   // after_cursor is the last fully applied position, 0..9223372036854775807.
   // Zero requests retained history after zero; it never means start at the head.
   uint64 after_cursor = 2 [json_name = "after_cursor"];
-  // limit is 1..500; zero chooses the deployment's default page size.
-  int32 limit = 3;
-  // resume_token is the opaque continuation evidence returned with the checkpoint
-  // it was issued alongside. Clients store it with the applied cursor and return
-  // it unchanged; they never interpret its bytes. Empty means no evidence is
-  // presented. Servers reject continuation that requires evidence the client
-  // cannot present.
-  bytes resume_token = 4 [json_name = "resume_token"];
+  // page_size bounds the updates in one response, 1..500; zero chooses the
+  // deployment's default. Server byte and hydration budgets may shorten a page
+  // further; a short page never implies completion.
+  int32 page_size = 3 [json_name = "page_size"];
+  // max_replay_distance bounds incremental catch-up. When set, and the observed
+  // head lies farther ahead than this distance, the server returns a
+  // recovery-required outcome instead of replaying the backlog. Unset means the
+  // caller imposes no catch-up threshold; retention and authorization still bound
+  // what can be replayed.
+  optional uint64 max_replay_distance = 4 [json_name = "max_replay_distance"];
 }
 
 // ReadUpdatesResponse contains independent updates in increasing cursor order.
@@ -157,12 +160,11 @@ message ReadUpdatesResponse {
   // head is the largest committed cursor observed in the replay-store snapshot.
   // It is not an applied checkpoint, source snapshot fence, or resume grant.
   uint64 head = 3;
-  // resume_token is the opaque continuation evidence for the returned checkpoint.
-  // Clients store it with the applied cursor and present it on the next
-  // continuation. Receipt alone never advances an applied checkpoint, and the
-  // token never authorizes access by itself. Empty means the server issued no
-  // evidence with this page.
-  bytes resume_token = 4 [json_name = "resume_token"];
+  // has_more reports whether more replay remains under the current request.
+  // When true, apply the returned contiguous prefix, persist its checkpoint,
+  // and request the next page. When false, the stream is caught up to the
+  // observed head. Response length alone never signals completion.
+  bool has_more = 4 [json_name = "has_more"];
 }
 
 // FollowUpdatesRequest starts retained replay and ongoing observation of one stream.
@@ -173,17 +175,14 @@ message FollowUpdatesRequest {
   // after_cursor is the last fully applied position, 0..9223372036854775807.
   // Neither reconnecting nor changing room history scope makes a stale cursor valid.
   uint64 after_cursor = 2 [json_name = "after_cursor"];
-  // resume_token is the opaque continuation evidence stored with after_cursor.
-  // Clients return it unchanged; empty means no evidence is presented. Servers
-  // reject continuation that requires evidence the client cannot present.
-  bytes resume_token = 3 [json_name = "resume_token"];
 }
 
 // RebuildNeeded stops continuity for one stream without revealing policy diagnostics.
 // Recovery requires independently established source-snapshot/checkpoint consistency;
 // this schema defines no such snapshot operation. Head must not be used as a fence.
-// Clients must discard stored continuation evidence for the stream; a fresh
-// establishment from zero is required before further continuation.
+// Clients must not resume from the old cursor; incremental recovery cannot proceed
+// under this request. Cached history for the stream must be repaired separately
+// before further continuation can be established.
 message RebuildNeeded {}
 
 // FollowUpdatesResponse contains one update, a terminal rebuild signal, or progress.
@@ -201,11 +200,6 @@ message FollowUpdatesResponse {
     // rebuild_needed ends this feed; it is not a transport handshake or error.
     RebuildNeeded rebuild_needed = 4 [json_name = "rebuild_needed"];
   }
-  // resume_token is the opaque continuation evidence for the current position.
-  // Servers may rotate it during a feed; clients replace the stored value but
-  // never advance an applied checkpoint on receipt alone. Empty means no evidence
-  // was issued with this message.
-  bytes resume_token = 5 [json_name = "resume_token"];
 }
 
 // ConnectivityChanged is a privacy-filtered observation, not a durable Update.

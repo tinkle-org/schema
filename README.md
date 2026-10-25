@@ -222,21 +222,22 @@ users, contacts, messaging, channels, bots, stickers, and help APIs. Shared type
 are in [`common.proto`](tinkle/v1/common.proto).
 
 [`updates.proto`](tinkle/v1/updates.proto) defines `UpdatesService`:
-`ReadUpdates` returns a replay page, `FollowUpdates` streams individual durable updates,
-progress, and rebuild signals, and `ObserveConnectivity` streams ephemeral
-per-user `ConnectivityChanged` events. Each `Update` has one payload:
+`ReadUpdates` returns a bounded replay page, `FollowUpdates` streams individual
+durable updates, progress, and rebuild signals, and `ObserveConnectivity` streams
+ephemeral per-user `ConnectivityChanged` events. Each `Update` has one payload:
 `MessageRefresh`, `SendAttemptFailed`, `ContentOmitted`, or `ReadStateInvalidated`.
 Message effects, hydration, and order hints belong to the message constructor.
-`ReadUpdates` and `FollowUpdates` carry an opaque `resume_token` alongside the
-applied cursor; clients store it with the checkpoint and return it unchanged.
+`ReadUpdates` resumes strictly after the caller's applied cursor with `page_size`
+and an optional `max_replay_distance` catch-up threshold; responses report the
+replay floor, observed head, and whether more replay remains.
 See the [generated reference](https://tinkle.me/schema/reference) for field and
 method semantics.
 
 Public UpdatesService bindings are not implemented in Chorus. Internal
 replay, watch, and presence capabilities exist; runtime bindings are documented
-in their implementation repositories. Continuation requires presenting the stored
-`resume_token` with its checkpoint; current authorization and a saved numeric
-cursor alone are not sufficient.
+in their implementation repositories. Room continuation stays fail-closed unless
+the implementation can establish continuity; current authorization and a saved
+numeric cursor alone are not sufficient.
 
 ## BSR resource
 

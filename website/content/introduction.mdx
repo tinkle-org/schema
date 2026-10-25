@@ -33,11 +33,12 @@ reference and `website/content/` for schema overview pages.
 The package defines authentication, accounts, users, contacts, messaging,
 channels, bots, stickers, and help APIs, with shared types in `common.proto`.
 [`updates.proto`](https://github.com/tinkle-org/schema/blob/main/tinkle/v1/updates.proto)
-defines `UpdatesService`: `ReadUpdates` returns a replay page,
+defines `UpdatesService`: `ReadUpdates` returns a bounded replay page,
 `FollowUpdates` streams individual durable updates, progress, and rebuild signals, and
 `ObserveConnectivity` streams ephemeral per-user `ConnectivityChanged` events.
-`ReadUpdates` and `FollowUpdates` carry an opaque `resume_token` alongside the
-applied cursor; clients store it with the checkpoint and return it unchanged.
+`ReadUpdates` resumes strictly after the caller's applied cursor with `page_size`
+and an optional `max_replay_distance` catch-up threshold; responses report the
+replay floor, observed head, and whether more replay remains.
 See the [reference](/schema/reference) for the contract details.
 
 This repository documents the transport-independent schema. Runtime transport

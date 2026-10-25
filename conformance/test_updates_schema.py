@@ -170,19 +170,18 @@ class UpdatesSchemaTests(unittest.TestCase):
         self.assert_fields("ReadUpdatesRequest", [
             ("stream", 1, "STRING", "", False, False),
             ("after_cursor", 2, "UINT64", "", False, False),
-            ("limit", 3, "INT32", "", False, False),
-            ("resume_token", 4, "BYTES", "", False, False),
+            ("page_size", 3, "INT32", "", False, False),
+            ("max_replay_distance", 4, "UINT64", "", False, True),
         ])
         self.assert_fields("ReadUpdatesResponse", [
             ("updates", 1, "MESSAGE", "Update", True, False),
             ("replay_floor", 2, "UINT64", "", False, False),
             ("head", 3, "UINT64", "", False, False),
-            ("resume_token", 4, "BYTES", "", False, False),
+            ("has_more", 4, "BOOL", "", False, False),
         ])
         self.assert_fields("FollowUpdatesRequest", [
             ("stream", 1, "STRING", "", False, False),
             ("after_cursor", 2, "UINT64", "", False, False),
-            ("resume_token", 3, "BYTES", "", False, False),
         ])
 
     def test_stream_result_shapes(self):
@@ -191,14 +190,11 @@ class UpdatesSchemaTests(unittest.TestCase):
             ("head", 2, "UINT64", "", False, True),
             ("update", 3, "MESSAGE", "Update", False, False),
             ("rebuild_needed", 4, "MESSAGE", "RebuildNeeded", False, False),
-            ("resume_token", 5, "BYTES", "", False, False),
         ])
         result = self.message("FollowUpdatesResponse")
         self.assertEqual("result", result["oneofDecl"][0]["name"])
-        # update and rebuild_needed share the result oneof; resume_token sits outside it.
-        for field in result["field"][2:4]:
+        for field in result["field"][2:]:
             self.assertEqual(0, field["oneofIndex"])
-        self.assertNotIn("oneofIndex", result["field"][4])
 
     def test_connectivity_is_separate_from_replay(self):
         self.assert_fields("ConnectivityChanged", [
@@ -230,15 +226,10 @@ class UpdatesSchemaTests(unittest.TestCase):
         self.assertEqual({"google/protobuf/timestamp.proto", "tinkle/v1/messages.proto"},
                          set(self.updates["dependency"]))
         forbidden = {"connection_id", "request_id", "handshake", "version", "error", "type"}
-        allowed_bytes = {"resume_token"}
-        token_owners = {"ReadUpdatesRequest", "ReadUpdatesResponse",
-                        "FollowUpdatesRequest", "FollowUpdatesResponse"}
         for message in self.updates["messageType"]:
             for field in message.get("field", []):
                 self.assertNotIn(field["name"], forbidden)
-                if field["type"] == "TYPE_BYTES":
-                    self.assertIn(field["name"], allowed_bytes)
-                    self.assertIn(message["name"], token_owners)
+                self.assertNotEqual("TYPE_BYTES", field["type"])
                 self.assertNotIn("internal.", field.get("typeName", ""))
 
     @staticmethod
@@ -277,10 +268,13 @@ class UpdatesSchemaTests(unittest.TestCase):
     def test_page_contains_distinct_single_updates(self):
         first = {"stream": "user:42", "cursor": "1", "content_omitted": {}}
         second = {"stream": "user:42", "cursor": "2", "read_state_invalidated": {}}
-        fixture = {"updates": [first, second], "replay_floor": "0", "head": "2"}
+        fixture = {"updates": [first, second], "replay_floor": "0", "head": "2",
+                   "has_more": False}
         decoded = self.round_trip(fixture, "ReadUpdatesResponse")
         self.assertEqual([first, second], decoded["updates"])
         self.assertEqual("2", decoded["head"])
+        # Proto3 JSON omits false; absent means no more replay remains.
+        self.assertFalse(decoded.get("has_more", False))
 
     def test_progress_and_rebuild_preserve_optional_head(self):
         for result in ({}, {"rebuild_needed": {}}):
@@ -289,20 +283,18 @@ class UpdatesSchemaTests(unittest.TestCase):
             fixture["head"] = "0"
             self.assertEqual("0", self.round_trip(fixture, "FollowUpdatesResponse")["head"])
 
-    def test_resume_token_is_opaque_bytes_round_trip(self):
-        # Opaque continuation evidence survives the codec; empty means absent.
-        fixture = {"stream": "user:42", "after_cursor": "1", "resume_token": "AQID"}
-        self.assertEqual("AQID",
-                         self.round_trip(fixture, "ReadUpdatesRequest")["resume_token"])
-        page = {"updates": [], "replay_floor": "0", "head": "1", "resume_token": "AQID"}
-        self.assertEqual("AQID",
-                         self.round_trip(page, "ReadUpdatesResponse")["resume_token"])
-        follow = {"stream": "room:7", "after_cursor": "5", "resume_token": "AQID"}
-        self.assertEqual("AQID",
-                         self.round_trip(follow, "FollowUpdatesRequest")["resume_token"])
-        progress = {"stream": "room:7", "resume_token": "AQID"}
-        self.assertEqual("AQID",
-                         self.round_trip(progress, "FollowUpdatesResponse")["resume_token"])
+    def test_bounded_replay_fields_round_trip(self):
+        request = {"stream": "user:42", "after_cursor": "1", "page_size": 100,
+                   "max_replay_distance": "1000"}
+        decoded_request = self.round_trip(request, "ReadUpdatesRequest")
+        self.assertEqual(100, decoded_request["page_size"])
+        self.assertEqual("1000", decoded_request["max_replay_distance"])
+        # Threshold is optional; absent means no caller-imposed catch-up bound.
+        minimal = {"stream": "user:42", "after_cursor": "1"}
+        self.assertNotIn("max_replay_distance",
+                         self.round_trip(minimal, "ReadUpdatesRequest"))
+        page = {"updates": [], "replay_floor": "0", "head": "1", "has_more": True}
+        self.assertTrue(self.round_trip(page, "ReadUpdatesResponse")["has_more"])
 
     def test_connectivity_round_trip(self):
         fixture = {"update": {"user_id": "42", "online": True, "known": True,
@@ -323,12 +315,13 @@ class UpdatesSchemaTests(unittest.TestCase):
             self.assertNotEqual(0, self.convert(fixture, "Update", check=False).returncode)
 
     def test_decoding_is_not_semantic_validation(self):
-        # Missing payload, an invalid privacy combination, and a negative limit
+        # Missing payload, an invalid privacy combination, and a negative page size
         # remain representable. Runtime adapters must validate them separately.
         self.assertEqual({}, self.round_trip({}))
         private = {"event_id": "must-not-be-disclosed", "content_omitted": {}}
         self.assertEqual(private, self.round_trip(private))
-        self.assertEqual({"limit": -1}, self.round_trip({"limit": -1}, "ReadUpdatesRequest"))
+        self.assertEqual({"page_size": -1},
+                         self.round_trip({"page_size": -1}, "ReadUpdatesRequest"))
 
 
 if __name__ == "__main__":
