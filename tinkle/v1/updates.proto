@@ -184,11 +184,12 @@ message ReadUpdatesResponse {
   // non-empty page but must never truncate it to empty when more remains. If the
   // next envelope alone exceeds budgets, return it alone or fail with
   // ResourceExhausted for a retryable retry with the same after_cursor, never an
-  // empty page with has_more true. When false, the stream is caught up to the
-  // observed head. An empty updates page implies has_more false. Response length
-  // alone never signals completion. A client receiving an empty page with
-  // has_more true must treat it as a protocol violation: bounded retry, then
-  // surface an error without advancing after_cursor to head.
+  // empty page with has_more true. When false and rebuild_needed is absent, the
+  // stream is caught up to the observed head. An empty updates page implies
+  // has_more false. Response length alone never signals completion. A client
+  // receiving an empty page with has_more true must treat it as a protocol
+  // violation: bounded retry, then surface an error without advancing after_cursor
+  // to head.
   bool has_more = 4 [json_name = "has_more"];
   // rebuild_needed is set only when ReadUpdatesRequest.max_replay_distance is set
   // and head minus after_cursor exceeds it in the same replay-store snapshot that
