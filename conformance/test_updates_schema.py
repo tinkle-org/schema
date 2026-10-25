@@ -146,11 +146,13 @@ class UpdatesSchemaTests(unittest.TestCase):
             ("send_attempt_failed", 8, "MESSAGE", "SendAttemptFailed", False, False),
             ("content_omitted", 9, "MESSAGE", "ContentOmitted", False, False),
             ("read_state_invalidated", 10, "MESSAGE", "ReadStateInvalidated", False, False),
+            ("event_count", 11, "UINT32", "", False, False),
         ])
         record = self.message("Update")
         self.assertEqual("payload", record["oneofDecl"][0]["name"])
-        for field in record["field"][6:]:
+        for field in record["field"][6:10]:
             self.assertEqual(0, field["oneofIndex"])
+        self.assertNotIn("oneofIndex", record["field"][10])
 
     def test_message_effects_are_one_constructor_not_companion_updates(self):
         for name, optional in (("MessageRefresh", True), ("SendAttemptFailed", False)):
@@ -171,11 +173,14 @@ class UpdatesSchemaTests(unittest.TestCase):
             ("stream", 1, "STRING", "", False, False),
             ("after_cursor", 2, "UINT64", "", False, False),
             ("limit", 3, "INT32", "", False, False),
+            ("max_replay_distance", 4, "UINT64", "", False, True),
         ])
         self.assert_fields("ReadUpdatesResponse", [
             ("updates", 1, "MESSAGE", "Update", True, False),
             ("replay_floor", 2, "UINT64", "", False, False),
             ("head", 3, "UINT64", "", False, False),
+            ("has_more", 4, "BOOL", "", False, False),
+            ("rebuild_needed", 5, "MESSAGE", "RebuildNeeded", False, False),
         ])
         self.assert_fields("FollowUpdatesRequest", [
             ("stream", 1, "STRING", "", False, False),
@@ -263,13 +268,26 @@ class UpdatesSchemaTests(unittest.TestCase):
             fixture = {"stream": "user:42", "cursor": "1", payload: {}}
             self.assertEqual(fixture, self.round_trip(fixture))
 
+    def test_event_count_batch_span_round_trip(self):
+        # Omitted means one by contract (proto3 default zero means one here).
+        single = {"stream": "user:42", "cursor": "1", "content_omitted": {}}
+        self.assertNotIn("event_count", self.round_trip(single))
+        single["event_count"] = 1
+        self.assertEqual(1, self.round_trip(single)["event_count"])
+        batched = {"stream": "user:42", "cursor": "5", "content_omitted": {},
+                   "event_count": 3}
+        self.assertEqual(3, self.round_trip(batched)["event_count"])
+
     def test_page_contains_distinct_single_updates(self):
         first = {"stream": "user:42", "cursor": "1", "content_omitted": {}}
         second = {"stream": "user:42", "cursor": "2", "read_state_invalidated": {}}
-        fixture = {"updates": [first, second], "replay_floor": "0", "head": "2"}
+        fixture = {"updates": [first, second], "replay_floor": "0", "head": "2",
+                   "has_more": False}
         decoded = self.round_trip(fixture, "ReadUpdatesResponse")
         self.assertEqual([first, second], decoded["updates"])
         self.assertEqual("2", decoded["head"])
+        # Proto3 JSON omits false; absent means no more replay remains.
+        self.assertFalse(decoded.get("has_more", False))
 
     def test_progress_and_rebuild_preserve_optional_head(self):
         for result in ({}, {"rebuild_needed": {}}):
@@ -277,6 +295,30 @@ class UpdatesSchemaTests(unittest.TestCase):
             self.assertNotIn("head", self.round_trip(fixture, "FollowUpdatesResponse"))
             fixture["head"] = "0"
             self.assertEqual("0", self.round_trip(fixture, "FollowUpdatesResponse")["head"])
+
+    def test_bounded_replay_fields_round_trip(self):
+        request = {"stream": "user:42", "after_cursor": "1", "limit": 100,
+                   "max_replay_distance": "1000"}
+        decoded_request = self.round_trip(request, "ReadUpdatesRequest")
+        self.assertEqual(100, decoded_request["limit"])
+        self.assertEqual("1000", decoded_request["max_replay_distance"])
+        # Threshold is optional; absent means no caller-imposed catch-up bound.
+        minimal = {"stream": "user:42", "after_cursor": "1"}
+        self.assertNotIn("max_replay_distance",
+                         self.round_trip(minimal, "ReadUpdatesRequest"))
+        # Explicit zero is distinct from absent: zero-distance bound vs no bound.
+        request["max_replay_distance"] = "0"
+        self.assertEqual("0",
+                         self.round_trip(request, "ReadUpdatesRequest")["max_replay_distance"])
+        page = {"updates": [], "replay_floor": "0", "head": "1", "has_more": True}
+        self.assertTrue(self.round_trip(page, "ReadUpdatesResponse")["has_more"])
+        # Recovery-required outcome carries no updates and no further paging.
+        rebuild = {"replay_floor": "0", "head": "10", "has_more": False,
+                   "rebuild_needed": {}}
+        decoded_rebuild = self.round_trip(rebuild, "ReadUpdatesResponse")
+        self.assertEqual({}, decoded_rebuild["rebuild_needed"])
+        self.assertFalse(decoded_rebuild.get("has_more", False))
+        self.assertNotIn("updates", decoded_rebuild)
 
     def test_connectivity_round_trip(self):
         fixture = {"update": {"user_id": "42", "online": True, "known": True,
@@ -302,7 +344,8 @@ class UpdatesSchemaTests(unittest.TestCase):
         self.assertEqual({}, self.round_trip({}))
         private = {"event_id": "must-not-be-disclosed", "content_omitted": {}}
         self.assertEqual(private, self.round_trip(private))
-        self.assertEqual({"limit": -1}, self.round_trip({"limit": -1}, "ReadUpdatesRequest"))
+        self.assertEqual({"limit": -1},
+                         self.round_trip({"limit": -1}, "ReadUpdatesRequest"))
 
 
 if __name__ == "__main__":
