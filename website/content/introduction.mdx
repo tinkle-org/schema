@@ -14,11 +14,12 @@ there is no upstream mirror; every contract change is authored here.
 | --- | --- | --- |
 | Protobuf source | `tinkle/v1/*.proto` in this repo | Commit |
 | Validation (lint/format/breaking/build) | GitHub Actions on every PR | Every push |
-| Schema distribution (Go/Rust SDKs) | [Buf Schema Registry](https://buf.build/tinkle-org/schema) | Release PR merge |
+| Schema distribution (Go/Rust SDKs) | [Buf Schema Registry](https://buf.build/tinkle-org/schema) | Matching `main` pushes and `v*` tags |
 | This documentation site | Generated reference served by the main website at `tinkle.me/schema/` | Website image build |
 
-The Buf CI workflow validates every PR and posts a summary, and publishes merged
-`main` changes to the BSR; `v*` tag pushes publish version labels.
+The Buf CI workflow validates every PR and posts a summary, and publishes
+`main` pushes matching its paths to the BSR; `v*` tag pushes publish version
+labels.
 [release-please](https://github.com/googleapis/release-please) manages versioning
 and release tags.
 
