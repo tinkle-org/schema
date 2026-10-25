@@ -1,0 +1,24 @@
+tinkle/v1/messages.proto
+  s_3bc8e0972ac7fa::t_39061478339fed 663-669,671-680
+  s_3bc8e0972ac7fa::t_c17e4310f315e6 610-618
+  s_3bc8e0972ac7fa::t_ae4cb751b8016f 652-654
+  s_3bc8e0972ac7fa::t_6cb4f53ddaae65 262-269
+  s_3bc8e0972ac7fa::t_b5046f736962c0 627-628
+  s_3bc8e0972ac7fa::t_7d228c203af222 691-692,694-700
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "377dd33e71e68ec872cdee4f44f4ca6a51d44006",
+  "prompts": {},
+  "sessions": {
+    "s_3bc8e0972ac7fa": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e8af2b223ffeBnJ8yFMMMMJriO",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "oscarlaw <oscarlaw2010@gmail.com>"
+    }
+  }
+}
