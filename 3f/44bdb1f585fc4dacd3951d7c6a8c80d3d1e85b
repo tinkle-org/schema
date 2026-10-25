@@ -1,0 +1,21 @@
+README.md
+  s_3bc8e0972ac7fa::t_f2aba426359489 233-235
+website/content/introduction.mdx
+  s_3bc8e0972ac7fa::t_8f2bb1a29b7091 48-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3f44bdb1f585fc4dacd3951d7c6a8c80d3d1e85b",
+  "prompts": {},
+  "sessions": {
+    "s_3bc8e0972ac7fa": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e8af2b223ffeBnJ8yFMMMMJriO",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "oscarlaw <oscarlaw2010@gmail.com>"
+    }
+  }
+}
