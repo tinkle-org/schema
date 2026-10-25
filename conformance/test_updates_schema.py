@@ -17,11 +17,24 @@ import unittest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 UPDATES_FILE = "tinkle/v1/updates.proto"
-# Files temporarily excluded from the baseline-collision test below: the
-# in-flight branch's retirement (updates.proto rewrite) and its additive
-# reconciliation work (messages.proto). Trim this set on sampled branches that
-# touch other files, and drop entries once included in origin/main.
-CHANGED_FILES = {"tinkle/v1/updates.proto", "tinkle/v1/messages.proto"}
+# Files and declarations excluded from the baseline-collision comparison,
+# because the in-flight branch intentionally changes them. updates.proto is
+# file-level (full retirement rewrite; pinned by the tests below).
+# messages.proto is narrowed to the descriptors this branch touches, so edits
+# to any other part of the file still fail the suite. Trim entries on branches
+# that touch other files, and drop entries once included in origin/main.
+CHANGED_FILES = {"tinkle/v1/updates.proto"}
+CHANGED_DECLARATIONS = {
+    "tinkle.v1.Message",
+    "tinkle.v1.GetHistoryResponse",
+    "tinkle.v1.MessagesService",
+    "tinkle.v1.GetMessagesRequest",
+    "tinkle.v1.GetMessagesResponse",
+    "tinkle.v1.GetTargetChangesRequest",
+    "tinkle.v1.GetTargetChangesResponse",
+    "tinkle.v1.TargetChange",
+    "tinkle.v1.TargetChangeKind",
+}
 REPLACED_FILES = {"tinkle/v1/realtime.proto"}
 
 
@@ -112,9 +125,10 @@ class ConnectivitySchemaTests(unittest.TestCase):
     def test_unrelated_contracts_are_unchanged(self):
         for kind in self.baseline:
             baseline = {n: d for n, d in self.baseline[kind].items()
-                        if d[0] not in REPLACED_FILES | CHANGED_FILES}
+                        if d[0] not in REPLACED_FILES | CHANGED_FILES
+                        and n not in CHANGED_DECLARATIONS}
             current = {n: d for n, d in self.current[kind].items()
-                       if d[0] not in CHANGED_FILES}
+                       if d[0] not in CHANGED_FILES and n not in CHANGED_DECLARATIONS}
             self.assertTrue(baseline)
             self.assertEqual(baseline, current, kind)
 
