@@ -17,7 +17,6 @@ Consumers use BSR-generated SDKs; no language-specific generated code is stored 
 tinkle-org/schema/               ← proto source + Buf config + docs site
 ├── tinkle/v1/*.proto                  authoritative public proto source
 ├── conformance/                       schema/codec checks (pure Python)
-├── REALTIME.md                        normative realtime binding doc
 ├── buf.yaml                           v2 workspace; module published to
 │                                      buf.build/tinkle-org/schema
 ├── version.txt                        schema release version (release-please)
@@ -27,55 +26,50 @@ tinkle-org/schema/               ← proto source + Buf config + docs site
 ├── LICENSE                            at module root (required for pkg.go.dev)
 ├── website/                           docs content sources (tinkle.me/schema/)
 │   ├── scripts/generate-reference.mjs descriptor-set → reference pages
-│   ├── content/reference/             generated (not committed)
-│   └── content/guides/                synced from REALTIME.md (generated)
+│   └── content/reference/             generated (not committed)
 └── .github/workflows/
-    ├── buf-ci.yaml                    validate only (build/lint/format/breaking)
-    ├── release-please.yaml            Release PRs + release-gated buf push
+    ├── buf-ci.yaml                    validate on PRs, publish on main
+    ├── release-please.yaml            Release PRs, tags, changelogs (no buf push)
     ├── docs-ci.yaml                   site build on PRs
     └── docs-build.yaml                content build + website dispatch on main
 ```
 
-No per-language directories and no generated SDK code in the tree — the
-BSR owns the generated Go and Rust artifacts. The only generated artifacts
-in the build pipeline are the docs site's reference pages and synced guides
-(regenerated on every build; not committed).
+The BSR owns the generated Go and Rust SDKs. This repository generates only
+the docs site's reference pages, which are rebuilt on every build and git-ignored.
 
 ## Publishing
 
-Publication to the Buf Schema Registry is **release-gated**:
+Publication to the Buf Schema Registry is **trunk-based**:
 
 ```
-conventional commits merge to main ──► buf-ci validates (no publish)
-       │
-release-please maintains a Release PR (version.txt + CHANGELOG.md)
-       │  merge the Release PR
+feature branch ──► PR: buf-ci validates (build/lint/format/breaking, no publish)
+       │  merge to main
        ▼
-release-please tags the release (e.g. v0.1.0)
+buf-ci.yaml on main: build + buf push with Git metadata
        │
-       ▼
-release-please.yaml publish job:
-  checkout released sha → buf build + buf lint → buf push
-  labeled with the release tag (plus the "main" default label)
+       ├── BSR commit + moving main label (test here first)
+       └── tag push (v*) publishes the version label
+release-please maintains Release PRs, tags, and changelogs (no buf push)
 ```
 
-- Everyday merges **never publish**. Consumers see new SDK versions only
-  after a Release PR merge.
+- Every `main` merge publishes. Test unreleased changes from other repos
+  via the BSR commit or `@main` before cutting a formal release.
 - Bump semantics follow [Conventional Commits](https://www.conventionalcommits.org/)
   (`feat:` minor, `fix:` patch); `bump-minor-pre-major` is on, so breaking
   restructuring bumps the pre-1.0 minor instead of the major.
-- Secrets: `BUF_TOKEN` (BSR token for `tinkle-org`) and, recommended,
-  `RELEASE_PLEASE_TOKEN` (a PAT so Release PRs trigger repository CI —
-  PRs created with the default token do not trigger workflows).
+- Secrets: `BUF_TOKEN` (BSR token for `tinkle-org`, used by `buf-ci.yaml`)
+  and, recommended, `RELEASE_PLEASE_TOKEN` (a PAT so Release PRs trigger
+  repository CI — PRs created with the default token do not trigger
+  workflows).
 
 ```
 main (proto source + Buf config)
    │
-   ▼  release-please Release PR merge → buf push (release only)
+   ▼  buf-ci push on every main merge (+ tag pushes for versions)
 buf.build/tinkle-org/schema (public)
    │
-   ▼  consumer reads
-go get buf.build/gen/go/tinkle-org/schema/{protocolbuffers,grpc}/go
+   ▼  consumer reads commit, main label, or version label
+go get buf.build/gen/go/tinkle-org/schema/protocolbuffers/go@main
 cargo add --registry buf tinkle-org_schema_bufbuild_community_tonic-prost
 ```
 
@@ -136,20 +130,18 @@ Swift SDKs against the same module — see
 
 Two independent workflows:
 
-- `.github/workflows/buf-ci.yaml` runs `bufbuild/buf-action@v1` with
-  `push: false`. On every PR to `main` it runs `build`, `lint`, `format`, and
-  `breaking`, and posts a summary comment. On pushes to `main` it validates
-  only — **it never publishes**.
-- `.github/workflows/release-please.yaml` maintains Release PRs on `main`.
-  Merging a Release PR tags the release and publishes that exact commit to
-  the BSR (`buf push` labeled with the release tag and the `main` default
-  label). See [Publishing](#publishing).
+- `.github/workflows/buf-ci.yaml` runs `bufbuild/buf-action@v1`.
+  On every PR to `main` it runs `build`, `lint`, `format`, and `breaking`,
+  and posts a summary comment (no publish). On pushes to `main` (and `v*`
+  tags) it validates and publishes to the BSR. See [Publishing](#publishing).
+- `.github/workflows/release-please.yaml` maintains Release PRs on `main`
+  for versioning, changelogs, and Git tags. It never runs `buf push`.
 
 ### Required secrets
 
-- `BUF_TOKEN` — a BSR API token for the `tinkle-org` org, used by the
-  release workflow's publish job. Without it, release merges fail to
-  publish.
+- `BUF_TOKEN` — a BSR API token for the `tinkle-org` org, used by
+  `buf-ci.yaml` to publish on `main` and tag pushes. Without it,
+  main merges validate but fail to publish.
 - `RELEASE_PLEASE_TOKEN` (recommended) — a personal access token with
   repo scope, so Release PRs created by release-please trigger the
   repository's CI checks (PRs created with the default `GITHUB_TOKEN`
@@ -178,18 +170,18 @@ the content as a Nextra section at the `/schema/` path. The schema reference
 (generated by [`website/scripts/generate-reference.mjs`](website/scripts/generate-reference.mjs))
 is generated from `buf build --as-file-descriptor-set` output — proto doc
 comments, deprecations, oneofs and reserved definitions all appear in the
-generated pages. `REALTIME.md` and `conformance/realtime.md` remain
-canonical here and are synced into the content at build time.
+generated pages. Hand-written pages describe the transport-independent schema;
+runtime transport bindings belong in their implementation repositories.
 
 ```bash
 cd website
-npm run generate   # descriptor set → content/reference + synced guides
+npm run generate   # descriptor set → content/reference/
 npm run check      # internal /schema/... links resolve + structure is sane
 ```
 
 Hand-written pages live in `website/content/` (`index.mdx`,
 `introduction.mdx`) and are committed; generated
-outputs (`website/content/reference/`, `website/content/guides/`) are
+output (`website/content/reference/`) is
 git-ignored. To preview the rendered site, run the website repo locally —
 it fetches this repo and generates the content as part of its build.
 
@@ -218,88 +210,26 @@ Buf checks mirror the buf-ci PR workflow. There is no local `buf generate`
 step — code generation happens on the BSR, and docs generation happens in
 `website/`.
 
-## Realtime Syntra protocol (version 1)
+## Schema inventory
 
-[`tinkle/v1/realtime.proto`](tinkle/v1/realtime.proto) defines Syntra-only
-application data, not gRPC contracts and not a legacy JSON WebSocket. The binding
-uses generic `RpcRequest`/`RpcResult` and `Notification.payload`, declares no
-`RealtimeService` gRPC service, and adds no application fields to Syntra core.
+Public contracts live under [`tinkle/v1/`](tinkle/v1/): authentication, accounts,
+users, contacts, messaging, channels, bots, stickers, and help APIs. Shared types
+are in [`common.proto`](tinkle/v1/common.proto).
 
-### Syntra application binding (feature branch)
+[`updates.proto`](tinkle/v1/updates.proto) defines `UpdatesService`:
+`ReadUpdates` returns a replay page, `FollowUpdates` streams individual durable updates,
+progress, and rebuild signals, and `ObserveConnectivity` streams ephemeral
+per-user `ConnectivityChanged` events. Each `Update` has one payload:
+`MessageRefresh`, `SendAttemptFailed`, `ContentOmitted`, or `ReadStateInvalidated`.
+Message effects, hydration, and order hints belong to the message constructor.
+See the [generated reference](https://tinkle.me/schema/reference) for field and
+method semantics.
 
-This is the feature-branch design on `feat/realtime-sync-recovery`, not a shipped or
-BSR-published binding or an implemented server endpoint. Read [REALTIME.md](REALTIME.md)
-for normative requirements and [realtime conformance](conformance/realtime.md) for
-implementation checks; schema validation alone cannot prove synchronization.
-
-#### Method and payload selection
-
-These generic Syntra dispatcher identifiers map to the existing draft messages in
-`tinkle/v1/realtime.proto`; they do not declare a new gRPC service or endpoint.
-
-| `RpcRequest.method` | Request payload | Successful `RpcResult.payload` |
-| --- | --- | --- |
-| `/tinkle.v1.Realtime/SubscribeBatched` | `SubscribeRequest` | `SubscribeResponse` |
-| `/tinkle.v1.Realtime/UnsubscribeBatched` | `UnsubscribeRequest` | `UnsubscribeResponse` |
-
-Failures use Syntra `RpcResult.error`. Syntra `ServerReady` alone establishes the
-connection: `SubscribeResponse` reserves the draft `connection_id` field and tag,
-and confirms interests, not replay completion. No Tinkle ready/hello is sent.
-The verified principal selects the own-user stream. Room and presence interests
-remain authority-checked and bounded; unsubscribe releases only optional watches.
-
-Every Tinkle realtime `Notification.payload` is one protobuf-binary
-`RealtimeNotification`, whose `kind` oneof selects `batch`, `presence`, or
-`reset_required`. Durable delivery is only a complete `RealtimeBatch` of 1–4
-ordered events: optional user/chat primers, snapshot or sender-only send failure,
-then position; or a singleton redaction or read-state invalidation. Never flatten
-batches, send bare events/batches/presence/resets, fall back to JSON, or try multiple
-decoders. Validate known kinds, event enum/variant agreement, and the complete batch
-before effects; unsupported variants stop application without checkpoint progress.
-
-Message bodies use only public `Message` projections from `tinkle/v1/messages.proto`,
-not private journal/policy data. Redactions disclose no identifying metadata.
-Presence is ephemeral, never checkpointed, and cleared on disconnect.
-
-#### Checkpoints and recovery
-
-- Checkpoints belong to one authenticated principal, stream, and valid history scope,
-  independently of connection/request IDs. Reauthenticate and explicitly resubscribe
-  after reconnect; no Syntra session resumption or exactly-once guarantee is provided.
-- Validate and atomically commit all batch effects plus `final_cursor`, or neither.
-  Complete required invalidation refreshes before checkpointing. Deduplicate whole
-  batches by `(stream, cursor)` within principal/history scope, not members by UUID;
-  hydrated replay need not be byte-identical. Receipt/enqueue is not application commit.
-- Accept the next cursor only; duplicates do not reapply, gaps stop progress, and
-  older cursors never move a checkpoint backward. See REALTIME.md for overlap rules.
-- Positions fit `0..9223372036854775807`; delivered cursors are positive. An absent
-  cursor means zero, never start-live. With `replay_floor` the largest removed cursor,
-  `after < replay_floor` expires, equality is valid, and `after > head` is invalid.
-- Reset stops one stream. Its optional `head` is diagnostic, **not a snapshot
-  checkpoint**. Do not fetch unrelated pages and resume at sampled head or zero.
-  No snapshot/fence RPC is added; recovery remains unavailable until a proven
-  consistent source snapshot/checkpoint and race-free watch bootstrap exist.
-- Persist the exact pending send request and nonzero signed `random_id` before
-  sending. A lost result means unknown outcome; retry the unchanged request/key
-  with fresh transport correlation, subject to authorization and bounded retries.
-
-Source-snapshot/projection fencing, room leave/rejoin/history-scope continuity,
-identity-free redaction and privacy-safe cache reconciliation, and actual source
-CDC publication/catch-up remain separate blockers to full synchronization.
-
-#### Compatibility and release
-
-Pre-release restructuring removed the legacy JSON WebSocket messages. This is an
-intentional breaking change with no external compatibility commitment. There are
-no experimental Subscribe aliases to preserve. Select the batched binding before
-decoding; do not mix bindings on one connection.
-
-Review schema/conformance, explicitly publish through the normal main-merge/BSR
-workflow, pin exact generated Go/Rust revisions, implement server dispatch and
-validators, then roll out compatible clients. Consume the new types only after
-publication; no generated realtime gRPC stub is required. On rollback,
-stop the new binding explicitly while preserving durable checkpoints, heads, and
-source identities; do not switch decoders or reset Kafka groups to claim recovery.
+Public UpdatesService bindings are not implemented in Chorus. Internal
+replay, watch, and presence capabilities exist; runtime bindings are documented
+in their implementation repositories. Room continuation remains gated on
+independent proof of history-scope continuity; current authorization and a saved
+numeric cursor are not sufficient.
 
 ## BSR resource
 

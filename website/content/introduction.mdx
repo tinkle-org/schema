@@ -17,23 +17,29 @@ there is no upstream mirror; every contract change is authored here.
 | Schema distribution (Go/Rust SDKs) | [Buf Schema Registry](https://buf.build/tinkle-org/schema) | Release PR merge |
 | This documentation site | Generated reference served by the main website at `tinkle.me/schema/` | Website image build |
 
-Key properties:
+The Buf CI workflow validates every PR and posts a summary. Publication to the
+BSR happens when a [release-please](https://github.com/googleapis/release-please)
+Release PR is merged.
 
-- **Contracts change only here.** The Buf CI workflow validates every PR and posts
-  a summary, but it does not publish. Publication to the BSR happens exclusively
-  when a [release-please](https://github.com/googleapis/release-please) release PR
-  is merged, so the registry and its generated SDKs move only on versioned
-  releases.
-- **Documentation is generated, not copied.** The [schema reference](/schema/reference)
-  pages are produced from the protobuf descriptor set — including source comments,
-  deprecations and reserved definitions — on every site build. Editing prose about
-  the contract means editing the `.proto` doc comments or the narrative guides.
-- **Realtime is an application binding, not a gRPC service.**
-  [`tinkle/v1/realtime.proto`](https://github.com/tinkle-org/schema/blob/main/tinkle/v1/realtime.proto)
-  defines Syntra-application messages carried inside the Syntra
-  `Notification.payload`; the [Realtime guide](/schema/guides/realtime) documents
-  those dispatcher method bindings, with [conformance](/schema/guides/conformance/realtime)
-  notes for implementers.
+The [schema reference](/schema/reference) is produced from the protobuf
+descriptor set, including source comments, deprecations, and reserved
+definitions, on every site build. Edit `.proto` doc comments to change the
+reference and `website/content/` for schema overview pages.
+
+## Schema scope
+
+The package defines authentication, accounts, users, contacts, messaging,
+channels, bots, stickers, and help APIs, with shared types in `common.proto`.
+[`updates.proto`](https://github.com/tinkle-org/schema/blob/main/tinkle/v1/updates.proto)
+defines `UpdatesService`: `ReadUpdates` returns a replay page,
+`FollowUpdates` streams individual durable updates, progress, and rebuild signals, and
+`ObserveConnectivity` streams ephemeral per-user `ConnectivityChanged` events.
+See the [reference](/schema/reference) for the contract details.
+
+This repository documents the transport-independent schema. Runtime transport
+bindings belong in their implementation repositories. Public UpdatesService
+bindings are not implemented in Chorus; internal replay, watch, and presence
+capabilities exist.
 
 ## Repository layout
 
@@ -41,7 +47,6 @@ Key properties:
 tinkle/v1/        authoritative .proto sources
 conformance/      schema + codec checks (pure Python, no bindings)
 buf.yaml          v2 module config
-REALTIME.md       normative realtime binding doc (canonical)
 website/          docs content sources + generators (rendered by the main website)
 .github/          workflows: buf-ci (validate), release-please, docs-ci, docs-build
 ```
@@ -51,5 +56,5 @@ website/          docs content sources + generators (rendered by the main websit
 The contract is **pre-release**. `buf.yaml` disables builtin breaking checks for
 `tinkle.v1` restructuring; the intended stable policy is `breaking: FILE`, to be
 re-enabled at the first stable release. Until then, structural churn and no
-external compatibility commitment are expected. Narrative docs that rely on
-this site's generated pages always display the current schema.
+external compatibility commitment are expected. The generated reference follows
+`main` and may be ahead of the latest published SDKs.

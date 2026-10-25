@@ -1,0 +1,212 @@
+// Update data and queries, independent of delivery transport.
+// Each durable update describes one authorized application change at one cursor.
+// Connectivity observations are ephemeral and are not part of durable replay.
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "google/protobuf/timestamp.proto";
+import "tinkle/v1/messages.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// UpdatesService describes replay, ongoing updates, and connectivity observations.
+// Callers must be authenticated; private feeds belong only to the caller, and room
+// access is evaluated against current authorization and history visibility.
+// Chorus implements the underlying internal replay, watch, and presence operations;
+// these public methods require controller adapters and are not deployed by this schema.
+// No method establishes an authoritative source snapshot or snapshot-to-feed fence.
+// Cross-call room continuation requires independent proof that the saved cursor's
+// history scope is still valid. Current authorization and a numeric cursor alone
+// are insufficient; adapters unable to establish that proof must reject continuation.
+// No history-scope resume token is defined by this contract.
+service UpdatesService {
+  // ReadUpdates reads a bounded page strictly after an applied stream cursor.
+  // Expired or future cursors fail with OutOfRange, rather than skipping history.
+  rpc ReadUpdates(ReadUpdatesRequest) returns (ReadUpdatesResponse);
+  // FollowUpdates follows retained and subsequent updates from one stream.
+  // Authorization is rechecked during delivery. A rebuild signal ends the feed;
+  // cancellation, resource limits, or lifetime expiry may also end the call.
+  rpc FollowUpdates(FollowUpdatesRequest) returns (stream FollowUpdatesResponse);
+  // ObserveConnectivity returns current privacy-filtered connectivity, then changes.
+  // A revision-only change need not emit an observation. There is no retained replay.
+  rpc ObserveConnectivity(ObserveConnectivityRequest) returns (stream ObserveConnectivityResponse);
+}
+
+// MessageContext carries cache and ordering hints belonging to one message update.
+// These hints are not independently checkpointed updates and may differ on replay.
+message MessageContext {
+  // conversation_key is room:<positive-id> or the sorted direct-message pair a:b.
+  string conversation_key = 1 [json_name = "conversation_key"];
+  // order_key concatenates the cursor and source sequence as two zero-padded
+  // 20-digit decimal numbers; an absent source sequence contributes zero.
+  // It orders presentation within this stream, not across independent streams.
+  string order_key = 2 [json_name = "order_key"];
+  // resolve_user_id is an optional positive sender ID whose public entity should
+  // be fetched. It is an ID-only hint, not a user profile or account-created event.
+  optional int64 resolve_user_id = 3 [json_name = "resolve_user_id"];
+  // resolve_conversation requests an authorized refresh of conversation metadata.
+  // False does not establish that cached metadata is complete or still current.
+  bool resolve_conversation = 4 [json_name = "resolve_conversation"];
+}
+
+// MessageRefresh upserts the currently visible public message, including edits.
+// It is not an immutable creation/edit delta: hydration may return a newer body
+// than the source occurrence. Only public Message fields may be disclosed.
+message MessageRefresh {
+  // message is the authorized public projection, with a viewer-relative peer.
+  Message message = 1;
+  // random_id is the nonzero signed send idempotency key, disclosed only to the
+  // authenticated original sender. It is not a replay cursor or source identity.
+  optional int64 random_id = 2 [json_name = "random_id"];
+  // context contains the associated cache and presentation hints.
+  MessageContext context = 3;
+}
+
+// SendAttemptFailed reconciles a failed durable attempt on its sender's private feed.
+// Neither the attempt nor its hints may be disclosed to other participants.
+// Admission, blocking, and other policy reasons are not exposed.
+message SendAttemptFailed {
+  // message is the public projection of the failed attempt.
+  Message message = 1;
+  // random_id is the original nonzero signed send idempotency key.
+  int64 random_id = 2 [json_name = "random_id"];
+  // context contains the associated cache and presentation hints.
+  MessageContext context = 3;
+}
+
+// ContentOmitted advances a checkpoint without disclosing hidden content or identity.
+// Deleted or revoked content may appear this way. This is not an identifying
+// deletion receipt and cannot by itself identify cached messages to remove.
+message ContentOmitted {}
+
+// ReadStateInvalidated requests an authoritative refresh of the caller's dialog
+// and read state. It carries no opaque producer bytes or other participant's receipt.
+// It does not identify a dialog or claim a particular read position or unread count.
+message ReadStateInvalidated {}
+
+// Update is one durable application change, not a list of companion events.
+// Select exactly one known payload; unknown or missing payloads must not advance
+// a checkpoint. Apply the payload, its required refreshes and hints, and the cursor
+// atomically. A failed or interrupted application must leave the old cursor usable.
+// Within the same principal/history scope, only the next cursor advances state:
+// duplicates must not reapply, older updates must not move it backward, and gaps
+// require replay. Deduplication uses stream/cursor, not content or occurrence time.
+// Protobuf decoding alone does not validate these application requirements.
+message Update {
+  // event_id is the stable canonical lowercase nonzero source UUID, except that
+  // ContentOmitted requires an empty value to avoid disclosing source identity.
+  string event_id = 1 [json_name = "event_id"];
+  // stream is user:<positive-id> for the caller or an authorized room:<positive-id>.
+  string stream = 2;
+  // cursor is a positive, gapless stream-local replay position, at most
+  // 9223372036854775807. Its scope includes the principal and valid history scope.
+  // It is independent of message acceptance order and transport identifiers.
+  uint64 cursor = 3;
+  // occurred_at is the source occurrence time; absent for ContentOmitted.
+  google.protobuf.Timestamp occurred_at = 4 [json_name = "occurred_at"];
+  // source_seq is an optional nonnegative source marker, not a replay cursor.
+  // It must be absent for ContentOmitted.
+  optional int64 source_seq = 5 [json_name = "source_seq"];
+  // source_revision is an optional nonnegative source marker, not a version of
+  // the currently hydrated message body. It must be absent for ContentOmitted.
+  optional int64 source_revision = 6 [json_name = "source_revision"];
+  // payload selects the single application change at this checkpoint.
+  oneof payload {
+    // message_refresh upserts a currently authorized public message.
+    MessageRefresh message_refresh = 7 [json_name = "message_refresh"];
+    // send_attempt_failed reconciles the sender's failed attempt.
+    SendAttemptFailed send_attempt_failed = 8 [json_name = "send_attempt_failed"];
+    // content_omitted carries no source identity, message identity, or content.
+    ContentOmitted content_omitted = 9 [json_name = "content_omitted"];
+    // read_state_invalidated requires a refresh of owned dialog/read state.
+    ReadStateInvalidated read_state_invalidated = 10 [json_name = "read_state_invalidated"];
+  }
+}
+
+// ReadUpdatesRequest selects a bounded replay page for one authorized stream.
+message ReadUpdatesRequest {
+  // stream is the caller's own user:<id> or an authorized room:<id> whose history
+  // scope is independently established. Naming another user's feed confers no access.
+  string stream = 1;
+  // after_cursor is the last fully applied position, 0..9223372036854775807.
+  // Zero requests retained history after zero; it never means start at the head.
+  uint64 after_cursor = 2 [json_name = "after_cursor"];
+  // limit is 1..500; zero chooses the deployment's default page size.
+  int32 limit = 3;
+}
+
+// ReadUpdatesResponse contains independent updates in increasing cursor order.
+// Byte and hydration budgets can shorten a page. Continue after the last applied
+// update, never by jumping to head. Floor, head, and selected entries come from
+// one replay-store snapshot, not a consistent snapshot of source application data.
+message ReadUpdatesResponse {
+  // updates are strictly after the requested cursor, each with one payload.
+  // An empty page does not grant permission to advance an applied checkpoint.
+  repeated Update updates = 1;
+  // replay_floor is the largest removed cursor. Requests below it expire;
+  // equality is valid. This and head fit nonnegative signed 64-bit storage.
+  uint64 replay_floor = 2 [json_name = "replay_floor"];
+  // head is the largest committed cursor observed in the replay-store snapshot.
+  // It is not an applied checkpoint, source snapshot fence, or resume grant.
+  uint64 head = 3;
+}
+
+// FollowUpdatesRequest starts retained replay and ongoing observation of one stream.
+message FollowUpdatesRequest {
+  // stream is the caller's own user:<id> or an authorized room:<id> whose history
+  // scope is independently established; otherwise room continuation must fail.
+  string stream = 1;
+  // after_cursor is the last fully applied position, 0..9223372036854775807.
+  // Neither reconnecting nor changing room history scope makes a stale cursor valid.
+  uint64 after_cursor = 2 [json_name = "after_cursor"];
+}
+
+// RebuildNeeded stops continuity for one stream without revealing policy diagnostics.
+// Recovery requires independently established source-snapshot/checkpoint consistency;
+// this schema defines no such snapshot operation. Head must not be used as a fence.
+message RebuildNeeded {}
+
+// FollowUpdatesResponse contains one update, a terminal rebuild signal, or progress.
+// With result unset it reports only observed progress, not an application update.
+// Progress must never advance the client's applied checkpoint.
+message FollowUpdatesResponse {
+  // stream identifies the requested feed, including on progress and rebuild results.
+  string stream = 1;
+  // head is observed committed progress, absent when unknown and never guessed.
+  optional uint64 head = 2;
+  // result distinguishes a single durable update from a terminal continuity loss.
+  oneof result {
+    // update must belong to this stream and, when head is known, not exceed it.
+    Update update = 3;
+    // rebuild_needed ends this feed; it is not a transport handshake or error.
+    RebuildNeeded rebuild_needed = 4 [json_name = "rebuild_needed"];
+  }
+}
+
+// ConnectivityChanged is a privacy-filtered observation, not a durable Update.
+// It reveals no devices, connection identifiers, last-seen times, or policy reasons.
+message ConnectivityChanged {
+  // user_id is the requested positive user identifier.
+  int64 user_id = 1 [json_name = "user_id"];
+  // online is true only when known and an authorized live connection exists.
+  bool online = 2;
+  // known is false for hidden or unknown state. This retracts previous knowledge;
+  // online must then be false and revision zero. Unknown never proves offline.
+  bool known = 3;
+  // revision is scoped to the connectivity backend generation, not a replay cursor.
+  uint64 revision = 4;
+}
+
+// ObserveConnectivityRequest selects a bounded set of privacy-filtered observations.
+message ObserveConnectivityRequest {
+  // user_ids contains at most 100 distinct positive IDs, subject to lower limits.
+  repeated int64 user_ids = 1 [json_name = "user_ids"];
+}
+
+// ObserveConnectivityResponse carries one current observation at a time.
+// Observations have no durable replay cursor and must be discarded on disconnect.
+message ObserveConnectivityResponse {
+  // update is one authorized initial observation or subsequent disclosed change.
+  ConnectivityChanged update = 1;
+}

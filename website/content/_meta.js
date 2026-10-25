@@ -5,5 +5,4 @@ export default {
   index: 'Overview',
   introduction: 'Introduction',
   reference: 'Reference',
-  guides: 'Guides',
 }

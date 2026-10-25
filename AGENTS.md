@@ -12,9 +12,11 @@ repository. Read it fully before making any non-trivial change.
   **`buf.build/tinkle-org/schema`** (public). The BSR
   generates and serves **Go** and **Rust** SDKs to consumers; no
   language-specific code lives in this repo.
-- **BSR publication is release-gated.** Everyday merges only
-  validate. `buf push` runs exclusively when a release-please
-  Release PR is merged (see `release-please.yaml`).
+- **BSR publication is trunk-based.** Every merge to `main` publishes
+  via `buf-ci.yaml` (`buf push` with Git metadata). Pull requests
+  validate only and never touch the registry. Release-please handles
+  versioning, changelogs, and Git tags; tag pushes publish version
+  labels.
 - The `.proto` files are **maintained directly in this repo** under
   `tinkle/v1/`. There is no upstream mirror; this is the only place
   the contract is edited.
@@ -44,8 +46,8 @@ tinkle-org/schema (this repo)   proto source + Buf config + docs site
 ├── LICENSE                           required at module root for pkg.go.dev
 ├── README.md
 ├── website/                          docs content sources (tinkle.me/schema/)
-├── .github/workflows/buf-ci.yaml     bufbuild/buf-action: validate only
-├── .github/workflows/release-please.yaml  Release PRs + gated buf push
+├── .github/workflows/buf-ci.yaml     bufbuild/buf-action: validate on PRs, publish on main
+├── .github/workflows/release-please.yaml  Release PRs, tags, changelogs (no buf push)
 ├── .github/workflows/docs-ci.yaml    docs content validation on PRs
 ├── .github/workflows/docs-build.yaml     content build + website dispatch on main
 └── AGENTS.md
@@ -80,16 +82,16 @@ Versions are `{plugin-version}-{module-commit-timestamp}-{module-commit-id}.{plu
    land here directly. Keep the Protobuf `package tinkle.v1;` and
    the `option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";`
    line consistent across all files in the package.
-2. **`buf push` is release-gated, not automatic.** `buf-ci.yaml`
-   validates only (`push: false`). Publication runs exclusively in
-   `release-please.yaml` when a Release PR merge creates a release:
-   checkout the released sha, `buf build` + `buf lint`, then
-   `buf push --label <tag> --label main`. Do not push manually to
-   the BSR; ordinary merges must not touch the registry.
+2. **`buf push` is trunk-based, not release-gated.** `buf-ci.yaml`
+   validates on pull requests and publishes on pushes to `main`
+   (plus `v*` tag pushes for version labels). Do not push manually
+   to the BSR and do not add a publish job to `release-please.yaml`;
+   every main merge must flow through `buf-ci.yaml`.
 3. **`BUF_TOKEN` is required for publication.** A BSR API token for
-   the `tinkle-org` org (repository secret). `RELEASE_PLEASE_TOKEN`
-   (a PAT) is recommended so Release PRs trigger the repo's CI —
-   PRs created with the default token do not run workflows.
+   the `tinkle-org` org (repository secret) used by `buf-ci.yaml`.
+   `RELEASE_PLEASE_TOKEN` (a PAT) is recommended so Release PRs
+   trigger the repo's CI — PRs created with the default token do
+   not run workflows.
 4. **Write proto doc comments for humans.** Every message, field,
    enum value, service and method's leading `//` comment becomes the
    generated API reference on the docs site. No separate reference
@@ -112,9 +114,13 @@ Versions are `{plugin-version}-{module-commit-timestamp}-{module-commit-id}.{plu
 8. **No `buf generate` for SDKs.** Code generation happens on the
    BSR. The only generation in this repo is docs content:
    `cd website && npm run generate` (descriptor set → Nextra content
-   under `website/content/`; `REALTIME.md`/conformance synced as
-   guides). Generated outputs are git-ignored; the website repo
-   regenerates them from this repo at its own build time.
+   under `website/content/reference/`). Generated outputs are git-ignored;
+   the website repo regenerates them from this repo at its own build time.
+9. **Keep this repository transport independent.** Document the public
+   schema in proto comments and the hand-written pages in `website/content/`.
+   Runtime transport bindings and implementation protocols belong in their
+   implementation repositories. Public UpdatesService bindings are not
+   implemented in Chorus; internal replay, watch, and presence capabilities exist.
 
 ## When asked to "add a new RPC"
 
@@ -125,9 +131,9 @@ Versions are `{plugin-version}-{module-commit-timestamp}-{module-commit-id}.{plu
 2. The buf-ci action on the PR runs `build`, `lint`, `format`, and
    `breaking` (against the base branch) and posts a summary comment.
    Fix any findings.
-3. Merge to `main`. The action validates only. To publish, wait for
-   release-please to open/update a Release PR and merge it — that is
-   the only path a schema change takes to the BSR.
+3. Merge to `main`. The action publishes the merged commit to the BSR
+   (consumers test via `@main` or the commit); release-please tags
+   formal versions separately.
 
 ## When asked to "fix generated code"
 
@@ -157,13 +163,13 @@ cd website && npm run generate && npm run check   # content + link validation
 
 ## CI workflow
 
-- `.github/workflows/buf-ci.yaml` runs `bufbuild/buf-action@v1` with
-  `push: false`; on every PR it runs `build`, `lint`, `format`, and
-  `breaking`, and posts a PR summary comment keyed on
-  `<workflow>:<job>`. On `main` it validates only.
-- `.github/workflows/release-please.yaml` maintains Release PRs and
-  publishes (gated `buf push`) when a Release PR merge creates a
-  release. See `release-please-config.json`, `version.txt`, and
+- `.github/workflows/buf-ci.yaml` runs `bufbuild/buf-action@v1`;
+  on every PR it runs `build`, `lint`, `format`, and `breaking`, and
+  posts a PR summary comment keyed on `<workflow>:<job>`. On `main`
+  it validates and publishes to the BSR.
+- `.github/workflows/release-please.yaml` maintains Release PRs, tags,
+  and changelogs. It never runs `buf push`. See
+  `release-please-config.json`, `version.txt`, and
   `.release-please-manifest.json`.
 - `.github/workflows/docs-ci.yaml` regenerates + validates the docs
   content on PRs (determinism, internal links). `.github/workflows/docs-build.yaml`

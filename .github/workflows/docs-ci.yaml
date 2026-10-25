@@ -14,8 +14,6 @@ on:
       - 'buf.yaml'
       - 'buf.lock'
       - 'website/**'
-      - 'REALTIME.md'
-      - 'conformance/realtime.md'
       - '.github/workflows/docs-*.yaml'
 
 permissions:

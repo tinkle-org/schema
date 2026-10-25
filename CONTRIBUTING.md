@@ -49,14 +49,14 @@ change reference content, edit the `.proto` doc comments (every message,
 field, enum value, service and method's leading `//` comment) or, for
 generator behavior, `website/scripts/generate-reference.mjs`.
 
-Narrative documents stay canonical at the repo root (`REALTIME.md`,
-`conformance/realtime.md`) and are synced into the content at build time;
-edit them there. Hand-written site pages live in `website/content/`.
+Hand-written site pages live in `website/content/`. Keep them focused on the
+transport-independent schema and link to the generated reference for contract
+details. Runtime transport bindings belong in their implementation repositories.
 
 Content commands (from `website/`; no dependencies to install):
 
 ```bash
-npm run generate   # descriptor set → content/reference/ + synced guides
+npm run generate   # descriptor set → content/reference/
 npm run check      # internal /schema/... links resolve; structure is sane
 ```
 
@@ -98,7 +98,7 @@ git push origin HEAD
 |---|---|
 | Add/change an RPC or message | `tinkle/v1/*.proto` here |
 | Docs content generation/checks | `website/scripts/*.mjs` |
-| Narrative/protocol docs | `REALTIME.md`, `conformance/realtime.md` |
-| Add conformance checks | `conformance/test_realtime_schema.py` |
+| Schema overview pages | `website/content/` |
+| Add conformance checks | `conformance/test_*.py` |
 | Adjust release behavior | `release-please-config.json`, `.github/workflows/release-please.yaml` |
 | Docs styling/navigation | `tinkle-org/tinkle-website-nextjs` (not this repo) |
