@@ -23,7 +23,7 @@ UPDATES_FILE = "tinkle/v1/updates.proto"
 # declaration sets cover (1) the reconciliation additions and (2) the
 # PeerInput → Target rename touching common/messages/contacts. Anything else
 # drifting from origin/main fails the suite. Trim entries on branches that
-# touch other files, and drop entries once included in the merge base.
+# touch other files, and drop entries once included in origin/main.
 CHANGED_FILES = {"tinkle/v1/updates.proto"}
 CHANGED_DECLARATIONS = {
     "tinkle.v1.PeerInput",
