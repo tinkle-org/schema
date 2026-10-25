@@ -12,11 +12,12 @@ repository. Read it fully before making any non-trivial change.
   **`buf.build/tinkle-org/schema`** (public). The BSR
   generates and serves **Go** and **Rust** SDKs to consumers; no
   language-specific code lives in this repo.
-- **BSR publication is trunk-based.** Every merge to `main` publishes
-  via `buf-ci.yaml` (`buf push` with Git metadata). Pull requests
-  validate only and never touch the registry. Release-please handles
-  versioning, changelogs, and Git tags; tag pushes publish version
-  labels.
+- **BSR publication is trunk-based.** `main` pushes matching the
+  `buf-ci.yaml` paths publish via `buf push` with Git metadata. Pull
+  requests validate only and never touch the registry. Release-please
+  handles versioning, changelogs, and Git tags; tag pushes publish
+  version labels, with a version-label publish fallback in
+  `release-please.yaml`.
 - The `.proto` files are **maintained directly in this repo** under
   `tinkle/v1/`. There is no upstream mirror; this is the only place
   the contract is edited.
@@ -47,7 +48,7 @@ tinkle-org/schema (this repo)   proto source + Buf config + docs site
 ├── README.md
 ├── website/                          docs content sources (tinkle.me/schema/)
 ├── .github/workflows/buf-ci.yaml     bufbuild/buf-action: validate on PRs, publish on main
-├── .github/workflows/release-please.yaml  Release PRs, tags, changelogs (no buf push)
+├── .github/workflows/release-please.yaml  Release PRs, tags, changelogs, version-label publish
 ├── .github/workflows/docs-ci.yaml    docs content validation on PRs
 ├── .github/workflows/docs-build.yaml     content build + website dispatch on main
 └── AGENTS.md
@@ -84,11 +85,13 @@ Versions are `{plugin-version}-{module-commit-timestamp}-{module-commit-id}.{plu
    line consistent across all files in the package.
 2. **`buf push` is trunk-based, not release-gated.** `buf-ci.yaml`
    validates on pull requests and publishes on pushes to `main`
-   (plus `v*` tag pushes for version labels). Do not push manually
-   to the BSR and do not add a publish job to `release-please.yaml`;
-   every main merge must flow through `buf-ci.yaml`.
+   matching its paths (plus `v*` tag pushes for version labels).
+   Do not push manually to the BSR; `release-please.yaml` retains
+   the version-label fallback job for tags and manual recovery.
+   Every schema change must flow through `buf-ci.yaml`.
 3. **`BUF_TOKEN` is required for publication.** A BSR API token for
-   the `tinkle-org` org (repository secret) used by `buf-ci.yaml`.
+   the `tinkle-org` org (repository secret) used by `buf-ci.yaml`
+   and the `release-please.yaml` version-label job.
    `RELEASE_PLEASE_TOKEN` (a PAT) is recommended so Release PRs
    trigger the repo's CI — PRs created with the default token do
    not run workflows.
@@ -109,8 +112,9 @@ Versions are `{plugin-version}-{module-commit-timestamp}-{module-commit-id}.{plu
 7. **Releases use Conventional Commits + release-please.**
    `feat:` → minor, `fix:` → patch; `bump-minor-pre-major` is set, so
    pre-1.0 breaking restructuring bumps the minor. The single schema
-   version lives in `version.txt`; tags are plain `vX.Y.Z` and the
-   publish job also moves the BSR `main` label to the release.
+   version lives in `version.txt`; tags are plain `vX.Y.Z`. The `main`
+   label moves on `main` pushes via `buf-ci.yaml`; the release publish
+   job only adds the version label.
 8. **No `buf generate` for SDKs.** Code generation happens on the
    BSR. The only generation in this repo is docs content:
    `cd website && npm run generate` (descriptor set → Nextra content
@@ -168,8 +172,8 @@ cd website && npm run generate && npm run check   # content + link validation
   posts a PR summary comment keyed on `<workflow>:<job>`. On `main`
   it validates and publishes to the BSR.
 - `.github/workflows/release-please.yaml` maintains Release PRs, tags,
-  and changelogs. It never runs `buf push`. See
-  `release-please-config.json`, `version.txt`, and
+  and changelogs, with a version-label publish fallback (plus manual
+  tag recovery). See `release-please-config.json`, `version.txt`, and
   `.release-please-manifest.json`.
 - `.github/workflows/docs-ci.yaml` regenerates + validates the docs
   content on PRs (determinism, internal links). `.github/workflows/docs-build.yaml`

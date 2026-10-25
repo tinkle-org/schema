@@ -13,7 +13,7 @@ the reference on this site is generated from its proto comments.
 | | |
 | --- | --- |
 | **[Schema reference](/schema/reference)** | Every service, RPC method, message and enum, with doc comments, deprecations and reserved definitions. |
-| **[Buf Registry](https://buf.build/tinkle-org/schema)** | Go and Rust SDKs generated and published by the Buf Schema Registry, gated to schema releases. |
+| **[Buf Registry](https://buf.build/tinkle-org/schema)** | Go and Rust SDKs generated and published by the Buf Schema Registry on every `main` push and `v*` tag. |
 | **[Introduction](/schema/introduction)** | Schema scope, publication, and implementation status. |
 
 ## Status
@@ -23,8 +23,9 @@ carries no external compatibility commitment.
 
 - This reference is generated on every site build from the current `main` tree —
   it may be ahead of the latest published SDKs.
-- SDK publication on the Buf Schema Registry is **release-gated**: consumers
-  see new versions only when a release-please Release PR is merged.
+- SDK publication on the Buf Schema Registry is **trunk-based**: `buf-ci.yaml`
+  publishes `main` pushes matching its paths with a moving `main` label, and
+  `v*` tags publish version labels. Release-please handles versioning and tags.
 
 ## How this site is built
 

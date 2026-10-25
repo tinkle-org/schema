@@ -5,7 +5,7 @@
   "description": "Nextra content sources for the tinkle.v1 schema docs, rendered by tinkle-website-nextjs at tinkle.me/schema/.",
   "type": "module",
   "scripts": {
-    "generate": "node scripts/generate-reference.mjs",
+    "generate": "node scripts/generate-reference.mjs && node scripts/sync-docs.mjs",
     "check": "node scripts/check-content.mjs"
   }
 }

@@ -28,8 +28,8 @@ tinkle-org/schema/               ← proto source + Buf config + docs site
 │   ├── scripts/generate-reference.mjs descriptor-set → reference pages
 │   └── content/reference/             generated (not committed)
 └── .github/workflows/
-    ├── buf-ci.yaml                    validate on PRs, publish on main
-    ├── release-please.yaml            Release PRs, tags, changelogs (no buf push)
+    ├── buf-ci.yaml                    validate on PRs, publish on main paths
+    ├── release-please.yaml            Release PRs, tags, changelogs, version-label publish
     ├── docs-ci.yaml                   site build on PRs
     └── docs-build.yaml                content build + website dispatch on main
 ```
@@ -45,15 +45,17 @@ Publication to the Buf Schema Registry is **trunk-based**:
 feature branch ──► PR: buf-ci validates (build/lint/format/breaking, no publish)
        │  merge to main
        ▼
-buf-ci.yaml on main: build + buf push with Git metadata
+buf-ci.yaml on main paths: build + buf push with Git metadata
        │
        ├── BSR commit + moving main label (test here first)
        └── tag push (v*) publishes the version label
-release-please maintains Release PRs, tags, and changelogs (no buf push)
+release-please maintains Release PRs, tags, changelogs, and the version-label
+publish fallback (plus manual tag recovery)
 ```
 
-- Every `main` merge publishes. Test unreleased changes from other repos
-  via the BSR commit or `@main` before cutting a formal release.
+- Every `main` push matching the buf-ci paths publishes. Test unreleased
+  changes from other repos via the BSR commit or `@main` before cutting
+  a formal release.
 - Bump semantics follow [Conventional Commits](https://www.conventionalcommits.org/)
   (`feat:` minor, `fix:` patch); `bump-minor-pre-major` is on, so breaking
   restructuring bumps the pre-1.0 minor instead of the major.
@@ -65,11 +67,11 @@ release-please maintains Release PRs, tags, and changelogs (no buf push)
 ```
 main (proto source + Buf config)
    │
-   ▼  buf-ci push on every main merge (+ tag pushes for versions)
+   ▼  buf-ci push on main path matches (+ tag pushes for versions)
 buf.build/tinkle-org/schema (public)
    │
    ▼  consumer reads commit, main label, or version label
-go get buf.build/gen/go/tinkle-org/schema/protocolbuffers/go@main
+go get buf.build/gen/go/tinkle-org/schema/{protocolbuffers,grpc}/go@main
 cargo add --registry buf tinkle-org_schema_bufbuild_community_tonic-prost
 ```
 
@@ -117,7 +119,7 @@ cargo add --registry buf tinkle-org_schema_bufbuild_community_tonic-prost
 > **First-`cargo-add` priming.** Rust SDKs are generated eagerly on
 > the BSR (Cargo needs a checksum for every version). The first
 > `cargo add` against this module triggers the initial generation;
-> every subsequent release-gated BSR publication produces a new crate
+> every subsequent trunk-based BSR publication produces a new crate
 > version automatically.
 
 ### Other ecosystems
@@ -135,13 +137,16 @@ Two independent workflows:
   and posts a summary comment (no publish). On pushes to `main` (and `v*`
   tags) it validates and publishes to the BSR. See [Publishing](#publishing).
 - `.github/workflows/release-please.yaml` maintains Release PRs on `main`
-  for versioning, changelogs, and Git tags. It never runs `buf push`.
+  for versioning, changelogs, and Git tags, and publishes the version
+  label on release (plus manual tag recovery). It does not move the
+  `main` label.
 
 ### Required secrets
 
 - `BUF_TOKEN` — a BSR API token for the `tinkle-org` org, used by
-  `buf-ci.yaml` to publish on `main` and tag pushes. Without it,
-  main merges validate but fail to publish.
+  `buf-ci.yaml` to publish on `main` and tag pushes and by
+  `release-please.yaml` to publish the version label. Without it,
+  merges validate but publishing fails.
 - `RELEASE_PLEASE_TOKEN` (recommended) — a personal access token with
   repo scope, so Release PRs created by release-please trigger the
   repository's CI checks (PRs created with the default `GITHUB_TOKEN`

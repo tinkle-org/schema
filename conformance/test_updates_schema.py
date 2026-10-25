@@ -61,7 +61,7 @@ class UpdatesSchemaTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory(prefix="tinkle-updates-")
         cls.addClassCleanup(temporary.cleanup)
         images = {}
-        for label, source in (("current", "."), ("baseline", ".git#branch=main")):
+        for label, source in (("current", "."), ("baseline", ".git#branch=origin/main")):
             result = run_buf(
                 "build", source, "--exclude-source-info",
                 "--as-file-descriptor-set", "-o", "-#format=json",
