@@ -178,6 +178,7 @@ class UpdatesSchemaTests(unittest.TestCase):
             ("replay_floor", 2, "UINT64", "", False, False),
             ("head", 3, "UINT64", "", False, False),
             ("has_more", 4, "BOOL", "", False, False),
+            ("rebuild_needed", 5, "MESSAGE", "RebuildNeeded", False, False),
         ])
         self.assert_fields("FollowUpdatesRequest", [
             ("stream", 1, "STRING", "", False, False),
@@ -293,8 +294,19 @@ class UpdatesSchemaTests(unittest.TestCase):
         minimal = {"stream": "user:42", "after_cursor": "1"}
         self.assertNotIn("max_replay_distance",
                          self.round_trip(minimal, "ReadUpdatesRequest"))
+        # Explicit zero is distinct from absent: zero-distance bound vs no bound.
+        request["max_replay_distance"] = "0"
+        self.assertEqual("0",
+                         self.round_trip(request, "ReadUpdatesRequest")["max_replay_distance"])
         page = {"updates": [], "replay_floor": "0", "head": "1", "has_more": True}
         self.assertTrue(self.round_trip(page, "ReadUpdatesResponse")["has_more"])
+        # Recovery-required outcome carries no updates and no further paging.
+        rebuild = {"replay_floor": "0", "head": "10", "has_more": False,
+                   "rebuild_needed": {}}
+        decoded_rebuild = self.round_trip(rebuild, "ReadUpdatesResponse")
+        self.assertEqual({}, decoded_rebuild["rebuild_needed"])
+        self.assertFalse(decoded_rebuild.get("has_more", False))
+        self.assertNotIn("updates", decoded_rebuild)
 
     def test_connectivity_round_trip(self):
         fixture = {"update": {"user_id": "42", "online": True, "known": True,

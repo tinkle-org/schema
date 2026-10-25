@@ -25,6 +25,8 @@ option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 service UpdatesService {
   // ReadUpdates reads a bounded page strictly after an applied stream cursor.
   // Expired or future cursors fail with OutOfRange, rather than skipping history.
+  // A valid cursor whose distance to head exceeds max_replay_distance returns
+  // rebuild_needed in the response instead of replaying the backlog.
   rpc ReadUpdates(ReadUpdatesRequest) returns (ReadUpdatesResponse);
   // FollowUpdates follows retained and subsequent updates from one stream.
   // Authorization is rechecked during delivery. A rebuild signal ends the feed;
@@ -139,10 +141,10 @@ message ReadUpdatesRequest {
   // further; a short page never implies completion.
   int32 limit = 3;
   // max_replay_distance bounds incremental catch-up. When set, and the observed
-  // head lies farther ahead than this distance, the server returns a
-  // recovery-required outcome instead of replaying the backlog. Unset means the
-  // caller imposes no catch-up threshold; retention and authorization still bound
-  // what can be replayed.
+  // head lies farther ahead than this distance in the same replay-store snapshot,
+  // the server sets ReadUpdatesResponse.rebuild_needed and returns no updates
+  // instead of replaying the backlog. Unset means the caller imposes no catch-up
+  // threshold; retention and authorization still bound what can be replayed.
   optional uint64 max_replay_distance = 4 [json_name = "max_replay_distance"];
 }
 
@@ -161,10 +163,25 @@ message ReadUpdatesResponse {
   // It is not an applied checkpoint, source snapshot fence, or resume grant.
   uint64 head = 3;
   // has_more reports whether more replay remains under the current request.
-  // When true, apply the returned contiguous prefix, persist its checkpoint,
-  // and request the next page. When false, the stream is caught up to the
-  // observed head. Response length alone never signals completion.
+  // When true, updates is non-empty: apply the returned contiguous prefix,
+  // persist its checkpoint, and request the next page. Budgets may shorten a
+  // non-empty page but must never truncate it to empty when more remains. If the
+  // next update alone exceeds budgets, return it alone or fail with
+  // ResourceExhausted for a retryable retry with the same after_cursor, never an
+  // empty page with has_more true. When false, the stream is caught up to the
+  // observed head. An empty updates page implies has_more false. Response length
+  // alone never signals completion. A client receiving an empty page with
+  // has_more true must treat it as a protocol violation: bounded retry, then
+  // surface an error without advancing after_cursor to head.
   bool has_more = 4 [json_name = "has_more"];
+  // rebuild_needed is set only when ReadUpdatesRequest.max_replay_distance is set
+  // and head minus after_cursor exceeds it in the same replay-store snapshot that
+  // produced replay_floor and head. When set, updates must be empty, has_more
+  // must be false, and the client must not advance its applied checkpoint or
+  // paginate; repair cached history for the stream before further continuation.
+  // Absent means this page carries no rebuild directive. Never set together with
+  // any element in updates.
+  RebuildNeeded rebuild_needed = 5 [json_name = "rebuild_needed"];
 }
 
 // FollowUpdatesRequest starts retained replay and ongoing observation of one stream.
@@ -177,12 +194,14 @@ message FollowUpdatesRequest {
   uint64 after_cursor = 2 [json_name = "after_cursor"];
 }
 
-// RebuildNeeded stops continuity for one stream without revealing policy diagnostics.
-// Recovery requires independently established source-snapshot/checkpoint consistency;
-// this schema defines no such snapshot operation. Head must not be used as a fence.
-// Clients must not resume from the old cursor; incremental recovery cannot proceed
-// under this request. Cached history for the stream must be repaired separately
-// before further continuation can be established.
+// RebuildNeeded signals unrecoverable continuity loss for one stream without
+// revealing policy diagnostics. Recovery requires independently established
+// source-snapshot/checkpoint consistency; this schema defines no such snapshot
+// operation. Head must not be used as a fence. Clients must not resume from the
+// old cursor; incremental recovery cannot proceed under this request. Cached
+// history for the stream must be repaired separately before further continuation
+// can be established. In FollowUpdates it ends the feed; in ReadUpdates it is
+// carried in ReadUpdatesResponse.rebuild_needed.
 message RebuildNeeded {}
 
 // FollowUpdatesResponse contains one update, a terminal rebuild signal, or progress.
