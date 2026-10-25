@@ -259,12 +259,14 @@ message Message {
   bool pinned = 12;
   int32 ttl_period = 13;
   // accept_seq is the server-assigned acceptance position of this message within
-  // its conversation. It is nonnegative and monotonically increasing per
-  // conversation, and is the ordering and deduplication token for messages in
-  // that conversation; it is not globally comparable across conversations and
-  // is not a replay cursor. Compare and dedup messages per conversation only.
-  // Absent for messages accepted before the token was introduced; treat absent
-  // as "order with date, never as a dedup vote".
+  // its conversation. Positions are positive and start at one, monotonically
+  // increasing per conversation, and are the ordering and deduplication token
+  // for messages in that conversation; they are not globally comparable across
+  // conversations and are not a replay cursor. The token is assigned once on
+  // acceptance and stays stable across later edits of the same message; each
+  // edit or removal is an event at its own position, disclosed under
+  // GetTargetChanges. Absent for messages accepted before the token was
+  // introduced; treat absent as "order with date, never as a dedup vote".
   optional int64 accept_seq = 14;
 }
 
@@ -605,12 +607,15 @@ message GetHistoryResponse {
   repeated Chat chats = 3;
   int32 count = 4;
   optional int64 offset_id_offset = 5;
-  // more_available is the server's confirmation that further history exists
-  // beyond the returned window in the direction the request paginated. False
-  // does not assert that nothing will ever become available, and a true value
-  // never precedes paginating again. Use offset_id_offset or the window's last
-  // message_id for the next request; count alone remains informational.
-  bool more_available = 6;
+  // more_available reports continuation beyond the returned window in the
+  // direction the request paginated. Set true confirms more history exists;
+  // set false is the server's confirmation that none does in that direction.
+  // Absent means this page carries no continuation report: that is unknown,
+  // never a terminal stop, and the client keeps paging under its own means
+  // (offset_id_offset or the window's edge message_id; count stays
+  // informational). Presence is what distinguishes an unreported page from a
+  // confirmed boundary.
+  optional bool more_available = 6;
 }
 
 // GetMessagesRequest fetches specific messages by ID in one conversation.
@@ -619,6 +624,8 @@ message GetMessagesRequest {
   // must reference this same conversation.
   PeerInput peer = 1;
   // message_ids lists message IDs to retrieve, at most 100 per request.
+  // Requests exceeding this bound are rejected rather than truncated, so
+  // clients must batch in groups of at most 100.
   repeated int64 message_ids = 2;
 }
 
@@ -642,8 +649,9 @@ message GetTargetChangesRequest {
   // peer identifies the conversation whose changes are listed (required).
   PeerInput peer = 1;
   // after_accept_seq is the exclusive lower bound on the conversation's
-  // acceptance positions. Zero lists changes from the start of retained
-  // history; no other paging state is honored.
+  // mutation acceptance positions. Positions start at one; zero requests
+  // everything retained and is the initial cursor. No other paging state is
+  // honored.
   int64 after_accept_seq = 2;
   // limit bounds one response, 1..500. Zero chooses the deployment's default.
   // Server budgets may shorten a page further, in which case more_available is set.
@@ -652,21 +660,24 @@ message GetTargetChangesRequest {
 
 // GetTargetChangesResponse carries one page of retained conversation mutations.
 message GetTargetChangesResponse {
-  // changes are ordered ascending by accept_seq. Edits are disclosed with the
-  // current body; deletions and revocations disclose identity and kind only,
-  // never a deleted body. Retention windows may drop older positions entirely:
-  // a page that starts higher than the requested bound does not imply the
-  // skipped past was disclosed, and full-history repair stays the
-  // responsibility of history fetches, not of this response alone.
+  // changes are ordered ascending by accept_seq, one marker per retained
+  // mutation. Edits are disclosed with the current body; deletions and
+  // revocations disclose identity and kind only, never a deleted body.
+  // Retention windows may drop older positions entirely: a page that starts
+  // higher than the requested bound does not imply the skipped past was
+  // disclosed, and full-history repair stays the responsibility of history
+  // fetches, not of this response alone.
   repeated TargetChange changes = 1;
-  // more_available is true when retained changes exist strictly after
-  // last_accept_seq; request the next page with after_accept_seq equal to that
-  // value. False means the caller is caught up to the retained head.
-  bool more_available = 2;
-  // last_accept_seq is the acceptance position of the last returned change,
-  // needed to continue. Zero when the page is empty and means no change was
-  // disclosed; empty pages never entitle ignored state advancement beyond
-  // what last_accept_seq carries.
+  // more_available reports retained changes strictly after last_accept_seq.
+  // Set true confirms a next page exists; request it with after_accept_seq
+  // equal to last_accept_seq. Set false is the server's confirmation that the
+  // caller is caught up to the retained head. Absent means no continuation
+  // report on this page: unknown, never read as caught up.
+  optional bool more_available = 2;
+  // last_accept_seq is the cursor to continue from: the acceptance position of
+  // the last returned change, or the request's after_accept_seq when the page
+  // is empty, so the cursor never moves backward or resets. An empty page
+  // discloses no change and no progress, and must not set more_available true.
   int64 last_accept_seq = 3;
 }
 
@@ -677,12 +688,16 @@ message TargetChange {
   // kind distinguishes an edit, a one-sided deletion, and a bilateral revocation.
   TargetChangeKind kind = 2;
   // message is the authorized hydrated current body; set only for
-  // TARGET_CHANGE_KIND_EDITED and never for deleted or revoked messages.
+  // TARGET_CHANGE_KIND_EDITED and never for deleted or revoked messages. Its
+  // accept_seq stays the message's own token, not this mutation's position.
   Message message = 3;
-  // accept_seq is the original acceptance position of this mutation within the
-  // conversation, on the same token vocabulary as message.accept_seq; for
-  // edits it matches the returned body's message.accept_seq. Positions are
-  // conversation-local and gapless only within retained history.
+  // accept_seq is the acceptance position of this mutation within the
+  // conversation: positive, conversation-local, and gapless only within
+  // retained history. Mutations are never coalesced — every retained
+  // occurrence keeps its own marker and position, so a message edited more
+  // than once yields successive markers at successive positions. This is the
+  // mutation's position, not the message's: the hydrated body keeps
+  // message.accept_seq as its acceptance token.
   int64 accept_seq = 4;
 }
 
