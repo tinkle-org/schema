@@ -146,11 +146,13 @@ class UpdatesSchemaTests(unittest.TestCase):
             ("send_attempt_failed", 8, "MESSAGE", "SendAttemptFailed", False, False),
             ("content_omitted", 9, "MESSAGE", "ContentOmitted", False, False),
             ("read_state_invalidated", 10, "MESSAGE", "ReadStateInvalidated", False, False),
+            ("event_count", 11, "UINT32", "", False, False),
         ])
         record = self.message("Update")
         self.assertEqual("payload", record["oneofDecl"][0]["name"])
-        for field in record["field"][6:]:
+        for field in record["field"][6:10]:
             self.assertEqual(0, field["oneofIndex"])
+        self.assertNotIn("oneofIndex", record["field"][10])
 
     def test_message_effects_are_one_constructor_not_companion_updates(self):
         for name, optional in (("MessageRefresh", True), ("SendAttemptFailed", False)):
@@ -265,6 +267,16 @@ class UpdatesSchemaTests(unittest.TestCase):
         for payload in ("content_omitted", "read_state_invalidated"):
             fixture = {"stream": "user:42", "cursor": "1", payload: {}}
             self.assertEqual(fixture, self.round_trip(fixture))
+
+    def test_event_count_batch_span_round_trip(self):
+        # Omitted means one by contract (proto3 default zero means one here).
+        single = {"stream": "user:42", "cursor": "1", "content_omitted": {}}
+        self.assertNotIn("event_count", self.round_trip(single))
+        single["event_count"] = 1
+        self.assertEqual(1, self.round_trip(single)["event_count"])
+        batched = {"stream": "user:42", "cursor": "5", "content_omitted": {},
+                   "event_count": 3}
+        self.assertEqual(3, self.round_trip(batched)["event_count"])
 
     def test_page_contains_distinct_single_updates(self):
         first = {"stream": "user:42", "cursor": "1", "content_omitted": {}}

@@ -89,23 +89,27 @@ message ContentOmitted {}
 // It does not identify a dialog or claim a particular read position or unread count.
 message ReadStateInvalidated {}
 
-// Update is one durable application change, not a list of companion events.
+// Update is one durable envelope, covering one or more contiguous cursor positions.
 // Select exactly one known payload; unknown or missing payloads must not advance
-// a checkpoint. Apply the payload, its required refreshes and hints, and the cursor
-// atomically. A failed or interrupted application must leave the old cursor usable.
-// Within the same principal/history scope, only the next cursor advances state:
-// duplicates must not reapply, older updates must not move it backward, and gaps
-// require replay. Deduplication uses stream/cursor, not content or occurrence time.
-// Protobuf decoding alone does not validate these application requirements.
+// a checkpoint. Apply the payload, its required refreshes and hints, and the full
+// cursor span atomically. A failed or interrupted application must leave the old
+// cursor usable. Within the same principal/history scope, only the next span
+// advances state: duplicates must not reapply, older spans must not move it
+// backward, and gaps require replay. Deduplication uses stream/cursor span, not
+// content or occurrence time. Protobuf decoding alone does not validate these
+// application requirements.
 message Update {
   // event_id is the stable canonical lowercase nonzero source UUID, except that
   // ContentOmitted requires an empty value to avoid disclosing source identity.
+  // A batched envelope covering multiple positions carries the source identity of
+  // its last position; intermediate positions have no separate observable payload.
   string event_id = 1 [json_name = "event_id"];
   // stream is user:<positive-id> for the caller or an authorized room:<positive-id>.
   string stream = 2;
-  // cursor is a positive, gapless stream-local replay position, at most
-  // 9223372036854775807. Its scope includes the principal and valid history scope.
-  // It is independent of message acceptance order and transport identifiers.
+  // cursor is the last covered stream-local replay position, positive and gapless,
+  // at most 9223372036854775807. Its scope includes the principal and valid history
+  // scope. It is independent of message acceptance order and transport identifiers.
+  // The covered span is cursor minus event_count plus one through cursor.
   uint64 cursor = 3;
   // occurred_at is the source occurrence time; absent for ContentOmitted.
   google.protobuf.Timestamp occurred_at = 4 [json_name = "occurred_at"];
@@ -126,6 +130,16 @@ message Update {
     // read_state_invalidated requires a refresh of owned dialog/read state.
     ReadStateInvalidated read_state_invalidated = 10 [json_name = "read_state_invalidated"];
   }
+  // event_count is the number of cursor positions covered by this envelope, at
+  // least one. Zero means one for backward compatibility with envelopes that omit
+  // the field. Values greater than one coalesce contiguous positions into a single
+  // envelope: the span must lie within one stream, principal, and history scope,
+  // and the payload describes the coalesced effect at cursor. Distinct messages
+  // with distinct observable effects must use separate Update entries, not a
+  // batched envelope. Deduplication compares spans: a span fully at or below the
+  // applied checkpoint is a duplicate or stale, a span starting exactly after the
+  // applied checkpoint is next, and any other overlap is a gap requiring replay.
+  uint32 event_count = 11 [json_name = "event_count"];
 }
 
 // ReadUpdatesRequest selects a bounded replay page for one authorized stream.
@@ -148,12 +162,14 @@ message ReadUpdatesRequest {
   optional uint64 max_replay_distance = 4 [json_name = "max_replay_distance"];
 }
 
-// ReadUpdatesResponse contains independent updates in increasing cursor order.
+// ReadUpdatesResponse contains independent updates in increasing cursor-span order.
 // Byte and hydration budgets can shorten a page. Continue after the last applied
 // update, never by jumping to head. Floor, head, and selected entries come from
 // one replay-store snapshot, not a consistent snapshot of source application data.
 message ReadUpdatesResponse {
   // updates are strictly after the requested cursor, each with one payload.
+  // Spans are contiguous and non-overlapping: the first span starts exactly after
+  // the requested cursor, and each later span starts exactly after its predecessor.
   // An empty page does not grant permission to advance an applied checkpoint.
   repeated Update updates = 1;
   // replay_floor is the largest removed cursor. Requests below it expire;
@@ -163,10 +179,10 @@ message ReadUpdatesResponse {
   // It is not an applied checkpoint, source snapshot fence, or resume grant.
   uint64 head = 3;
   // has_more reports whether more replay remains under the current request.
-  // When true, updates is non-empty: apply the returned contiguous prefix,
+  // When true, updates is non-empty: apply the returned contiguous span prefix,
   // persist its checkpoint, and request the next page. Budgets may shorten a
   // non-empty page but must never truncate it to empty when more remains. If the
-  // next update alone exceeds budgets, return it alone or fail with
+  // next envelope alone exceeds budgets, return it alone or fail with
   // ResourceExhausted for a retryable retry with the same after_cursor, never an
   // empty page with has_more true. When false, the stream is caught up to the
   // observed head. An empty updates page implies has_more false. Response length
@@ -204,7 +220,9 @@ message FollowUpdatesRequest {
 // carried in ReadUpdatesResponse.rebuild_needed.
 message RebuildNeeded {}
 
-// FollowUpdatesResponse contains one update, a terminal rebuild signal, or progress.
+// FollowUpdatesResponse contains one update envelope, a terminal rebuild signal,
+// or progress. A single envelope may cover multiple cursor positions via its
+// event span; bursts of envelopes remain ordered and contiguous per stream.
 // With result unset it reports only observed progress, not an application update.
 // Progress must never advance the client's applied checkpoint.
 message FollowUpdatesResponse {
@@ -212,9 +230,11 @@ message FollowUpdatesResponse {
   string stream = 1;
   // head is observed committed progress, absent when unknown and never guessed.
   optional uint64 head = 2;
-  // result distinguishes a single durable update from a terminal continuity loss.
+  // result distinguishes a single durable update envelope from a terminal loss.
   oneof result {
     // update must belong to this stream and, when head is known, not exceed it.
+    // Its span must start exactly after the client's applied checkpoint, or it is
+    // a duplicate, stale, or gap signal under the Update span rules.
     Update update = 3;
     // rebuild_needed ends this feed; it is not a transport handshake or error.
     RebuildNeeded rebuild_needed = 4 [json_name = "rebuild_needed"];
