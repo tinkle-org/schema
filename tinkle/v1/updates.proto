@@ -95,7 +95,8 @@ message ReadStateInvalidated {}
 // cursor span atomically. A failed or interrupted application must leave the old
 // cursor usable. Within the same principal/history scope, only the next span
 // advances state: duplicates must not reapply, older spans must not move it
-// backward, and gaps require replay. Deduplication uses stream/cursor span, not
+// backward, and straddling overlaps and gaps require replay. Deduplication uses
+// stream/cursor span, not
 // content or occurrence time. Protobuf decoding alone does not validate these
 // application requirements.
 message Update {
@@ -109,7 +110,8 @@ message Update {
   // cursor is the last covered stream-local replay position, positive and gapless,
   // at most 9223372036854775807. Its scope includes the principal and valid history
   // scope. It is independent of message acceptance order and transport identifiers.
-  // The covered span is cursor minus event_count plus one through cursor.
+  // The covered span is cursor minus the effective event_count (zero means one)
+  // plus one through cursor.
   uint64 cursor = 3;
   // occurred_at is the source occurrence time; absent for ContentOmitted.
   google.protobuf.Timestamp occurred_at = 4 [json_name = "occurred_at"];
@@ -132,13 +134,19 @@ message Update {
   }
   // event_count is the number of cursor positions covered by this envelope, at
   // least one. Zero means one for backward compatibility with envelopes that omit
-  // the field. Values greater than one coalesce contiguous positions into a single
-  // envelope: the span must lie within one stream, principal, and history scope,
-  // and the payload describes the coalesced effect at cursor. Distinct messages
-  // with distinct observable effects must use separate Update entries, not a
-  // batched envelope. Deduplication compares spans: a span fully at or below the
-  // applied checkpoint is a duplicate or stale, a span starting exactly after the
-  // applied checkpoint is next, and any other overlap is a gap requiring replay.
+  // the field. Let the effective count be event_count when nonzero, else one; it
+  // must not exceed cursor, so the span start (cursor minus the effective count
+  // plus one) is at least one. An envelope violating this is invalid and must be
+  // rejected without advancing a checkpoint. Values greater than one coalesce
+  // contiguous positions into a single envelope: the span must lie within one
+  // stream, principal, and history scope, and the payload describes the coalesced
+  // effect at cursor. Distinct messages with distinct observable effects must use
+  // separate Update entries, not a batched envelope. Deduplication compares spans:
+  // a span fully at or below the applied checkpoint is a duplicate or stale, a span
+  // starting exactly after the applied checkpoint is next, a span straddling the
+  // checkpoint (starting at or below it and ending beyond it) is an overlap
+  // requiring replay, and a span starting beyond checkpoint plus one is a gap
+  // requiring replay.
   uint32 event_count = 11 [json_name = "event_count"];
 }
 
