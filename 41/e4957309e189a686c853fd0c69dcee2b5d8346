@@ -1,0 +1,32 @@
+website/content/introduction.mdx
+  s_d6bc4c3e2213ec::t_af8772e0963730 36,39-41
+README.md
+  s_d6bc4c3e2213ec::t_5deb0c701ace47 225-227,230-232,238-240
+conformance/test_updates_schema.py
+  s_d6bc4c3e2213ec::t_9e88eb586be94c 232
+  s_d6bc4c3e2213ec::t_e7b8b85e37870c 271-272,286-297
+  s_d6bc4c3e2213ec::t_5bd72acbfb3312 318,323-324
+  s_d6bc4c3e2213ec::t_88f3b2cf71bdb4 173-174,180,196
+  s_d6bc4c3e2213ec::t_151178720cb1b1 276-277
+tinkle/v1/updates.proto
+  s_d6bc4c3e2213ec::t_42333736954864 18-20,22-24
+  s_d6bc4c3e2213ec::t_5c64c701546836 183-185
+  s_d6bc4c3e2213ec::t_2726b29ac2241f 163-167
+  s_d6bc4c3e2213ec::t_52be98b5b9f1cc 137-146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "41e4957309e189a686c853fd0c69dcee2b5d8346",
+  "prompts": {},
+  "sessions": {
+    "s_d6bc4c3e2213ec": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e8b840a56ffelwJOu3bnQbXZtx",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "oscarlaw <oscarlaw2010@gmail.com>"
+    }
+  }
+}
