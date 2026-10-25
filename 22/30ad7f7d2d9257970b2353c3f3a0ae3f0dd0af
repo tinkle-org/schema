@@ -1,0 +1,80 @@
+website/content/index.mdx
+  s_f83d24e656de9a::t_307fadd5e98a8c 3,11,17,45-47
+README.md
+  s_f83d24e656de9a::t_307fadd5e98a8c 29,37-38,173-174,178,184,213-218,221,223-227,229
+  s_81352b22cc4fe6::t_0f23e969e99f18 42,45-46,48,50-52,55-56,60-63,68,71-72
+  s_81352b22cc4fe6::t_9eb334bbadb595 31-32
+  s_81352b22cc4fe6::t_f7b26cea7b5b21 133-138
+  s_81352b22cc4fe6::t_127a41d2294694 142-144
+  s_81352b22cc4fe6::t_c543fde920682a 230-232
+  s_81352b22cc4fe6::t_e69b2f590a1566 219-220,222,228
+release-please-config.json
+  s_81352b22cc4fe6::t_7db747742644f0 4
+website/README.md
+  s_81352b22cc4fe6::t_c543fde920682a 19-20
+  s_f83d24e656de9a::t_c9d77990bb0f95 7-9,17,26,43,51-52
+  s_f83d24e656de9a::t_628b3d6c4bd26a 44-50
+website/scripts/check-content.mjs
+  s_f83d24e656de9a::t_c9d77990bb0f95 99
+conformance/test_updates_schema.py
+  s_81352b22cc4fe6::t_e69b2f590a1566 1-6,18-19,22-23,25-26,28-29,33-35,37-43,49,51-57,61,64-65,67,69-70,73-75,77,79,82-87,90-93,96-102,104-115,117-241,243-245,248-305
+website/package.json
+  s_f83d24e656de9a::t_c9d77990bb0f95 8
+website/content/introduction.mdx
+  s_81352b22cc4fe6::t_e69b2f590a1566 33-35,40
+  s_f83d24e656de9a::t_307fadd5e98a8c 20-32,36-39,41-42,59-60
+.github/workflows/docs-build.yaml
+  s_f83d24e656de9a::t_c9d77990bb0f95 3-4
+CONTRIBUTING.md
+  s_f83d24e656de9a::t_c9d77990bb0f95 52-54,59,101-102
+website/scripts/common.mjs
+  s_f83d24e656de9a::t_c9d77990bb0f95 3
+.github/workflows/buf-ci.yaml
+  s_81352b22cc4fe6::t_2e34305dc86ce8 8-11
+  s_81352b22cc4fe6::t_60b490468442d5 3-7,13-14,16,21
+website/scripts/sync-docs.mjs
+  s_81352b22cc4fe6::t_c543fde920682a 3-6,12,14-17
+tinkle/v1/updates.proto
+  s_81352b22cc4fe6::t_e69b2f590a1566 1-212
+.github/workflows/release-please.yaml
+  s_81352b22cc4fe6::t_b60c272c86511e 4-5
+  s_81352b22cc4fe6::t_c5dcf285aef026 43,60,65,68-98,108-109,114
+  s_81352b22cc4fe6::t_5fd59236106a3f 58,105
+  s_81352b22cc4fe6::t_51dd95fcd477c2 6-10
+  s_81352b22cc4fe6::t_7c51d29ad274c5 11-12,15-16
+  s_81352b22cc4fe6::t_78532eadf04065 24-29
+AGENTS.md
+  s_f83d24e656de9a::t_628b3d6c4bd26a 117-118
+  s_81352b22cc4fe6::t_01aaff48acef36 134-136
+  s_81352b22cc4fe6::t_3fc78d472e6add 85-89,91-94
+  s_81352b22cc4fe6::t_e69b2f590a1566 122
+  s_81352b22cc4fe6::t_b015beb40897c0 15-19
+  s_81352b22cc4fe6::t_bf9b6c537d1e66 166-171
+  s_81352b22cc4fe6::t_85df421a1eb4fd 172
+  s_81352b22cc4fe6::t_56a375d43c2eeb 49-50
+  s_f83d24e656de9a::t_c9d77990bb0f95 119-121,123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2230ad7f7d2d9257970b2353c3f3a0ae3f0dd0af",
+  "prompts": {},
+  "sessions": {
+    "s_81352b22cc4fe6": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e8fdeddc3ffeVmLkkhc3XadvmM",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "oscarlaw <oscarlaw2010@gmail.com>"
+    },
+    "s_f83d24e656de9a": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e8fa9cffcffe1IC2vJ7bZskglG",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "oscarlaw <oscarlaw2010@gmail.com>"
+    }
+  }
+}
