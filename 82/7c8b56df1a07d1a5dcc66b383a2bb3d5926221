@@ -1,0 +1,26 @@
+tinkle/v1/updates.proto
+  s_d6bc4c3e2213ec::t_5ec6b3abcee3d7 28-29
+  s_d6bc4c3e2213ec::t_59c9829d5d0658 144-147
+  s_d6bc4c3e2213ec::t_14ff19ea3cac47 166-175,177-184
+  s_d6bc4c3e2213ec::t_23efb7cf5221b3 197-204
+conformance/test_updates_schema.py
+  s_d6bc4c3e2213ec::t_24716fe93cabdc 181
+  s_d6bc4c3e2213ec::t_41330c7c741898 297-300
+  s_d6bc4c3e2213ec::t_98af1f9d82b687 303-309
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "827c8b56df1a07d1a5dcc66b383a2bb3d5926221",
+  "prompts": {},
+  "sessions": {
+    "s_d6bc4c3e2213ec": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e8b840a56ffelwJOu3bnQbXZtx",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "oscarlaw <oscarlaw2010@gmail.com>"
+    }
+  }
+}
