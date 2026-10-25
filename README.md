@@ -221,23 +221,25 @@ Public contracts live under [`tinkle/v1/`](tinkle/v1/): authentication, accounts
 users, contacts, messaging, channels, bots, stickers, and help APIs. Shared types
 are in [`common.proto`](tinkle/v1/common.proto).
 
-[`updates.proto`](tinkle/v1/updates.proto) defines `UpdatesService`:
-`ReadUpdates` returns a bounded replay page, `FollowUpdates` streams individual
-durable updates, progress, and rebuild signals, and `ObserveConnectivity` streams
-ephemeral per-user `ConnectivityChanged` events. Each `Update` has one payload:
-`MessageRefresh`, `SendAttemptFailed`, `ContentOmitted`, or `ReadStateInvalidated`.
-Message effects, hydration, and order hints belong to the message constructor.
-`ReadUpdates` resumes strictly after the caller's applied cursor with `limit`
-and an optional `max_replay_distance` catch-up threshold; responses report the
-replay floor, observed head, and whether more replay remains.
+[`updates.proto`](tinkle/v1/updates.proto) defines `UpdatesService`,
+streaming only ephemeral privacy-filtered per-user `ConnectivityChanged`
+observations through `ObserveConnectivity`. Durable replay and watch (the
+former `ReadUpdates` and `FollowUpdates`, the `Update` envelope, and its
+payloads) have been retired from the public contract and remain
+implementation-internal.
 See the [generated reference](https://tinkle.me/schema/reference) for field and
 method semantics.
 
 Public UpdatesService bindings are not implemented in Chorus. Internal
 replay, watch, and presence capabilities exist; runtime bindings are documented
-in their implementation repositories. Room continuation stays fail-closed unless
-the implementation can establish continuity; current authorization and a saved
-numeric cursor alone are not sufficient.
+in their implementation repositories.
+
+To support clients reconciling without a durable feed,
+[`messages.proto`](tinkle/v1/messages.proto) adds `GetMessages` batch fetch by
+message ID, a per-conversation ordering and dedup token on
+`Message.accept_seq`, `GetTargetChanges` listing retained edits, deletions, and
+revocations strictly after an acceptance position, and a server-confirmed
+`more_available` on `GetHistoryResponse`.
 
 ## BSR resource
 
