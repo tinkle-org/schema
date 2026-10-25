@@ -1,0 +1,37 @@
+tinkle/v1/messages.proto
+  s_3bc8e0972ac7fa::t_d0abd3c163d895 1027
+  s_3bc8e0972ac7fa::t_0450f978bf6a9f 216
+  s_3bc8e0972ac7fa::t_9eddb0f0ad630d 540
+  s_3bc8e0972ac7fa::t_df0478049bd544 654
+  s_3bc8e0972ac7fa::t_a5d52723279a0d 580
+  s_3bc8e0972ac7fa::t_6986389a8f4ad3 249,1007
+  s_3bc8e0972ac7fa::t_c87378704e72b9 228,581,625,655,711,722,737,877,888,902,917,937,958,976,994,1025,1054,1065,1082,1098,1117,1128,1147,1162,1176,1193,1210,1222
+  s_3bc8e0972ac7fa::t_ef1beaad177f08 549
+  s_3bc8e0972ac7fa::t_a5d919907da99b 1006
+  s_3bc8e0972ac7fa::t_7166b57d999c5d 623
+tinkle/v1/common.proto
+  s_3bc8e0972ac7fa::t_5039e1530955ec 148,150-151
+conformance/test_updates_schema.py
+  s_3bc8e0972ac7fa::t_8b30e5424fcba0 21-26,29-30,32-33,42-68
+tinkle/v1/contacts.proto
+  s_3bc8e0972ac7fa::t_a3bfddb5c0a32d 46
+  s_3bc8e0972ac7fa::t_614ea3cbe1aa24 238,250
+  s_3bc8e0972ac7fa::t_aa3f982ebb9d5b 43
+  s_3bc8e0972ac7fa::t_65e73af61c108b 237,243,249,255
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ca580dd46a13de1a751a601be41aa31c18c12fe5",
+  "prompts": {},
+  "sessions": {
+    "s_3bc8e0972ac7fa": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e8af2b223ffeBnJ8yFMMMMJriO",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "oscarlaw <oscarlaw2010@gmail.com>"
+    }
+  }
+}
