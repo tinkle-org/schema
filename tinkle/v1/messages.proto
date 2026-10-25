@@ -213,7 +213,7 @@ enum TargetChangeKind {
   TARGET_CHANGE_KIND_UNSPECIFIED = 0;
   // The message body was edited; TargetChange.message carries the current body.
   TARGET_CHANGE_KIND_EDITED = 1;
-  // The message was removed for this viewer and peer visibility unchanged for others.
+  // The message was removed for this viewer; visibility for other participants is unchanged.
   TARGET_CHANGE_KIND_DELETED = 2;
   // The message was removed for every participant (bilateral revocation).
   TARGET_CHANGE_KIND_REVOKED = 3;
@@ -225,7 +225,7 @@ enum TargetChangeKind {
 
 // Dialog represents a conversation entry in the user's dialog list.
 message Dialog {
-  PeerInput peer = 1;
+  Target target = 1;
   int64 top_message = 2;
   int32 unread_count = 3;
   int64 read_inbox_max_id = 4;
@@ -246,7 +246,7 @@ message DraftMessage {
 // Message represents a single message in a conversation.
 message Message {
   int64 message_id = 1;
-  PeerInput peer = 2;
+  Target target = 2;
   int64 from_id = 3;
   google.protobuf.Timestamp date = 4;
   string message = 5;
@@ -537,7 +537,7 @@ message GetDialogsRequest {
   // Used for cursor pagination: the server returns dialogs older than this date.
   // Omit or set to 0 for the first page.
   optional int32 offset_date = 2;
-  // offset_peer_id is the peer ID of the last dialog on the previous page.
+  // offset_peer_id is the target ID of the last dialog on the previous page.
   // Used together with offset_date for stable cursor pagination when multiple
   // dialogs share the same date.
   optional int64 offset_peer_id = 3;
@@ -546,7 +546,7 @@ message GetDialogsRequest {
   optional int32 limit = 4;
   // hash is a client-computed checksum of the previously received dialog list.
   // If the server's current hash matches, it returns an empty response (unchanged).
-  // Compute as: XOR of all (dialog.peer_id * 0x2491 + dialog.top_message) values.
+  // Compute as: XOR of all (dialog target id * 0x2491 + dialog.top_message) values.
   // Set to 0 to always receive the full list.
   int64 hash = 5;
   // cursor is an opaque continuation token from a previous next_cursor value.
@@ -577,8 +577,8 @@ message GetDialogsResponse {
 // GetHistoryRequest requests message history for a conversation.
 // Supports bidirectional cursor pagination within a conversation.
 message GetHistoryRequest {
-  // peer identifies the conversation to fetch history from (required).
-  PeerInput peer = 1;
+  // target identifies the conversation to fetch history from (required).
+  Target target = 1;
   // offset_id is the message ID to start pagination from.
   // The server returns messages around this ID based on add_offset and limit.
   optional int64 offset_id = 2;
@@ -620,9 +620,9 @@ message GetHistoryResponse {
 
 // GetMessagesRequest fetches specific messages by ID in one conversation.
 message GetMessagesRequest {
-  // peer identifies the conversation the IDs belong to (required). All IDs
+  // target identifies the conversation the IDs belong to (required). All IDs
   // must reference this same conversation.
-  PeerInput peer = 1;
+  Target target = 1;
   // message_ids lists message IDs to retrieve, at most 100 per request.
   // Requests exceeding this bound are rejected rather than truncated, so
   // clients must batch in groups of at most 100.
@@ -651,8 +651,8 @@ message GetMessagesResponse {
 // acceptance order; use this to reconcile edits and removals without a durable
 // update feed.
 message GetTargetChangesRequest {
-  // peer identifies the conversation whose changes are listed (required).
-  PeerInput peer = 1;
+  // target identifies the conversation whose changes are listed (required).
+  Target target = 1;
   // after_accept_seq is the exclusive lower bound on the conversation's
   // mutation acceptance positions. Positions start at one; zero requests
   // everything retained and is the initial cursor. No other paging state is
@@ -708,7 +708,7 @@ message TargetChange {
 
 // ReadHistoryRequest marks messages as read in a conversation.
 message ReadHistoryRequest {
-  PeerInput peer = 1;
+  Target target = 1;
   int64 max_id = 2;
 }
 
@@ -719,7 +719,7 @@ message ReadHistoryResponse {
 
 // DeleteHistoryRequest specifies a conversation history range to delete.
 message DeleteHistoryRequest {
-  PeerInput peer = 1;
+  Target target = 1;
   int64 max_id = 2;
   optional bool revoke = 3;
   optional int32 min_date = 4;
@@ -734,7 +734,7 @@ message DeleteHistoryResponse {
 
 // DeleteMessagesRequest specifies messages to delete.
 message DeleteMessagesRequest {
-  PeerInput peer = 1;
+  Target target = 1;
   repeated int64 message_ids = 2;
   optional bool revoke = 3;
 }
@@ -874,7 +874,7 @@ message EditChatRestrictedScopesResponse {
 
 // SetHistoryTTLRequest configures auto-delete timer for a conversation.
 message SetHistoryTTLRequest {
-  PeerInput peer = 1;
+  Target target = 1;
   int32 period = 2;
 }
 
@@ -885,7 +885,7 @@ message SetHistoryTTLResponse {
 
 // UpdatePinnedMessageRequest pins or unpins a message in a conversation.
 message UpdatePinnedMessageRequest {
-  PeerInput peer = 1;
+  Target target = 1;
   int64 message_id = 2;
   optional bool silent = 3;
   optional bool unpin = 4;
@@ -899,7 +899,7 @@ message UpdatePinnedMessageResponse {
 
 // UnpinAllMessagesRequest unpins all messages in a conversation or thread.
 message UnpinAllMessagesRequest {
-  PeerInput peer = 1;
+  Target target = 1;
   optional int64 top_msg_id = 2;
 }
 
@@ -914,7 +914,7 @@ message UnpinAllMessagesResponse {
 
 // SendMessageRequest is the request to send a text message.
 message SendMessageRequest {
-  PeerInput peer = 1;
+  Target target = 1;
   string message = 2;
   int64 random_id = 3;
   optional ReplyInput reply_to = 4;
@@ -934,7 +934,7 @@ message SendMessageResponse {
 
 // SendMediaRequest is the request to send a media message.
 message SendMediaRequest {
-  PeerInput peer = 1;
+  Target target = 1;
   MediaInput media = 2;
   optional string message = 3;
   int64 random_id = 4;
@@ -955,7 +955,7 @@ message SendMediaResponse {
 
 // SendMultiMediaRequest sends an album of multiple media items.
 message SendMultiMediaRequest {
-  PeerInput peer = 1;
+  Target target = 1;
   repeated SingleMediaInput multi_media = 2;
   optional ReplyInput reply_to = 3;
   optional bool silent = 4;
@@ -973,7 +973,7 @@ message SendMultiMediaResponse {
 
 // EditMessageRequest edits an existing message's content or media.
 message EditMessageRequest {
-  PeerInput peer = 1;
+  Target target = 1;
   int64 message_id = 2;
   optional string message = 3;
   optional MediaInput media = 4;
@@ -991,7 +991,7 @@ message EditMessageResponse {
 
 // SetTypingRequest broadcasts a typing indicator to conversation participants.
 message SetTypingRequest {
-  PeerInput peer = 1;
+  Target target = 1;
   TypingAction action = 2;
   optional int64 top_msg_id = 3;
 }
@@ -1003,8 +1003,8 @@ message SetTypingResponse {
 
 // SendStartBotRequest starts a bot interaction with a start parameter.
 message SendStartBotRequest {
-  PeerInput bot = 1;
-  PeerInput peer = 2;
+  Target bot = 1;
+  Target target = 2;
   string start_param = 3;
   int64 random_id = 4;
 }
@@ -1022,9 +1022,9 @@ message SendStartBotResponse {
 
 // SearchRequest is the request for Search.
 message SearchRequest {
-  PeerInput peer = 1;
+  Target target = 1;
   string query = 2;
-  optional PeerInput from_peer = 3;
+  optional Target from_target = 3;
   optional int64 top_msg_id = 4;
   MessagesFilter filter = 5;
   int32 min_date = 6;
@@ -1051,7 +1051,7 @@ message SearchResponse {
 
 // GetMessagesReactionsRequest requests reaction summaries for multiple messages.
 message GetMessagesReactionsRequest {
-  PeerInput peer = 1;
+  Target target = 1;
   repeated int64 message_ids = 2;
 }
 
@@ -1062,7 +1062,7 @@ message GetMessagesReactionsResponse {
 
 // GetMessageReactionsListRequest requests individual reactors for a message.
 message GetMessageReactionsListRequest {
-  PeerInput peer = 1;
+  Target target = 1;
   int64 message_id = 2;
   optional Reaction reaction = 3;
   optional string offset = 4;
@@ -1079,7 +1079,7 @@ message GetMessageReactionsListResponse {
 
 // SendReactionRequest adds or removes reactions on a message.
 message SendReactionRequest {
-  PeerInput peer = 1;
+  Target target = 1;
   int64 message_id = 2;
   repeated Reaction reactions = 3;
   optional bool big = 4;
@@ -1095,7 +1095,7 @@ message SendReactionResponse {
 
 // GetUnreadMentionsRequest requests messages mentioning the authenticated user.
 message GetUnreadMentionsRequest {
-  PeerInput peer = 1;
+  Target target = 1;
   optional int64 top_msg_id = 2;
   int64 offset_id = 3;
   int32 add_offset = 4;
@@ -1114,7 +1114,7 @@ message GetUnreadMentionsResponse {
 
 // ReadMentionsRequest marks all mentions in a conversation as read.
 message ReadMentionsRequest {
-  PeerInput peer = 1;
+  Target target = 1;
   optional int64 top_msg_id = 2;
 }
 
@@ -1125,7 +1125,7 @@ message ReadMentionsResponse {
 
 // GetUnreadReactionsRequest requests messages with new reactions for the user.
 message GetUnreadReactionsRequest {
-  PeerInput peer = 1;
+  Target target = 1;
   optional int64 top_msg_id = 2;
   int64 offset_id = 3;
   int32 add_offset = 4;
@@ -1144,7 +1144,7 @@ message GetUnreadReactionsResponse {
 
 // ReadReactionsRequest marks all reactions in a conversation as read.
 message ReadReactionsRequest {
-  PeerInput peer = 1;
+  Target target = 1;
   optional int64 top_msg_id = 2;
 }
 
@@ -1159,7 +1159,7 @@ message ReadReactionsResponse {
 
 // SendVoteRequest records or retracts a vote on a poll.
 message SendVoteRequest {
-  PeerInput peer = 1;
+  Target target = 1;
   int64 message_id = 2;
   repeated bytes options = 3;
 }
@@ -1173,7 +1173,7 @@ message SendVoteResponse {
 
 // GetPollVotesRequest requests per-option voter lists with pagination.
 message GetPollVotesRequest {
-  PeerInput peer = 1;
+  Target target = 1;
   int64 message_id = 2;
   optional bytes option = 3;
   optional string offset = 4;
@@ -1190,7 +1190,7 @@ message GetPollVotesResponse {
 
 // GetPollResultsRequest requests current poll results.
 message GetPollResultsRequest {
-  PeerInput peer = 1;
+  Target target = 1;
   int64 message_id = 2;
 }
 
@@ -1207,7 +1207,7 @@ message GetPollResultsResponse {
 
 // ReadThreadRequest marks thread messages as read up to a specified ID.
 message ReadThreadRequest {
-  PeerInput peer = 1;
+  Target target = 1;
   int64 top_msg_id = 2;
   int64 read_max_id = 3;
 }
@@ -1219,7 +1219,7 @@ message ReadThreadResponse {
 
 // GetThreadMessageRequest requests thread replies with pagination.
 message GetThreadMessageRequest {
-  PeerInput peer = 1;
+  Target target = 1;
   int64 message_id = 2;
   optional int64 offset_id = 3;
   optional int32 offset_date = 4;
