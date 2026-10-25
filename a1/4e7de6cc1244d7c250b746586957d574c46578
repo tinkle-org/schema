@@ -1,0 +1,20 @@
+conformance/test_updates_schema.py
+  s_3bc8e0972ac7fa::t_763bd777eb3df6 128-129,131
+  s_3bc8e0972ac7fa::t_05808437975f9d 20-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a14e7de6cc1244d7c250b746586957d574c46578",
+  "prompts": {},
+  "sessions": {
+    "s_3bc8e0972ac7fa": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e8af2b223ffeBnJ8yFMMMMJriO",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "oscarlaw <oscarlaw2010@gmail.com>"
+    }
+  }
+}
