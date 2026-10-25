@@ -634,7 +634,12 @@ message GetMessagesRequest {
 // in full (unknown ID, deleted, revoked, or below the caller's history
 // visibility) are omitted rather than reported as errors; omitted IDs carry no
 // information about their past existence or deletion reason. Returned order is
-// unspecified; compare by message_id and dedup per conversation using accept_seq.
+// unspecified. A body fetch shares the message's accept_seq token, which is
+// stable across edits — the token identifies the message within the
+// conversation; it cannot rank copies. When two bodies for one message ID
+// disagree, keep the fresher by later edit_date; an absent edit_date never
+// beats a dated one. Learn which edits and removals happened through
+// GetTargetChanges, not by diffing fetched bodies.
 message GetMessagesResponse {
   repeated Message messages = 1;
   repeated User users = 2;
