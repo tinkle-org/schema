@@ -19,12 +19,17 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 UPDATES_FILE = "tinkle/v1/updates.proto"
 # Files and declarations excluded from the baseline-collision comparison,
 # because the in-flight branch stack intentionally changes them. updates.proto
-# is file-level (full retirement rewrite; pinned by the tests below). The
-# declaration sets cover (1) the reconciliation additions and (2) the
-# PeerInput → Target rename touching common/messages/contacts. Anything else
-# drifting from origin/main fails the suite. Trim entries on branches that
-# touch other files, and drop entries once included in origin/main.
-CHANGED_FILES = {"tinkle/v1/updates.proto"}
+# is file-level (full retirement rewrite; pinned by the tests below). files.proto
+# and media.proto are file-level additions of the file-transfer contract
+# (FilesService plus shared media metadata/attributes/variants). The
+# declaration sets cover (1) the reconciliation additions, (2) the
+# PeerInput → Target rename touching common/messages/contacts, and (3) the
+# *Source media-construction renames touching messages/bot_api/channels plus
+# the additive Photo/Document/UserPhoto/StickerView and bot send-request
+# changes. Anything else drifting from origin/main fails the suite. Trim
+# entries on branches that touch other files, and drop entries once included
+# in origin/main.
+CHANGED_FILES = {"tinkle/v1/updates.proto", "tinkle/v1/files.proto", "tinkle/v1/media.proto"}
 CHANGED_DECLARATIONS = {
     "tinkle.v1.PeerInput",
     "tinkle.v1.Target",
@@ -66,6 +71,62 @@ CHANGED_DECLARATIONS = {
     "tinkle.v1.GetThreadMessageRequest",
     "tinkle.v1.BlockRequest",
     "tinkle.v1.UnblockRequest",
+    # *Source renames: names retired from the baseline.
+    "tinkle.v1.MediaInput",
+    "tinkle.v1.InputPhoto",
+    "tinkle.v1.InputDocument",
+    "tinkle.v1.InputGeoPoint",
+    "tinkle.v1.InputMessageContact",
+    "tinkle.v1.InputPoll",
+    "tinkle.v1.PhotoInput",
+    "tinkle.v1.SingleMediaInput",
+    "tinkle.v1.InputMedia",
+    # *Source renames and typed media additions: names introduced by the branch.
+    "tinkle.v1.MediaSource",
+    "tinkle.v1.PhotoSource",
+    "tinkle.v1.DocumentSource",
+    "tinkle.v1.GeoPointSource",
+    "tinkle.v1.ContactSource",
+    "tinkle.v1.PollSource",
+    "tinkle.v1.VideoSource",
+    "tinkle.v1.AudioSource",
+    "tinkle.v1.VoiceSource",
+    "tinkle.v1.StickerSource",
+    "tinkle.v1.ChatPhotoSource",
+    "tinkle.v1.SingleMediaSource",
+    "tinkle.v1.BotMediaSource",
+    "tinkle.v1.MediaAttribute",
+    "tinkle.v1.AnimatedAttribute",
+    # Additive canonical file references, metadata, variants, and typed bot
+    # alternatives extending the declarations below.
+    "tinkle.v1.Photo",
+    "tinkle.v1.Document",
+    "tinkle.v1.UserPhoto",
+    "tinkle.v1.StickerView",
+    "tinkle.v1.EditChatPhotoRequest",
+    "tinkle.v1.EditPhotoRequest",
+    "tinkle.v1.SendPhotoRequest",
+    "tinkle.v1.SendDocumentRequest",
+    "tinkle.v1.SendVideoRequest",
+    "tinkle.v1.SendAudioRequest",
+    "tinkle.v1.SendVoiceRequest",
+    "tinkle.v1.SendStickerRequest",
+    "tinkle.v1.EditMessageMediaRequest",
+}
+
+# Message type names rebinded by the *Source renames; a baseline field's
+# typeName is mapped through this table before comparison so renames do not
+# mask field-level drift.
+RENAMED_TYPE_NAMES = {
+    ".tinkle.v1.MediaInput": ".tinkle.v1.MediaSource",
+    ".tinkle.v1.InputPhoto": ".tinkle.v1.PhotoSource",
+    ".tinkle.v1.InputDocument": ".tinkle.v1.DocumentSource",
+    ".tinkle.v1.InputGeoPoint": ".tinkle.v1.GeoPointSource",
+    ".tinkle.v1.InputMessageContact": ".tinkle.v1.ContactSource",
+    ".tinkle.v1.InputPoll": ".tinkle.v1.PollSource",
+    ".tinkle.v1.PhotoInput": ".tinkle.v1.ChatPhotoSource",
+    ".tinkle.v1.SingleMediaInput": ".tinkle.v1.SingleMediaSource",
+    ".tinkle.v1.InputMedia": ".tinkle.v1.BotMediaSource",
 }
 REPLACED_FILES = {"tinkle/v1/realtime.proto"}
 
@@ -140,6 +201,12 @@ class ConnectivitySchemaTests(unittest.TestCase):
 
     def round_trip(self, fixture, message_type="ObserveConnectivityResponse"):
         encoded = self.convert(fixture, message_type).stdout
+        if not encoded:
+            # All-defaults messages encode to zero bytes, and newer Buf
+            # versions reject zero-length binary payloads on stdin. An
+            # empty wire form decodes to an empty message by definition,
+            # so the empty case asserts the encoding alone.
+            return {}
         decoded = json.loads(self.convert(encoded, message_type, "binpb", "json").stdout)
         self.assertEqual(encoded, self.convert(decoded, message_type).stdout)
         return decoded
@@ -163,6 +230,41 @@ class ConnectivitySchemaTests(unittest.TestCase):
                        if d[0] not in CHANGED_FILES and n not in CHANGED_DECLARATIONS}
             self.assertTrue(baseline)
             self.assertEqual(baseline, current, kind)
+
+    def test_excluded_messages_keep_their_baseline_fields(self):
+        """Excluded messages that survive must keep every baseline field.
+
+        The name exclusion above disables whole-message comparison; this
+        closes the gap: each baseline field of an excluded message that
+        exists in both images must still appear unchanged (number, type,
+        mapped typeName, label, presence), so a tag renumber fails the
+        suite. Renamed-away and branch-introduced names are skipped.
+        Message scope: excluded enums and services are untouched here.
+        """
+        for name in sorted(CHANGED_DECLARATIONS):
+            if (name not in self.baseline["message"]
+                    or name not in self.current["message"]):
+                continue
+            current_fields = {
+                f["name"]: f
+                for f in self.current["message"][name][1].get("field", [])
+            }
+            for field in self.baseline["message"][name][1].get("field", []):
+                field_name = field["name"]
+                if field_name not in current_fields:
+                    self.fail(name + "." + field_name + " field was removed")
+                current = current_fields[field_name]
+                label = name + "." + field_name
+                self.assertEqual(field["number"], current["number"], label)
+                self.assertEqual(field["type"], current["type"], label)
+                self.assertEqual(
+                    RENAMED_TYPE_NAMES.get(field.get("typeName", ""),
+                                           field.get("typeName", "")),
+                    current.get("typeName", ""), label,
+                )
+                self.assertEqual(field["label"], current["label"], label)
+                self.assertEqual(field.get("proto3Optional", False),
+                                 current.get("proto3Optional", False), label)
 
     def test_constructor_inventory(self):
         self.assertEqual({

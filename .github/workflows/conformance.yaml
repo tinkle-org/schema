@@ -1,0 +1,46 @@
+name: conformance
+
+# Schema/codec conformance checks (pure Python, no bindings). Compares
+# declarations against origin/main, pins service shapes and additive field
+# preservation, and exercises Buf codec round trips for the public messages.
+# This is independent of buf-ci (which owns lint/format/breaking/publish) so
+# the suites can evolve separately. On main pushes, origin/main equals HEAD,
+# so the baseline comparison degenerates to an internal-consistency check;
+# drift detection happens on pull_request runs.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    paths:
+      - 'tinkle/**'
+      - 'conformance/**'
+      - 'buf.yaml'
+      - 'buf.lock'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: conformance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conformance:
+    name: Schema and codec checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Baseline comparison builds declarations from origin/main.
+          fetch-depth: 0
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          # Pinned so codec round trips stay reproducible: the suite asserts
+          # protojson emission details. Keep in sync with local Buf.
+          version: '1.59.0'
+      - name: Run conformance suite
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -m unittest discover -s conformance -p 'test_*.py' -v

@@ -32,6 +32,10 @@ reference and `website/content/` for schema overview pages.
 
 The package defines authentication, accounts, users, contacts, messaging,
 channels, bots, stickers, and help APIs, with shared types in `common.proto`.
+[`files.proto`](https://github.com/tinkle-org/schema/blob/main/tinkle/v1/files.proto)
+defines `FilesService` — resumable upload sessions, authoritative status,
+atomic completion, and byte-range downloads — with the shared media
+vocabulary in `media.proto`; see [File Transfers](/schema/file-transfers).
 [`updates.proto`](https://github.com/tinkle-org/schema/blob/main/tinkle/v1/updates.proto)
 defines `UpdatesService`, now streaming only ephemeral privacy-filtered
 per-user `ConnectivityChanged` observations through `ObserveConnectivity`;

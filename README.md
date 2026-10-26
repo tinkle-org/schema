@@ -219,7 +219,16 @@ step — code generation happens on the BSR, and docs generation happens in
 
 Public contracts live under [`tinkle/v1/`](tinkle/v1/): authentication, accounts,
 users, contacts, messaging, channels, bots, stickers, and help APIs. Shared types
-are in [`common.proto`](tinkle/v1/common.proto).
+are in [`common.proto`](tinkle/v1/common.proto); the shared media vocabulary
+(metadata, attributes, file variants) is in [`media.proto`](tinkle/v1/media.proto).
+
+[`files.proto`](tinkle/v1/files.proto) defines `FilesService`: resumable upload
+sessions (`BeginUpload`, `UploadPart`), authoritative snapshot-based status
+(`GetUploadStatus`), atomic completion (`CompleteUpload`), best-effort
+cancellation (`AbortUpload`), storage metadata (`GetFileInfo`), and byte-range
+downloads (`DownloadPart`). Completed files are immutable and referenced by
+canonical `file_id` across services; see the file-transfer guide in
+`website/content/file-transfers.mdx`.
 
 [`updates.proto`](tinkle/v1/updates.proto) defines `UpdatesService`,
 streaming only ephemeral privacy-filtered per-user `ConnectivityChanged`

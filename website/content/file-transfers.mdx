@@ -1,0 +1,136 @@
+---
+title: File Transfers
+description: The tinkle.v1 file-transfer contract — resumable upload sessions, authoritative status, atomic completion, and byte-range downloads through FilesService.
+---
+
+# File Transfers
+
+`tinkle.v1` keeps file transfer independent of messaging.
+[`FilesService`](/schema/reference/services/files) owns resumable upload
+sessions, authoritative upload status, atomic completion, and byte-range
+downloads. Every other service — messaging, profiles, stickers, bots —
+references completed files by their canonical `file_id`, so one upload can
+back many attachments across services.
+
+## Upload lifecycle
+
+```text
+BeginUpload ──► UploadPart(0 … n-1) ──► CompleteUpload ──► FileInfo { file_id }
+                    │      ▲                      │
+                    │      └── re-upload missing ─┤
+                    └─ reconnect: GetUploadStatus ┘
+```
+
+The client declares the exact total size and an optional whole-file SHA-256
+digest when opening the session; the server returns the negotiated part
+size, parallelism allowance, and expiry. Parts are zero-based and exactly
+the negotiated size except the final part. Completion verifies every part
+and the exact size, computes the authoritative digest, and publishes the
+file atomically — a failed completion never yields a partially valid file.
+
+| Step | Contract |
+| --- | --- |
+| Session creation | `BeginUpload` with `idempotency_key` scoped to the caller; identical retries return the same session and conflicting parameters are rejected; terminal sessions resolve per the server-defined retention window before the key may be reused |
+| Parts | Zero-based indexes; identical resubmissions succeed, conflicting bytes for a confirmed index are rejected |
+| Status | Confirmed part ranges are authoritative server confirmations, never echoes of client submissions |
+| Completion | Atomic; repeated completion returns the same committed file |
+| Cancellation | `AbortUpload` is idempotent best-effort cleanup and never deletes a completed file |
+| Expiry | Server-defined, returned in the session response; expired sessions can neither resume nor complete |
+
+## Recovering an interrupted upload
+
+An interrupted upload recovers from status alone — the client does not need
+to keep its own progress log, only the `upload_id`:
+
+```text
+BeginUpload            → upload_id = "up-123", part_size = 256 KiB
+UploadPart(0), (1)     → confirmed
+UploadPart(2)          → connection lost
+GetUploadStatus        → ACTIVE, received_ranges [(0,2)]
+UploadPart(2)          → confirmed
+CompleteUpload         → FileInfo { file_id }
+```
+
+Ranges are half-open: `(0,2)` covers parts 0 and 1 — the start index is
+inclusive and the end index exclusive.
+
+When `CompleteUpload` is called with parts missing, it fails with a
+structured incomplete-upload error carrying the missing ranges (bounded,
+with a truncation flag). `GetUploadStatus` always provides the same
+information, so recovery does not depend on error details being preserved
+by the transport.
+
+## Status is a snapshot
+
+`GetUploadStatus` enumerates confirmed part ranges from one stable
+snapshot. Continuation tokens bind the snapshot, the session, and the
+caller: new acknowledgements never shift or merge ranges across pages of
+that snapshot, so paging during an active upload cannot skip a confirmed
+range. Expired tokens are rejected and pagination restarts from the first
+page. Every response carries the declared total size; active sessions
+additionally carry the negotiated part size and current expiry, both
+absent after a terminal transition — enough to resume after losing local
+upload state.
+
+## Identifiers
+
+Three identifier kinds appear in and around the file contract, and they are
+not interchangeable:
+
+| Identifier | Kind | Lifetime | Notes |
+| --- | --- | --- | --- |
+| `upload_id` | Temporary session reference | Until expiry, abort, or completion | Bound to the uploader; opaque `string`; never a `file_id` |
+| `file_id` | Canonical file reference | Immutable after completion | Opaque `int64`, globally unique, never reassigned; exposes nothing about storage internals |
+| `id` on `Photo` / `Document` | Domain-object identifier | Per attachment object | A photo/document object references files; it is not itself a file ID |
+
+Possessing any of these identifiers grants no access. Every metadata
+retrieval and download passes an access check per call.
+
+## Sources and results
+
+The media contracts use a naming convention that separates what clients
+provide from what servers return:
+
+| Convention | Meaning | Examples |
+| --- | --- | --- |
+| `*Source` | Client-provided content definition for an operation | `MediaSource`, `PhotoSource`, `DocumentSource`, `VoiceSource` |
+| Media objects | Server-returned attachments | `Photo`, `Document`, `Media` |
+| `FileInfo` | Authoritative storage facts about committed bytes | `files.proto` |
+
+File-backed sources (`PhotoSource`, `DocumentSource`, and the typed
+`VideoSource`, `AudioSource`, `VoiceSource`, `StickerSource`) always
+reference an uploaded, completed Tinkle file — never a local path, URL, or
+unfinished upload. Their metadata is a client claim: the server verifies it
+where it can inspect the bytes, and cannot verify it at all for encrypted
+files. Documents carry composable, typed `MediaAttribute` entries (a video
+sticker carries both attributes; duplicates are rejected), and the typed
+sources are equivalent sugar for the matching attribute. Variant references
+(`MediaVariantSource`, roles such as thumbnails and previews) are
+access-checked like any other file reference.
+
+## Authorization
+
+File access flows from the application objects that reference a file —
+messages, profile photos, sticker packs — and from the uploader's own
+authorization. A `file_id` grants no access by itself: resolution requires
+an authorized application object or uploader authorization, so a bare
+`file_id` obtained from any other source — for example an export or a
+guess — must not resolve. Servers report unknown and inaccessible files
+identically, and upload sessions of other principals are indistinguishable
+from unknown sessions. Runtime enforcement lives in the server
+implementation, not in this contract.
+
+## Encrypted media
+
+For client-side encrypted uploads, the declared `encrypted` flag and all
+sizes, offsets, and digests describe the stored ciphertext. The server
+cannot inspect plaintext, so it cannot verify typed metadata or generate
+thumbnails for such files; confidential metadata must travel inside the
+E2EE payload, not in these RPC fields. Decryption keys are distributed
+through Tinkle's E2EE messaging system, not through this contract.
+
+## Implementation defaults
+
+Part sizes and size limits are deployment configuration, not schema
+constants. Clients must honor the values returned by `BeginUpload`
+instead of assuming defaults.

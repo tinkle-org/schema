@@ -4,5 +4,6 @@ export default {
   '*': { theme: { sidebar: false, pagination: false } },
   index: 'Overview',
   introduction: 'Introduction',
+  'file-transfers': 'File Transfers',
   reference: 'Reference',
 }

@@ -3,6 +3,7 @@ syntax = "proto3";
 package tinkle.v1;
 
 import "google/protobuf/timestamp.proto";
+import "tinkle/v1/media.proto";
 
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
@@ -84,16 +85,24 @@ service StickersService {
 // ============================================================================
 
 // StickerView is a client-facing sticker representation.
-// Clients resolve file_ids to downloadable URLs via the storage API.
+// Clients download sticker bytes through FilesService (GetFileInfo and
+// DownloadPart) using the canonical file references below; access is
+// checked per call and never follows from possessing the identifiers.
 message StickerView {
   // Unique sticker identifier.
   int64 id = 1;
-  // Storage service reference for the main sticker image.
+  // Canonical file ID of the main sticker image. The tag is retained from
+  // the earlier storage-reference semantics, which are superseded: bytes
+  // are resolved through FilesService, not through storage URLs.
   int64 file_id = 2;
-  // Storage service reference for the thumbnail image.
+  // Canonical file ID of the thumbnail image; resolved like file_id. The
+  // tag is retained from the earlier storage-reference semantics.
   int64 thumb_file_id = 3;
   // Whether this sticker requires a premium subscription.
   bool is_premium = 4;
+  // Server-published typed sticker metadata, when available. Pack
+  // ownership and mask positions stay in the sticker domain.
+  optional StickerMetadata metadata = 5;
 }
 
 // StickerPackPreview is a compact pack representation for list views.

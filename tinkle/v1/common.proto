@@ -13,6 +13,7 @@ syntax = "proto3";
 package tinkle.v1;
 
 import "google/protobuf/timestamp.proto";
+import "tinkle/v1/media.proto";
 
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
@@ -110,9 +111,14 @@ enum ContentScope {
 // =============================================================================
 
 // UserPhoto represents a user's profile photo.
+// file_id is the canonical reference to the stored full-size photo bytes;
+// resolve it through FilesService. Access follows the user's photo privacy
+// settings, never the mere possession of the identifier.
 message UserPhoto {
-  // Photo file ID
+  // Canonical file ID of the full-size photo.
   int64 file_id = 1;
+  // Stored variants (thumbnails/previews) of the photo.
+  repeated MediaVariant variants = 2;
 }
 
 // User represents a user with either minimal (Empty) or full (UserData) info.
