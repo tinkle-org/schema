@@ -91,9 +91,12 @@ service StickersService {
 message StickerView {
   // Unique sticker identifier.
   int64 id = 1;
-  // Canonical file ID of the main sticker image.
+  // Canonical file ID of the main sticker image. The tag is retained from
+  // the earlier storage-reference semantics, which are superseded: bytes
+  // are resolved through FilesService, not through storage URLs.
   int64 file_id = 2;
-  // Canonical file ID of the thumbnail image.
+  // Canonical file ID of the thumbnail image; resolved like file_id. The
+  // tag is retained from the earlier storage-reference semantics.
   int64 thumb_file_id = 3;
   // Whether this sticker requires a premium subscription.
   bool is_premium = 4;

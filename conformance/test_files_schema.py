@@ -21,7 +21,7 @@ FILES_FILE = "tinkle/v1/files.proto"
 MEDIA_FILE = "tinkle/v1/media.proto"
 
 # base64("x" * 32) — a syntactically valid 32-byte digest for fixtures.
-DIGEST_32 = "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4"
+DIGEST_32 = "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg="
 
 
 def run_buf(*arguments, input_bytes=None, check=True):
@@ -161,7 +161,7 @@ class FilesSchemaTests(unittest.TestCase):
         }
         self.assertEqual({
             "BeginUploadRequest", "BeginUploadResponse",
-            "UploadPartRequest", "UploadPartResponse", "UploadPartRange",
+            "UploadPartRequest", "UploadPartResponse", "PartIndexRange",
             "GetUploadStatusRequest", "GetUploadStatusResponse",
             "CompleteUploadRequest", "CompleteUploadResponse",
             "IncompleteUploadError",
@@ -211,7 +211,7 @@ class FilesSchemaTests(unittest.TestCase):
             ("part_index", 1, "INT64", "", False, False),
             ("already_present", 2, "BOOL", "", False, False),
         ], FILES_FILE)
-        self.assert_fields("UploadPartRange", [
+        self.assert_fields("PartIndexRange", [
             ("start_index", 1, "INT64", "", False, False),
             ("end_index", 2, "INT64", "", False, False),
         ], FILES_FILE)
@@ -224,7 +224,7 @@ class FilesSchemaTests(unittest.TestCase):
         ], FILES_FILE)
         self.assert_fields("GetUploadStatusResponse", [
             ("status", 1, "ENUM", "UploadStatus", False, False),
-            ("received_ranges", 2, "MESSAGE", "UploadPartRange", True, False),
+            ("received_ranges", 2, "MESSAGE", "PartIndexRange", True, False),
             ("next_page_token", 3, "STRING", "", False, True),
             ("expires_at", 4, "MESSAGE", ".google.protobuf.Timestamp",
              False, True),
@@ -242,7 +242,7 @@ class FilesSchemaTests(unittest.TestCase):
             ("file", 1, "MESSAGE", "FileInfo", False, False),
         ], FILES_FILE)
         self.assert_fields("IncompleteUploadError", [
-            ("missing_ranges", 1, "MESSAGE", "UploadPartRange", True, False),
+            ("missing_ranges", 1, "MESSAGE", "PartIndexRange", True, False),
             ("truncated", 2, "BOOL", "", False, False),
         ], FILES_FILE)
         self.assert_fields("AbortUploadRequest", [
@@ -292,7 +292,7 @@ class FilesSchemaTests(unittest.TestCase):
         }
         self.assertEqual({
             "ImageMetadata", "VideoMetadata", "AudioMetadata",
-            "StickerMetadata", "MediaAttribute", "AnimatedAttribute",
+            "StickerMetadata", "MediaAttribute",
             "MediaVariant", "MediaVariantSource",
         }, names)
 
@@ -335,8 +335,7 @@ class FilesSchemaTests(unittest.TestCase):
             ("emoji", 1, "STRING", "", False, False),
             ("width", 2, "UINT32", "", False, False),
             ("height", 3, "UINT32", "", False, False),
-            ("animated", 4, "BOOL", "", False, False),
-            ("format", 5, "ENUM", "StickerFormat", False, False),
+            ("format", 4, "ENUM", "StickerFormat", False, False),
         ], MEDIA_FILE)
 
     def test_attribute_and_variant_shapes(self):
@@ -345,12 +344,9 @@ class FilesSchemaTests(unittest.TestCase):
             ("video", 2, "MESSAGE", "VideoMetadata", False, False),
             ("audio", 3, "MESSAGE", "AudioMetadata", False, False),
             ("sticker", 4, "MESSAGE", "StickerMetadata", False, False),
-            ("animated", 5, "MESSAGE", "AnimatedAttribute", False, False),
         ], MEDIA_FILE)
         self.assert_oneof("MediaAttribute", "kind",
-                          ["image", "video", "audio", "sticker", "animated"],
-                          MEDIA_FILE)
-        self.assert_fields("AnimatedAttribute", [], MEDIA_FILE)
+                          ["image", "video", "audio", "sticker"], MEDIA_FILE)
         self.assert_fields("MediaVariant", [
             ("role", 1, "ENUM", "MediaVariantRole", False, False),
             ("file_id", 2, "INT64", "", False, False),
@@ -501,29 +497,35 @@ class FilesSchemaTests(unittest.TestCase):
             ("caption", 3, "STRING", "", False, True),
             ("parse_mode", 4, "STRING", "", False, True),
         ], "tinkle/v1/bot_api.proto")
-        # Legacy scalars stay untouched on their original tags.
+        # Legacy scalars keep their original tags; the oneof now enforces
+        # the mutual exclusivity the comments promise. Field order follows
+        # declaration order: the oneof sits before the caption fields.
         self.assert_fields("SendPhotoRequest", [
             ("chat_id", 1, "INT64", "", False, False),
             ("photo", 2, "INT64", "", False, False),
+            ("photo_source", 8, "MESSAGE", "PhotoSource", False, False),
             ("caption", 3, "STRING", "", False, True),
             ("parse_mode", 4, "STRING", "", False, True),
             ("reply_to_message_id", 5, "INT64", "", False, True),
             ("reply_markup", 6, "MESSAGE", "InlineKeyboardMarkup",
              False, True),
             ("disable_notification", 7, "BOOL", "", False, True),
-            ("photo_source", 8, "MESSAGE", "PhotoSource", False, True),
         ], "tinkle/v1/bot_api.proto")
+        self.assert_oneof("SendPhotoRequest", "photo_form",
+                          ["photo", "photo_source"], "tinkle/v1/bot_api.proto")
         descriptor = self.descriptor("EditMessageMediaRequest")
         types = {f["name"]: f.get("typeName", "") for f in descriptor["field"]}
         self.assertEqual(".tinkle.v1.BotMediaSource", types["media"])
         self.assertEqual(".tinkle.v1.MediaSource", types["source"])
+        self.assert_oneof("EditMessageMediaRequest", "media_form",
+                          ["media", "source"], "tinkle/v1/bot_api.proto")
 
     def test_source_union_has_no_legacy_input_members(self):
         # The union only carries *Source types; no Telegram-style Input types.
-        self.assertNotIn("InputPhoto", self.declarations["message"])
-        self.assertNotIn("InputDocument", self.declarations["message"])
-        self.assertNotIn("MediaInput", self.declarations["message"])
-        self.assertNotIn("InputMedia", self.declarations["message"])
+        # Lookups use the fully qualified keys of the declaration index.
+        for name in ("InputPhoto", "InputDocument", "MediaInput", "InputMedia"):
+            self.assertNotIn("tinkle.v1." + name, self.declarations["message"],
+                             name)
 
     # ------------------------------------------------------------------
     # Codec round trips
@@ -669,8 +671,15 @@ class FilesSchemaTests(unittest.TestCase):
             ("MediaSource", {"photo": {"fileId": "1"},
                              "document": {"fileId": "2"}}),
             ("MediaSource", {"photo": {"fileId": "1"}, "voice": {}}),
-            ("MediaAttribute", {"image": {"width": 1}, "animated": {}}),
+            ("MediaAttribute", {"image": {"width": 1},
+                                "sticker": {"emoji": "x"}}),
             ("ChatPhotoSource", {"fileId": "5", "empty": False}),
+            ("SendPhotoRequest", {"chatId": 1, "photo": "5",
+                                  "photoSource": {"fileId": "6"}}),
+            ("EditMessageMediaRequest", {"chatId": 1, "messageId": 2,
+                                         "media": {"type": "photo",
+                                                   "media": "5"},
+                                         "source": {"photo": {"fileId": "6"}}}),
         ):
             self.assertNotEqual(
                 0, self.convert(fixture, message_type, check=False).returncode,

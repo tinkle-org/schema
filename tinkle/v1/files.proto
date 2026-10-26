@@ -31,8 +31,11 @@ service FilesService {
   // negotiated part size, parallelism allowance, and expiry. Retrying with
   // the same idempotency key (scoped to the authenticated principal) and
   // identical parameters returns the same session; conflicting parameters
-  // are rejected. Sessions that reached a terminal state resolve per the
-  // server's documented retention window before the key may be reused.
+  // are rejected. Terminal sessions are retained for a server-defined
+  // window: within it, the same key resolves to the session's terminal
+  // outcome instead of a new upload (a completed session returns its
+  // committed file; an aborted or expired session reports that state);
+  // after retention, the key may be reused for a new session.
   rpc BeginUpload(BeginUploadRequest) returns (BeginUploadResponse);
   // UploadPart stores one indexed part of an upload session. Parts are
   // zero-based and exactly the negotiated part size, except the final part
@@ -161,12 +164,13 @@ message UploadPartResponse {
   bool already_present = 2;
 }
 
-// UploadPartRange is a half-open range of confirmed part indexes:
-// start_index inclusive, end_index exclusive.
-message UploadPartRange {
-  // First confirmed part index (inclusive). Zero serializes as absent.
+// PartIndexRange is a half-open range of part indexes: start_index
+// inclusive, end_index exclusive. Contexts using it document which parts
+// the range covers (confirmed parts, missing parts).
+message PartIndexRange {
+  // First part index of the range (inclusive). Zero serializes as absent.
   int64 start_index = 1;
-  // First unconfirmed part index (exclusive); always greater than
+  // First part index after the range (exclusive); always greater than
   // start_index.
   int64 end_index = 2;
 }
@@ -200,7 +204,7 @@ message GetUploadStatusResponse {
   // coalesced, bounded by the part count derived from size_bytes. The
   // ranges are authoritative server-side confirmations, not echoes of
   // client submissions. start_index zero serializes as absent.
-  repeated UploadPartRange received_ranges = 2;
+  repeated PartIndexRange received_ranges = 2;
   // Opaque token for the next page of the same snapshot. Empty when the
   // snapshot is exhausted.
   optional string next_page_token = 3;
@@ -245,7 +249,7 @@ message CompleteUploadResponse {
 // is always available through GetUploadStatus.
 message IncompleteUploadError {
   // Missing part ranges, sorted ascending, non-overlapping, and coalesced.
-  repeated UploadPartRange missing_ranges = 1;
+  repeated PartIndexRange missing_ranges = 1;
   // True when missing_ranges was truncated because too many gaps exist to
   // report; the client should consult GetUploadStatus for the full picture.
   bool truncated = 2;

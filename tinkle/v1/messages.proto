@@ -554,7 +554,8 @@ message VoiceSource {
   // Duration of the recording in milliseconds; must be greater than zero.
   uint64 duration_ms = 2;
   // Client-encoded waveform for inline voice rendering; opaque to the
-  // server. Zero serializes as absent.
+  // server. Unset when the client did not generate one; an explicitly set
+  // empty waveform is distinct from unset and serializes as present.
   optional bytes waveform = 3;
 }
 

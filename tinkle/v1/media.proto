@@ -50,7 +50,9 @@ message ImageMetadata {
   uint32 width = 1;
   // Image height in pixels; must be greater than zero.
   uint32 height = 2;
-  // Whether the image is animated (GIF-like playback).
+  // Whether the image is animated (GIF-like playback). This is the single
+  // source of truth for image animation; it applies to `PhotoSource` and
+  // to the image attribute of `DocumentSource`.
   bool animated = 3;
 }
 
@@ -97,10 +99,9 @@ message StickerMetadata {
   uint32 width = 2;
   // Sticker height in pixels.
   uint32 height = 3;
-  // Whether the sticker animates.
-  bool animated = 4;
-  // File format of the sticker image.
-  StickerFormat format = 5;
+  // File format of the sticker image. Animation has a single source of
+  // truth here: TGS and WebM stickers animate, WebP stickers do not.
+  StickerFormat format = 4;
 }
 
 // MediaAttribute is one typed attribute of a document-like attachment.
@@ -118,14 +119,8 @@ message MediaAttribute {
     // The document is a sticker with the described properties. Pack
     // ownership and mask positions stay in the sticker domain.
     StickerMetadata sticker = 4;
-    // The document is an animated image (GIF-like); carries no data.
-    AnimatedAttribute animated = 5;
   }
 }
-
-// AnimatedAttribute marks a document as an animated image (GIF-like
-// playback) and carries no further description.
-message AnimatedAttribute {}
 
 // MediaVariant is a server-published alternative representation of a
 // completed file, such as a generated or client-uploaded thumbnail.

@@ -4,7 +4,9 @@ name: conformance
 # declarations against origin/main, pins service shapes and additive field
 # preservation, and exercises Buf codec round trips for the public messages.
 # This is independent of buf-ci (which owns lint/format/breaking/publish) so
-# the suites can evolve separately.
+# the suites can evolve separately. On main pushes, origin/main equals HEAD,
+# so the baseline comparison degenerates to an internal-consistency check;
+# drift detection happens on pull_request runs.
 
 on:
   pull_request:
@@ -14,6 +16,8 @@ on:
     paths:
       - 'tinkle/**'
       - 'conformance/**'
+      - 'buf.yaml'
+      - 'buf.lock'
 
 permissions:
   contents: read
