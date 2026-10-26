@@ -4,9 +4,12 @@ Requires Buf only. The tests pin the public surface of files.proto and
 media.proto (service methods, message shapes, enums), the additive changes
 to Photo/Document/UserPhoto/StickerView and the send requests, and the
 *Source union conventions. Codec round trips exercise binary/JSON encoding
-for large int64 identifiers, byte payloads, ranges, and snapshot status;
-malformed input must be rejected. Runtime upload semantics (resumability,
-authorization, expiry, garbage collection) are not observable here.
+for large int64 identifiers, byte payloads, ranges, snapshot status,
+terminal BeginUpload outcomes, zero-byte files, download limits, and
+boundary shapes; malformed input must be rejected. These are codec and
+descriptor checks only: they prove nothing about runtime semantics —
+durable part commits, authorization, terminal-state races, snapshot
+isolation, or garbage collection live in the server implementations.
 """
 
 import json
@@ -194,10 +197,14 @@ class FilesSchemaTests(unittest.TestCase):
         ], FILES_FILE)
         self.assert_fields("BeginUploadResponse", [
             ("upload_id", 1, "STRING", "", False, False),
-            ("part_size_bytes", 2, "INT64", "", False, False),
-            ("max_parallel_parts", 3, "INT32", "", False, False),
+            # Configuration fields are explicit presence: they apply only
+            # to ACTIVE sessions and are omitted for terminal outcomes.
+            ("part_size_bytes", 2, "INT64", "", False, True),
+            ("max_parallel_parts", 3, "INT32", "", False, True),
             ("expires_at", 4, "MESSAGE", ".google.protobuf.Timestamp",
              False, False),
+            ("status", 5, "ENUM", "UploadStatus", False, False),
+            ("file", 6, "MESSAGE", "FileInfo", False, True),
         ], FILES_FILE)
 
     def test_part_shapes(self):
@@ -268,6 +275,10 @@ class FilesSchemaTests(unittest.TestCase):
         ], FILES_FILE)
         self.assert_fields("GetFileInfoResponse", [
             ("file", 1, "MESSAGE", "FileInfo", False, False),
+            # Transport/response information, not a FileInfo fact; the
+            # type matches DownloadPartRequest.limit so an advertised
+            # bound is always requestable.
+            ("max_download_part_bytes", 2, "INT32", "", False, True),
         ], FILES_FILE)
         self.assert_fields("DownloadPartRequest", [
             ("file_id", 1, "INT64", "", False, False),
@@ -538,8 +549,57 @@ class FilesSchemaTests(unittest.TestCase):
             "partSizeBytes": "262144",
             "maxParallelParts": 4,
             "expiresAt": "2026-10-25T12:00:00Z",
+            "status": "UPLOAD_STATUS_ACTIVE",
         }
         self.assertEqual(fixture, self.round_trip(fixture, "BeginUploadResponse"))
+
+    def test_begin_upload_terminal_outcomes_round_trip(self):
+        # A completed retained outcome carries the committed FileInfo and
+        # omits the active-session configuration entirely.
+        completed = {
+            "uploadId": "up-123",
+            "status": "UPLOAD_STATUS_COMPLETED",
+            "file": {
+                "fileId": "9007199254740993",
+                "sha256": DIGEST_32,
+                "createdAt": "2026-10-25T12:00:00Z",
+            },
+        }
+        decoded = self.round_trip(completed, "BeginUploadResponse")
+        self.assertEqual("UPLOAD_STATUS_COMPLETED", decoded["status"])
+        self.assertIn("file", decoded)
+        for absent in ("partSizeBytes", "maxParallelParts", "expiresAt"):
+            self.assertNotIn(absent, decoded)
+        # Aborted and expired retained outcomes carry neither configuration
+        # nor file; the client must start over with a fresh key.
+        for status in ("UPLOAD_STATUS_ABORTED", "UPLOAD_STATUS_EXPIRED"):
+            fixture = {"uploadId": "up-123", "status": status}
+            decoded = self.round_trip(fixture, "BeginUploadResponse")
+            self.assertEqual(status, decoded["status"])
+            self.assertNotIn("file", decoded)
+            for absent in ("partSizeBytes", "maxParallelParts", "expiresAt"):
+                self.assertNotIn(absent, decoded)
+
+    def test_begin_upload_request_optional_presence_round_trip(self):
+        # Optional fields keep explicit presence: an explicitly empty value
+        # serializes as present, distinct from an omitted field.
+        explicit_empty = {
+            "idempotencyKey": "k",
+            "sizeBytes": "10",
+            "fileName": "",
+        }
+        decoded = self.round_trip(explicit_empty, "BeginUploadRequest")
+        self.assertEqual("", decoded["fileName"])
+        self.assertNotIn("mimeType", decoded)
+        self.assertNotIn("sha256", decoded)
+        present = {
+            "idempotencyKey": "k",
+            "sizeBytes": "10",
+            "sha256": DIGEST_32,
+        }
+        decoded = self.round_trip(present, "BeginUploadRequest")
+        self.assertEqual(DIGEST_32, decoded["sha256"])
+        self.assertNotIn("fileName", decoded)
 
     def test_upload_part_round_trip(self):
         fixture = {"partIndex": "7", "alreadyPresent": True}
@@ -585,6 +645,34 @@ class FilesSchemaTests(unittest.TestCase):
         self.assertNotIn("partSizeBytes", decoded)
         self.assertNotIn("expiresAt", decoded)
 
+    def test_status_request_pagination_round_trip(self):
+        fixture = {
+            "uploadId": "up-123",
+            "pageToken": "snap-7-page-2",
+            "pageSize": 50,
+        }
+        self.assertEqual(fixture,
+                         self.round_trip(fixture, "GetUploadStatusRequest"))
+        first_page = {"uploadId": "up-123"}
+        decoded = self.round_trip(first_page, "GetUploadStatusRequest")
+        self.assertNotIn("pageToken", decoded)
+        self.assertNotIn("pageSize", decoded)
+
+    def test_zero_byte_file_round_trip(self):
+        # A zero-byte completed file: size_bytes zero serializes as absent
+        # under the implicit-presence convention, and the digest is the
+        # server-computed SHA-256 of the empty byte sequence.
+        empty_sha256 = "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU="
+        fixture = {
+            "fileId": "9007199254740993",
+            "sha256": empty_sha256,
+            "createdAt": "2026-10-25T12:00:00Z",
+        }
+        decoded = self.round_trip(fixture, "FileInfo")
+        self.assertEqual(empty_sha256, decoded["sha256"])
+        self.assertNotIn("sizeBytes", decoded)
+        self.assertNotIn("encrypted", decoded)
+
     def test_complete_and_incomplete_round_trips(self):
         file_fixture = {
             "file": {
@@ -611,6 +699,46 @@ class FilesSchemaTests(unittest.TestCase):
         data = {"data": "AAEC", "offset": "0", "eof": False}
         self.assertEqual({"data": "AAEC"},
                          self.round_trip(data, "DownloadPartResponse"))
+
+    def test_download_boundary_examples_round_trip(self):
+        # Progress guarantee shape: a nonempty remainder with a positive
+        # limit returns data and echoes the offset; eof marks the exact
+        # end of the returned range, not the requested limit. False serializes
+        # as absent under the implicit-presence convention.
+        progress = {"data": "AAEC", "offset": "1024", "eof": False}
+        decoded = self.round_trip(progress, "DownloadPartResponse")
+        self.assertEqual("1024", decoded["offset"])
+        self.assertIs(False, decoded.get("eof", False))
+        # End-of-file boundary: offset == size returns empty data with
+        # eof true; offset zero serializes as absent.
+        final = {"offset": "4096", "eof": True}
+        decoded = self.round_trip(final, "DownloadPartResponse")
+        self.assertNotIn("data", decoded)
+        self.assertTrue(decoded["eof"])
+
+    def test_get_file_info_response_download_limit_round_trip(self):
+        # The download limit is response/transport information carried
+        # beside the file, never inside FileInfo. Its type matches the
+        # request limit, so an advertised bound is always requestable.
+        fixture = {
+            "file": {
+                "fileId": "9007199254740993",
+                "sizeBytes": "1048576",
+                "sha256": DIGEST_32,
+                "createdAt": "2026-10-25T12:00:00Z",
+            },
+            "maxDownloadPartBytes": 262144,
+        }
+        decoded = self.round_trip(fixture, "GetFileInfoResponse")
+        self.assertEqual(262144, decoded["maxDownloadPartBytes"])
+        self.assertNotIn("maxDownloadPartBytes",
+                         decoded["file"],
+                         "download limit must not leak into FileInfo")
+        # The limit is explicit presence: absent means "not advertised
+        # here", distinct from a zero-valued bound.
+        decoded = self.round_trip({"file": fixture["file"]},
+                                  "GetFileInfoResponse")
+        self.assertNotIn("maxDownloadPartBytes", decoded)
 
     def test_abort_round_trip(self):
         self.assertEqual({"aborted": True},
@@ -704,6 +832,19 @@ class FilesSchemaTests(unittest.TestCase):
     # ------------------------------------------------------------------
     # Encoding hygiene
     # ------------------------------------------------------------------
+
+    def test_no_provider_specific_leakage(self):
+        # The public contract stays provider-neutral: object-store keys,
+        # bucket names, regions, provider upload IDs, ETags, and
+        # storage-internal cursors never appear as fields or literals in
+        # the file-transfer or media sources.
+        forbidden = ("s3", "gcs", "aws", "azure", "gcp", "bucket", "etag",
+                     "presign", "multipart", "region=")
+        for path in (REPO_ROOT / FILES_FILE, REPO_ROOT / MEDIA_FILE):
+            text = path.read_text().lower()
+            for token in forbidden:
+                self.assertNotIn(token, text,
+                                 f"{path.name} leaks {token!r}")
 
     def test_sequential_tags_and_json_names(self):
         for name, (file_name, message) in sorted(

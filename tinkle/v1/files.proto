@@ -17,6 +17,28 @@
 //   - All methods require a valid JWT token; the principal is extracted
 //     from token claims. Upload sessions of other principals are
 //     indistinguishable from unknown sessions.
+//
+// Lifecycle of a media attachment:
+//   1. Upload the bytes: BeginUpload, then UploadPart for every part, then
+//      CompleteUpload — yielding a canonical file_id.
+//   2. Construct the typed attachment (PhotoSource, DocumentSource,
+//      VideoSource, AudioSource, VoiceSource, StickerSource) referencing
+//      that file_id, with client-declared metadata and variant references.
+//   3. Send or edit the application object (message, profile photo,
+//      sticker, ...) that carries the attachment.
+//
+// BeginUpload deliberately carries no media-specific metadata: attachment
+// semantics belong to the *Source types, and FileInfo stays limited to
+// immutable storage facts. Everything clients declare — MIME types, file
+// names, dimensions, durations, codecs, encryption flags — is a
+// non-authoritative claim: the server verifies it where it can inspect
+// the bytes, and cannot verify anything for encrypted files. Decryption
+// keys and confidential metadata travel outside this contract.
+//
+// Authorization is never derived from content: this contract exposes no
+// global existence oracle for content digests, so content addressing (if
+// an implementation uses it internally) must not become a way to test
+// whether any principal has ever uploaded given bytes.
 syntax = "proto3";
 
 package tinkle.v1;
@@ -31,42 +53,114 @@ service FilesService {
   // negotiated part size, parallelism allowance, and expiry. Retrying with
   // the same idempotency key (scoped to the authenticated principal) and
   // identical parameters returns the same session; conflicting parameters
-  // are rejected. Terminal sessions are retained for a server-defined
-  // window: within it, the same key resolves to the session's terminal
-  // outcome instead of a new upload (a completed session returns its
-  // committed file; an aborted or expired session reports that state);
-  // after retention, the key may be reused for a new session.
+  // are rejected. Parameter equivalence is exact: optional fields compare
+  // by presence as well as value, so an omitted optional field and one set
+  // to its empty value are different parameters. The negotiated part size
+  // is chosen to fit the deployment's maximum transport message size,
+  // protobuf framing and envelopes included, and is persisted for the
+  // session's lifetime — it is never renegotiated mid-session.
+  //
+  // Zero-byte uploads (size_bytes 0) have no parts and complete
+  // immediately: the response reports UPLOAD_STATUS_COMPLETED with the
+  // committed FileInfo directly. The declared sha256 is validated before
+  // completion: a declaration that disagrees with the empty-sequence
+  // digest is rejected at creation.
+  //
+  // Terminal sessions are retained for a server-defined window: within it,
+  // the same key resolves to the session's terminal outcome instead of a
+  // new upload (a completed session returns its committed file; an aborted
+  // or expired session reports that state); after retention, the key may
+  // be reused for a new session.
   rpc BeginUpload(BeginUploadRequest) returns (BeginUploadResponse);
   // UploadPart stores one indexed part of an upload session. Parts are
   // zero-based and exactly the negotiated part size, except the final part
   // which may be shorter. Retrying the identical part succeeds; conflicting
-  // bytes for an already-confirmed part index are rejected.
+  // bytes for an already-confirmed part index are rejected, including
+  // concurrent conflicting submissions.
+  //
+  // A response proves durable acceptance: the part survives process
+  // restarts and later requests routed to any replica, and is never
+  // acknowledged merely for being queued in memory. A timed-out,
+  // cancelled, or disconnected call proves nothing about the part's fate —
+  // transport failure does not reverse a committed part. The caller
+  // recovers by resubmitting the identical part (idempotent) or by
+  // consulting GetUploadStatus.
+  //
+  // Servers enforce the negotiated parallelism and their resource limits;
+  // exceeding them is rejected. Terminal sessions (completed, aborted, or
+  // expired) accept no parts at all, including retries of previously
+  // confirmed parts: the session's outcome is fixed, and GetUploadStatus
+  // or CompleteUpload provides the recovery path.
   rpc UploadPart(UploadPartRequest) returns (UploadPartResponse);
   // GetUploadStatus reports the session state and confirmed part ranges
   // from a stable snapshot, so a client can resume after reconnecting
-  // without guessing what arrived. The snapshot covers pagination:
-  // continuations never shift or merge ranges as new parts arrive.
+  // without guessing what arrived. The snapshot covers the whole response:
+  // status, received_ranges, size_bytes, expires_at, part_size_bytes, and
+  // file are all read from the same snapshot as the ranges, so no page
+  // ever mixes one snapshot's ranges with another snapshot's state.
+  // Continuations never shift or merge ranges as new parts arrive, and new
+  // parts or terminal transitions never produce contradictory pages: pages
+  // issued from an active snapshot keep reporting that snapshot's state,
+  // and only a fresh first-page request observes a terminal outcome.
   rpc GetUploadStatus(GetUploadStatusRequest) returns (GetUploadStatusResponse);
   // CompleteUpload atomically verifies every confirmed part and the exact
   // total size, then publishes the file and returns its canonical
-  // FileInfo. A failed completion never produces a partially valid file;
-  // missing parts are reported in a structured incomplete-upload error,
-  // and GetUploadStatus provides the same recovery information. Repeated
-  // completion of the same session returns the same committed file.
+  // FileInfo. FileInfo.sha256 is the SHA-256 of the complete stored bytes
+  // in order — never a storage-layer upload identifier or composite
+  // checksum. Optional expectations (BeginUploadRequest.sha256 and
+  // CompleteUploadRequest.sha256) must agree with the server-verified
+  // digest; a mismatch fails the completion and never publishes the
+  // file. The two mismatches differ in recovery: a CompleteUpload-supplied
+  // mismatch is retryable — the client re-checks GetUploadStatus and
+  // retries with a corrected or absent expectation — while a
+  // BeginUpload-declared mismatch cannot be corrected, because the
+  // declaration is fixed at session creation; such a session can never
+  // complete and the client must abort it and start a new upload.
+  //
+  // Atomic completion means atomic application visibility: the file
+  // becomes visible to authorized readers together with its canonical
+  // FileInfo in a single step, after its bytes are durably stored. It does
+  // not imply a distributed transaction between metadata and object
+  // storage, and no such machinery is part of this contract.
+  //
+  // A timed-out, cancelled, or disconnected completion call proves
+  // nothing: the commit may have happened, and a deadline does not
+  // establish rollback. Clients recover by calling GetUploadStatus — a
+  // committed session reports UPLOAD_STATUS_COMPLETED with the committed
+  // FileInfo — and by retrying CompleteUpload, which returns the same
+  // committed file. Concurrent successful completions resolve to one
+  // committed file_id; exactly one terminal outcome wins when completion
+  // races abort or expiry. A failed completion never produces a partially
+  // valid file; missing parts are reported in a structured
+  // incomplete-upload error, and GetUploadStatus provides the same
+  // recovery information even when a transport drops error details.
   rpc CompleteUpload(CompleteUploadRequest) returns (CompleteUploadResponse);
   // AbortUpload cancels an unfinished upload session. It is a best-effort
   // cleanup operation: disconnected clients are not expected to call it,
   // so server-side expiry and garbage collection remain mandatory. Abort
   // is idempotent and never deletes a file that already completed.
+  //
+  // Abort and expiry are logical terminal states: the session can no
+  // longer accept parts or complete. Physical cleanup of stored bytes is
+  // eventual and implementation-defined; this contract exposes no cleanup
+  // mechanics and no way to observe them. When abort races completion,
+  // exactly one terminal outcome wins: if the session committed first,
+  // abort reports aborted=false and the file remains.
   rpc AbortUpload(AbortUploadRequest) returns (AbortUploadResponse);
   // GetFileInfo returns authoritative storage information for a completed
   // file. Size and digest are server-verified facts; MIME type and file
-  // name reflect client declarations. Access is checked per call.
+  // name reflect client declarations. Access is checked per call. The
+  // response also carries the deployment's current DownloadPart size
+  // limit, which is transport information rather than a file fact.
   rpc GetFileInfo(GetFileInfoRequest) returns (GetFileInfoResponse);
-  // DownloadPart returns one byte range of a completed file. Offsets are
-  // byte-oriented, not part-oriented, which supports resumable downloads
-  // and video seeking. For encrypted files, offsets index the stored
-  // ciphertext. Every download passes access checks.
+  // DownloadPart returns one byte range of a completed file. Only
+  // completed, immutable files are downloadable; there is no way to read
+  // an active session's bytes. Offsets are byte-oriented, not
+  // part-oriented, which supports resumable downloads and video seeking.
+  // For encrypted files, size, offsets, data, and digests all describe the
+  // stored ciphertext. Every download passes access checks, and the
+  // maximum requestable range is discoverable through
+  // GetFileInfoResponse.max_download_part_bytes when advertised.
   rpc DownloadPart(DownloadPartRequest) returns (DownloadPartResponse);
 }
 
@@ -106,7 +200,12 @@ message BeginUploadRequest {
   optional string mime_type = 4;
   // Optional client-computed SHA-256 digest of the exact stored bytes;
   // exactly 32 bytes when present. For encrypted uploads this covers the
-  // ciphertext the server will store.
+  // ciphertext the server will store. The declaration is fixed for the
+  // session's lifetime and completion verifies it, so an unsatisfiable
+  // declaration can never be corrected — the session must be aborted and
+  // re-created. For zero-byte uploads the server validates the
+  // declaration before completing: a digest other than the SHA-256 of
+  // the empty byte sequence is rejected at creation.
   optional bytes sha256 = 5;
   // Declares that the stored bytes are client-side encrypted. This is
   // informational: the server does not verify the encryption format, and
@@ -115,22 +214,45 @@ message BeginUploadRequest {
   bool encrypted = 6;
 }
 
-// BeginUploadResponse carries the negotiated session configuration. The
-// client must honor it; the values are implementation defaults of the
-// deployment, not schema constants.
+// BeginUploadResponse carries either the negotiated configuration of a new
+// or still-active session, or the retained terminal outcome that the same
+// idempotency key already resolved to. Clients decide solely on the status
+// field; they never infer terminal state from absent or zero-valued
+// configuration.
 message BeginUploadResponse {
   // Opaque temporary upload session identifier. Bound to the uploading
   // principal and usable until the session expires or terminates. Never a
-  // file identifier.
+  // file identifier. Always present, including for terminal outcomes,
+  // where it identifies the retained session the key resolved to.
   string upload_id = 1;
   // Negotiated exact part size in bytes. Every part except the final part
-  // must be exactly this size.
-  int64 part_size_bytes = 2;
+  // must be exactly this size. Present if and only if status is
+  // UPLOAD_STATUS_ACTIVE: the size is negotiated once at session creation,
+  // persisted for the session's lifetime, and never renegotiated.
+  optional int64 part_size_bytes = 2;
   // Maximum number of parts the client may upload in parallel; at least
-  // one.
-  int32 max_parallel_parts = 3;
+  // one. Present if and only if status is UPLOAD_STATUS_ACTIVE.
+  optional int32 max_parallel_parts = 3;
   // Server-defined expiry of the active session, returned as configured.
+  // Present if and only if status is UPLOAD_STATUS_ACTIVE; terminal
+  // sessions have no remaining lifetime to report.
   google.protobuf.Timestamp expires_at = 4;
+  // Lifecycle state the idempotency key resolved to; never
+  // UPLOAD_STATUS_UNSPECIFIED:
+  //   - UPLOAD_STATUS_ACTIVE: a new or still-active session; the
+  //     configuration fields above apply.
+  //   - UPLOAD_STATUS_COMPLETED: the retained session already committed
+  //     atomically; file carries its committed FileInfo and the client
+  //     must not re-upload. Zero-byte sessions always resolve here.
+  //   - UPLOAD_STATUS_ABORTED or UPLOAD_STATUS_EXPIRED: the retained
+  //     session terminated and can neither resume nor complete; the client
+  //     must start a new upload with a fresh idempotency key.
+  UploadStatus status = 5;
+  // The committed, immutable file. Present if and only if status is
+  // UPLOAD_STATUS_COMPLETED — including the zero-byte case, whose FileInfo
+  // carries size_bytes 0 and the server-computed SHA-256 of the empty byte
+  // sequence.
+  optional FileInfo file = 6;
 }
 
 // =============================================================================
@@ -150,8 +272,9 @@ message UploadPartRequest {
   // which completes the declared total size.
   bytes data = 3;
   // Optional SHA-256 digest of this part's bytes; exactly 32 bytes when
-  // present. Confirmed parts whose later submission carries a different
-  // digest are rejected.
+  // present. The server verifies it against the bytes actually received,
+  // not against any client-side claim. Confirmed parts whose later
+  // submission carries a different digest are rejected.
   optional bytes sha256 = 4;
 }
 
@@ -197,8 +320,12 @@ message GetUploadStatusRequest {
 
 // GetUploadStatusResponse carries the session state, the confirmed part
 // ranges of one stable snapshot, and, once complete, the committed file.
+// Every field is snapshot-consistent: a paginated enumeration observes one
+// stable snapshot, and no field of a page contradicts another page of the
+// same snapshot. Snapshot retention and per-page response size are
+// implementation policies.
 message GetUploadStatusResponse {
-  // Current lifecycle state of the session.
+  // Current lifecycle state of the session, as of the snapshot.
   UploadStatus status = 1;
   // Confirmed part ranges, sorted ascending, non-overlapping, and
   // coalesced, bounded by the part count derived from size_bytes. The
@@ -213,7 +340,9 @@ message GetUploadStatusResponse {
   optional google.protobuf.Timestamp expires_at = 4;
   // Negotiated part size, echoed so a client that lost its local upload
   // state can resume. Present for active sessions; absent after a
-  // terminal transition.
+  // terminal transition. The size is fixed for the session's lifetime: a
+  // caller whose current transport cannot carry it must not resume with
+  // that transport, and the boundary never silently changes.
   optional int64 part_size_bytes = 5;
   // Declared total size of the upload in bytes; equals the committed
   // file's size on completion. Zero serializes as absent.
@@ -232,7 +361,9 @@ message CompleteUploadRequest {
   string upload_id = 1;
   // Optional SHA-256 expectation of the whole stored file; exactly 32
   // bytes when present. Completion fails when it disagrees with the
-  // authoritative digest, or with a BeginUpload-declared digest.
+  // authoritative digest or with the BeginUpload-declared digest; the
+  // session stays active, and a CompleteUpload-supplied mismatch can be
+  // corrected on retry, while a BeginUpload-declared mismatch never can.
   optional bytes sha256 = 2;
 }
 
@@ -244,8 +375,8 @@ message CompleteUploadResponse {
 }
 
 // IncompleteUploadError identifies the confirmed gaps that prevented
-// completion. Servers attach it as a status detail on the failed
-// CompleteUpload where the transport supports details; the same information
+// completion. Servers attach it to the failed CompleteUpload error where
+// the transport supports structured error details; the same information
 // is always available through GetUploadStatus.
 message IncompleteUploadError {
   // Missing part ranges, sorted ascending, non-overlapping, and coalesced.
@@ -310,6 +441,18 @@ message GetFileInfoResponse {
   // Authoritative file information. Unknown or inaccessible files are
   // reported as not found rather than partially described.
   FileInfo file = 1;
+  // Maximum number of data bytes a single DownloadPart call may request
+  // for this deployment, as of this response. This is transport/response
+  // information, not an immutable fact of the file: it may differ between
+  // deployments and change over time, so it lives on this response rather
+  // than in FileInfo. The type matches DownloadPartRequest.limit, so an
+  // advertised bound is always requestable. Servers must set it for every
+  // file they serve; explicit presence keeps a missing value detectable
+  // rather than confused with zero. When present, limits above it are
+  // rejected; when absent — a non-conforming response — clients must fall
+  // back to a conservative limit of their own choosing, and only
+  // nonpositive limits are rejected.
+  optional int32 max_download_part_bytes = 2;
 }
 
 // DownloadPartRequest reads one byte range of a completed file.
@@ -320,22 +463,33 @@ message DownloadPartRequest {
   // inclusive; an offset equal to the size returns an empty range with
   // eof set. Offsets beyond the file size are rejected.
   int64 offset = 2;
-  // Maximum number of bytes to return; must be greater than zero and
-  // within the transport maximum. Servers may return fewer bytes than
-  // requested, never more.
+  // Maximum number of bytes to return; must be greater than zero and,
+  // when the deployment advertises max_download_part_bytes, at most that
+  // bound. Servers may return fewer bytes than requested — at the end of
+  // the file, or to respect their current transfer budget — never more.
   int32 limit = 3;
 }
 
 // DownloadPartResponse carries one byte range of a completed file.
+// Immutability makes downloads deterministic: retries and parallel range
+// reads of the same offsets return identical bytes.
 message DownloadPartResponse {
-  // The requested bytes, possibly shorter than the requested limit at the
-  // end of the file. Empty serializes as absent.
+  // The requested bytes. For a successful call with a positive limit and
+  // a nonempty remainder (offset < size), servers return progress: at
+  // least one byte, never empty data with eof false. The range is shorter
+  // than the requested limit only at the end of the file or when the
+  // server trims it to its current transfer budget. Empty serializes as
+  // absent.
   bytes data = 1;
   // Byte offset of the first returned byte; echo of the request offset.
   // Zero serializes as absent.
   int64 offset = 2;
-  // True when the returned range reaches the end of the file, including
-  // the empty range at offset == size. False means more bytes remain and
-  // the client may continue from offset + len(data).
+  // True exactly when the returned range reaches the end of the file —
+  // that is, when offset + len(data) equals the file size, including the
+  // empty range at offset == size. False means more bytes remain and the
+  // client continues from offset + len(data), never from offset plus the
+  // requested limit. Boundary arithmetic is checked and clamped: the read
+  // ends at the file's size and never wraps around, so servers must not
+  // compute the range end with unchecked offset-plus-limit addition.
   bool eof = 3;
 }
