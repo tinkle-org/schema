@@ -1,0 +1,158 @@
+// Media Types — Shared media metadata, attributes, and file variants.
+//
+// Contains the typed media metadata and file-variant vocabulary shared by
+// the file-transfer and messaging contracts. Everything here describes
+// application-level media; authoritative storage facts about the underlying
+// bytes live in FileInfo (files.proto).
+//
+// Naming conventions used across tinkle.v1:
+//   - `*Metadata` messages and `MediaAttribute` describe media content.
+//     Metadata supplied by clients is an explicit claim, never a server
+//     verification; for encrypted files the server cannot inspect bytes at all.
+//   - `MediaVariant` is a server-published alternative representation of a
+//     completed file (for example a thumbnail).
+//   - `MediaVariantSource` is a client-supplied reference to an uploaded,
+//     completed variant file.
+syntax = "proto3";
+
+package tinkle.v1;
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// MediaVariantRole describes the role an image variant plays for its parent
+// media attachment. Servers validate allowed roles per attachment kind.
+enum MediaVariantRole {
+  // Unspecified; rejected by servers.
+  MEDIA_VARIANT_ROLE_UNSPECIFIED = 0;
+  // Small thumbnail used in lists and previews.
+  MEDIA_VARIANT_ROLE_THUMBNAIL = 1;
+  // Medium preview shown while the full-size image downloads.
+  MEDIA_VARIANT_ROLE_PREVIEW = 2;
+  // Largest or full-size representation.
+  MEDIA_VARIANT_ROLE_FULL = 3;
+}
+
+// StickerFormat identifies the file format of a sticker image.
+enum StickerFormat {
+  // Unspecified or unknown format.
+  STICKER_FORMAT_UNSPECIFIED = 0;
+  // Static WebP image.
+  STICKER_FORMAT_WEBP = 1;
+  // Animated Lottie-based TGS archive.
+  STICKER_FORMAT_TGS = 2;
+  // Video (WebM) sticker.
+  STICKER_FORMAT_WEBM = 3;
+}
+
+// ImageMetadata describes an image attachment.
+message ImageMetadata {
+  // Image width in pixels; must be greater than zero.
+  uint32 width = 1;
+  // Image height in pixels; must be greater than zero.
+  uint32 height = 2;
+  // Whether the image is animated (GIF-like playback).
+  bool animated = 3;
+}
+
+// VideoMetadata describes a video attachment.
+message VideoMetadata {
+  // Video width in pixels.
+  uint32 width = 1;
+  // Video height in pixels.
+  uint32 height = 2;
+  // Duration in milliseconds; must be greater than zero.
+  uint64 duration_ms = 3;
+  // Client-declared codec identifier (for example "h264"); not verified.
+  optional string codec = 4;
+  // Whether the file supports progressive download and playback before the
+  // whole file is present on the client.
+  bool supports_streaming = 5;
+  // Whether this is a round (circular) video note.
+  bool round_video = 6;
+}
+
+// AudioMetadata describes an audio attachment or voice message.
+message AudioMetadata {
+  // Duration in milliseconds; must be greater than zero.
+  uint64 duration_ms = 1;
+  // Track title, if declared.
+  optional string title = 2;
+  // Performer or artist, if declared.
+  optional string performer = 3;
+  // Marks the audio as a recorded voice message. Voice messages render
+  // inline with playback controls and may be auto-transcribed by clients.
+  bool voice_message = 4;
+  // Client-encoded waveform for inline voice rendering. Opaque to the
+  // server; the encoding is a small client-defined sequence of amplitude
+  // values.
+  optional bytes waveform = 5;
+}
+
+// StickerMetadata describes a sticker image independently of pack ownership,
+// mask positions, and pack membership, which stay in the sticker domain.
+message StickerMetadata {
+  // Emojis associated with the sticker, as a single concatenated string.
+  string emoji = 1;
+  // Sticker width in pixels.
+  uint32 width = 2;
+  // Sticker height in pixels.
+  uint32 height = 3;
+  // Whether the sticker animates.
+  bool animated = 4;
+  // File format of the sticker image.
+  StickerFormat format = 5;
+}
+
+// MediaAttribute is one typed attribute of a document-like attachment.
+// Attributes compose: a video sticker carries both video and sticker
+// attributes. At most one attribute of each kind is accepted per attachment;
+// duplicated or conflicting kinds are rejected.
+message MediaAttribute {
+  oneof kind {
+    // The document is an image of the described dimensions.
+    ImageMetadata image = 1;
+    // The document is a video with the described properties.
+    VideoMetadata video = 2;
+    // The document is audio with the described properties.
+    AudioMetadata audio = 3;
+    // The document is a sticker with the described properties. Pack
+    // ownership and mask positions stay in the sticker domain.
+    StickerMetadata sticker = 4;
+    // The document is an animated image (GIF-like); carries no data.
+    AnimatedAttribute animated = 5;
+  }
+}
+
+// AnimatedAttribute marks a document as an animated image (GIF-like
+// playback) and carries no further description.
+message AnimatedAttribute {}
+
+// MediaVariant is a server-published alternative representation of a
+// completed file, such as a generated or client-uploaded thumbnail.
+// Variant file IDs are canonical file references and must pass the same
+// access checks as the parent file before use.
+message MediaVariant {
+  // Role this variant plays for its parent media attachment.
+  MediaVariantRole role = 1;
+  // Canonical file ID of the completed variant bytes.
+  int64 file_id = 2;
+  // Image width in pixels, for image variants.
+  optional uint32 width = 3;
+  // Image height in pixels, for image variants.
+  optional uint32 height = 4;
+}
+
+// MediaVariantSource references an uploaded, completed variant file that a
+// client supplies when building a media attachment. The referenced file must
+// be accessible to the caller; variant references are access-checked like
+// any other file reference.
+message MediaVariantSource {
+  // Canonical file ID of the uploaded, completed variant file.
+  int64 file_id = 1;
+  // Role this variant plays for the attachment being built.
+  MediaVariantRole role = 2;
+  // Client-asserted image width in pixels, for image variants.
+  optional uint32 width = 3;
+  // Client-asserted image height in pixels, for image variants.
+  optional uint32 height = 4;
+}

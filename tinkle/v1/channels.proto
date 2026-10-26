@@ -529,8 +529,9 @@ message EditTitleResponse {
 message EditPhotoRequest {
   // Channel ID.
   int64 channel_id = 1;
-  // Photo to upload.
-  PhotoInput photo = 2;
+  // Photo source: a completed file reference, a removal, or a full
+  // PhotoSource with metadata and variants.
+  ChatPhotoSource photo = 2;
 }
 
 // EditPhotoResponse indicates success.

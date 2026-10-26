@@ -11,6 +11,7 @@ package tinkle.v1;
 
 import "google/protobuf/timestamp.proto";
 import "tinkle/v1/common.proto";
+import "tinkle/v1/media.proto";
 
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
@@ -391,20 +392,40 @@ message Media {
 }
 
 // Photo represents a photo attachment.
+// id is the photo's domain-object identifier and is not a file ID;
+// file_id is the canonical reference to the stored full-size image bytes.
+// access_hash is retained as a legacy compatibility field; FilesService
+// authorization never depends on it.
 message Photo {
   int64 id = 1;
   int64 access_hash = 2;
   int32 width = 3;
   int32 height = 4;
+  // Canonical file ID of the full-size image bytes.
+  int64 file_id = 5;
+  // Server-published image metadata, when available.
+  optional ImageMetadata metadata = 6;
+  // Stored variants (thumbnails/previews); access-checked like the parent.
+  repeated MediaVariant variants = 7;
 }
 
 // Document represents a file/document attachment.
+// id is the document's domain-object identifier and is not a file ID;
+// file_id is the canonical reference to the stored bytes. access_hash is
+// retained as a legacy compatibility field; FilesService authorization
+// never depends on it.
 message Document {
   int64 id = 1;
   int64 access_hash = 2;
   string mime_type = 3;
   int64 size = 4;
   string file_name = 5;
+  // Canonical file ID of the stored bytes.
+  int64 file_id = 6;
+  // Server-published typed attributes of the document, when available.
+  repeated MediaAttribute attributes = 7;
+  // Stored variants (thumbnails/previews); access-checked like the parent.
+  repeated MediaVariant variants = 8;
 }
 
 // GeoPoint represents a geographic location.
@@ -452,46 +473,118 @@ message MissingInvitee {
 }
 
 // =============================================================================
-// Input types for media/reply (used by send operations)
+// Source types for media/reply (used by send operations)
 // =============================================================================
 
-// MediaInput represents a media attachment for sending.
-message MediaInput {
+// MediaSource represents the media content of a send or edit operation.
+//
+// `*Source` is the tinkle.v1 naming convention for client-provided content
+// definitions: a source describes what an operation should use, and is
+// never a server response object. File-backed sources reference an
+// uploaded, completed Tinkle file — never a local path, URL, or unfinished
+// upload — and may carry client-asserted metadata and variant references.
+message MediaSource {
   oneof media {
-    InputPhoto photo = 1;
-    InputDocument document = 2;
-    InputGeoPoint geo = 3;
-    InputMessageContact contact = 4;
-    InputPoll poll = 5;
+    PhotoSource photo = 1;
+    DocumentSource document = 2;
+    GeoPointSource geo = 3;
+    ContactSource contact = 4;
+    PollSource poll = 5;
+    VideoSource video = 6;
+    AudioSource audio = 7;
+    VoiceSource voice = 8;
+    StickerSource sticker = 9;
   }
 }
 
-// InputPhoto references an existing photo by file_id.
-message InputPhoto {
+// PhotoSource defines a photo attachment built from a completed file.
+message PhotoSource {
+  // Canonical file ID of an uploaded, completed image file.
   int64 file_id = 1;
+  // Client-asserted image metadata. Servers may verify it against the
+  // bytes when the file is not encrypted; otherwise it is a claim.
+  optional ImageMetadata metadata = 2;
+  // Client-supplied variant references (thumbnails/previews) uploaded
+  // through FilesService. Referenced files must be accessible to the
+  // caller and are access-checked like any other file reference.
+  repeated MediaVariantSource variants = 3;
 }
 
-// InputDocument references an existing document by file_id.
-message InputDocument {
+// DocumentSource defines a document attachment built from a completed file.
+// Typed semantics are supplied as composable MediaAttribute entries, at
+// most one attribute of each kind; duplicated or conflicting kinds are
+// rejected. The typed sources are equivalent sugar: a VideoSource is a
+// DocumentSource with a video attribute, and so on.
+message DocumentSource {
+  // Canonical file ID of an uploaded, completed file.
   int64 file_id = 1;
+  // Composable typed attributes describing the document's semantics.
+  repeated MediaAttribute attributes = 2;
+  // Client-supplied variant references uploaded through FilesService.
+  repeated MediaVariantSource variants = 3;
 }
 
-// InputGeoPoint represents geographic coordinates for sending.
-message InputGeoPoint {
+// VideoSource defines a video attachment built from a completed file.
+message VideoSource {
+  // Canonical file ID of an uploaded, completed video file.
+  int64 file_id = 1;
+  // Client-asserted video metadata; a claim, verified only when the
+  // server can inspect the bytes.
+  optional VideoMetadata metadata = 2;
+  // Client-supplied cover/thumbnail variant references.
+  repeated MediaVariantSource variants = 3;
+}
+
+// AudioSource defines an audio attachment built from a completed file.
+message AudioSource {
+  // Canonical file ID of an uploaded, completed audio file.
+  int64 file_id = 1;
+  // Client-asserted audio metadata; a claim, verified only when the
+  // server can inspect the bytes.
+  optional AudioMetadata metadata = 2;
+  // Client-supplied cover variant references.
+  repeated MediaVariantSource variants = 3;
+}
+
+// VoiceSource defines a voice message built from a completed file.
+// Equivalent to a DocumentSource with a voice audio attribute.
+message VoiceSource {
+  // Canonical file ID of an uploaded, completed voice recording.
+  int64 file_id = 1;
+  // Duration of the recording in milliseconds; must be greater than zero.
+  uint64 duration_ms = 2;
+  // Client-encoded waveform for inline voice rendering; opaque to the
+  // server. Zero serializes as absent.
+  optional bytes waveform = 3;
+}
+
+// StickerSource defines a sticker attachment built from a completed file.
+// Pack ownership stays in the sticker domain.
+message StickerSource {
+  // Canonical file ID of an uploaded, completed sticker image.
+  int64 file_id = 1;
+  // Client-asserted sticker metadata.
+  optional StickerMetadata metadata = 2;
+  // Client-supplied thumbnail variant references.
+  repeated MediaVariantSource variants = 3;
+}
+
+// GeoPointSource supplies geographic coordinates for sending.
+message GeoPointSource {
   double lat = 1;
   double long = 2;
 }
 
-// InputMessageContact represents a contact card for sending.
-message InputMessageContact {
+// ContactSource supplies a contact card for sending.
+message ContactSource {
   string phone_number = 1;
   string first_name = 2;
   string last_name = 3;
   int64 user_id = 4;
 }
 
-// InputPoll represents a poll definition for sending.
-message InputPoll {
+// PollSource supplies a poll definition for sending.
+message PollSource {
   string question = 1;
   repeated PollAnswer answers = 2;
   bool public_voters = 3;
@@ -508,17 +601,23 @@ message ReplyInput {
   repeated MessageTextEntity quote_entities = 3;
 }
 
-// PhotoInput represents a photo reference for chat photo operations.
-message PhotoInput {
+// ChatPhotoSource selects the photo for chat photo operations: it either
+// references a completed file directly, removes the current photo, or
+// supplies a full PhotoSource with metadata and variants.
+message ChatPhotoSource {
   oneof input {
+    // Canonical file ID of an uploaded, completed image file.
     int64 file_id = 1;
+    // Remove the current photo.
     bool empty = 2;
+    // Full photo source with client-asserted metadata and variants.
+    PhotoSource photo = 3;
   }
 }
 
-// SingleMediaInput represents a single item in a multi-media album.
-message SingleMediaInput {
-  MediaInput media = 1;
+// SingleMediaSource represents a single item in a multi-media album.
+message SingleMediaSource {
+  MediaSource media = 1;
   string message = 2;
   repeated MessageTextEntity entities = 3;
   int64 random_id = 4;
@@ -776,7 +875,7 @@ message EditChatTitleResponse {
 // EditChatPhotoRequest updates or removes a chat's photo.
 message EditChatPhotoRequest {
   int64 chat_id = 1;
-  PhotoInput photo = 2;
+  ChatPhotoSource photo = 2;
 }
 
 // EditChatPhotoResponse confirms the photo update.
@@ -935,7 +1034,7 @@ message SendMessageResponse {
 // SendMediaRequest is the request to send a media message.
 message SendMediaRequest {
   Target target = 1;
-  MediaInput media = 2;
+  MediaSource media = 2;
   optional string message = 3;
   int64 random_id = 4;
   optional ReplyInput reply_to = 5;
@@ -956,7 +1055,7 @@ message SendMediaResponse {
 // SendMultiMediaRequest sends an album of multiple media items.
 message SendMultiMediaRequest {
   Target target = 1;
-  repeated SingleMediaInput multi_media = 2;
+  repeated SingleMediaSource multi_media = 2;
   optional ReplyInput reply_to = 3;
   optional bool silent = 4;
   optional bool no_forward = 5;
@@ -976,7 +1075,7 @@ message EditMessageRequest {
   Target target = 1;
   int64 message_id = 2;
   optional string message = 3;
-  optional MediaInput media = 4;
+  optional MediaSource media = 4;
   repeated MessageTextEntity entities = 5;
   optional bool no_webpage = 6;
   optional int32 schedule_date = 7;
