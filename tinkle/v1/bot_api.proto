@@ -6,6 +6,7 @@ package tinkle.v1;
 
 import "google/protobuf/timestamp.proto";
 import "tinkle/v1/common.proto";
+import "tinkle/v1/messages.proto";
 
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
@@ -152,28 +153,45 @@ message BotApiServiceSendMessageResponse {
 // SendPhotoRequest sends a photo message.
 message SendPhotoRequest {
   int64 chat_id = 1;
+  // File ID of an uploaded, completed photo file (legacy scalar form).
+  // Mutually exclusive with photo_source; requests supplying both forms
+  // are rejected.
   int64 photo = 2;
   optional string caption = 3;
   optional string parse_mode = 4;
   optional int64 reply_to_message_id = 5;
   optional InlineKeyboardMarkup reply_markup = 6;
   optional bool disable_notification = 7;
+  // Typed photo source: the completed file plus client-asserted metadata
+  // and uploaded variants. Mutually exclusive with the legacy `photo`
+  // scalar.
+  optional PhotoSource photo_source = 8;
 }
 
 // SendDocumentRequest sends a document message.
 message SendDocumentRequest {
   int64 chat_id = 1;
+  // File ID of an uploaded, completed document file (legacy scalar form).
+  // Mutually exclusive with document_source; requests supplying both
+  // forms are rejected.
   int64 document = 2;
   optional string caption = 3;
   optional string parse_mode = 4;
   optional int64 reply_to_message_id = 5;
   optional InlineKeyboardMarkup reply_markup = 6;
   optional bool disable_notification = 7;
+  // Typed document source: the completed file plus composable attributes
+  // and uploaded variants. Mutually exclusive with the legacy `document`
+  // scalar.
+  optional DocumentSource document_source = 8;
 }
 
 // SendVideoRequest sends a video message.
 message SendVideoRequest {
   int64 chat_id = 1;
+  // File ID of an uploaded, completed video file (legacy scalar form).
+  // Mutually exclusive with video_source; requests supplying both forms
+  // are rejected.
   int64 video = 2;
   optional string caption = 3;
   optional string parse_mode = 4;
@@ -183,11 +201,19 @@ message SendVideoRequest {
   optional int64 reply_to_message_id = 8;
   optional InlineKeyboardMarkup reply_markup = 9;
   optional bool disable_notification = 10;
+  // Typed video source: the completed file plus client-asserted video
+  // metadata and uploaded covers. Mutually exclusive with the legacy
+  // `video` scalar; when supplied, the legacy duration/width/height
+  // fields are ignored.
+  optional VideoSource video_source = 11;
 }
 
 // SendAudioRequest sends an audio message.
 message SendAudioRequest {
   int64 chat_id = 1;
+  // File ID of an uploaded, completed audio file (legacy scalar form).
+  // Mutually exclusive with audio_source; requests supplying both forms
+  // are rejected.
   int64 audio = 2;
   optional string caption = 3;
   optional string parse_mode = 4;
@@ -197,11 +223,19 @@ message SendAudioRequest {
   optional int64 reply_to_message_id = 8;
   optional InlineKeyboardMarkup reply_markup = 9;
   optional bool disable_notification = 10;
+  // Typed audio source: the completed file plus client-asserted audio
+  // metadata and uploaded covers. Mutually exclusive with the legacy
+  // `audio` scalar; when supplied, the legacy duration/performer/title
+  // fields are ignored.
+  optional AudioSource audio_source = 11;
 }
 
 // SendVoiceRequest sends a voice message.
 message SendVoiceRequest {
   int64 chat_id = 1;
+  // File ID of an uploaded, completed voice recording (legacy scalar
+  // form). Mutually exclusive with voice_source; requests supplying both
+  // forms are rejected.
   int64 voice = 2;
   optional string caption = 3;
   optional string parse_mode = 4;
@@ -209,15 +243,26 @@ message SendVoiceRequest {
   optional int64 reply_to_message_id = 6;
   optional InlineKeyboardMarkup reply_markup = 7;
   optional bool disable_notification = 8;
+  // Typed voice source: the completed file plus duration and waveform.
+  // Mutually exclusive with the legacy `voice` scalar; when supplied, the
+  // legacy duration field is ignored.
+  optional VoiceSource voice_source = 9;
 }
 
 // SendStickerRequest sends a sticker message.
 message SendStickerRequest {
   int64 chat_id = 1;
+  // File ID of an uploaded, completed sticker image (legacy scalar form).
+  // Mutually exclusive with sticker_source; requests supplying both forms
+  // are rejected.
   int64 sticker = 2;
   optional int64 reply_to_message_id = 3;
   optional InlineKeyboardMarkup reply_markup = 4;
   optional bool disable_notification = 5;
+  // Typed sticker source: the completed file plus client-asserted sticker
+  // metadata and uploaded thumbnails. Mutually exclusive with the legacy
+  // `sticker` scalar.
+  optional StickerSource sticker_source = 6;
 }
 
 // SendLocationRequest sends a location message.
@@ -364,8 +409,13 @@ message EditMessageCaptionRequest {
 message EditMessageMediaRequest {
   int64 chat_id = 1;
   int64 message_id = 2;
-  InputMedia media = 3;
+  // Legacy string-discriminated media envelope. Mutually exclusive with
+  // source; requests supplying both forms are rejected.
+  BotMediaSource media = 3;
   optional InlineKeyboardMarkup reply_markup = 4;
+  // Typed media source carrying the completed file and its metadata.
+  // Mutually exclusive with the legacy media envelope.
+  optional MediaSource source = 5;
 }
 
 // EditMessageReplyMarkupRequest edits the reply markup of a message.
@@ -618,8 +668,11 @@ message InlineKeyboardButton {
   optional string switch_inline_query = 4;
 }
 
-// InputMedia represents media to be sent or edited.
-message InputMedia {
+// BotMediaSource is the legacy string-discriminated media envelope for bot
+// send and edit operations. The `type` string is not validated by this
+// schema; prefer the typed source fields on the send requests, which
+// reference completed Tinkle files with client-asserted metadata.
+message BotMediaSource {
   // Media type: "photo", "video", "document", "audio", "animation".
   string type = 1;
   // File ID of the media to send.
