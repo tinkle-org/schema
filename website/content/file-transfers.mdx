@@ -28,6 +28,25 @@ the negotiated size except the final part. Completion verifies every part
 and the exact size, computes the authoritative digest, and publishes the
 file atomically — a failed completion never yields a partially valid file.
 
+A completed upload is only the first half of the story. Attachments are
+built in three steps, and the contract keeps them separate on purpose:
+
+1. **Upload the bytes** — `BeginUpload` → `UploadPart` → `CompleteUpload`
+   yields a canonical `file_id`.
+2. **Construct the typed attachment** — a `PhotoSource`, `DocumentSource`,
+   `VideoSource`, `AudioSource`, `VoiceSource`, or `StickerSource`
+   referencing that `file_id`, with client-declared metadata and variant
+   references. `BeginUpload` carries no media metadata: attachment
+   semantics belong to the `*Source` types, and `FileInfo` stays limited
+   to immutable storage facts.
+3. **Send or edit the application object** — the message, profile photo,
+   or sticker that carries the attachment.
+
+Client-declared MIME types, dimensions, durations, codecs, and encryption
+flags are claims, never server-verified facts; for encrypted files the
+server cannot inspect plaintext at all. Decryption keys and confidential
+metadata travel outside this contract.
+
 | Step | Contract |
 | --- | --- |
 | Session creation | `BeginUpload` with `idempotency_key` scoped to the caller; identical retries return the same session and conflicting parameters are rejected; terminal sessions resolve per the server-defined retention window before the key may be reused |
@@ -36,6 +55,71 @@ file atomically — a failed completion never yields a partially valid file.
 | Completion | Atomic; repeated completion returns the same committed file |
 | Cancellation | `AbortUpload` is idempotent best-effort cleanup and never deletes a completed file |
 | Expiry | Server-defined, returned in the session response; expired sessions can neither resume nor complete |
+
+## Idempotent session creation
+
+The idempotency key is scoped to the authenticated principal and bound to
+the exact request parameters. Equivalence is exact: optional fields compare
+by presence as well as value, so an omitted optional field and one set to
+its empty value are different parameters and conflict.
+
+A retry with the same key resolves to the retained session, and
+`BeginUploadResponse.status` says which outcome that is — clients decide
+solely on this field and never infer terminal state from absent or
+zero-valued configuration:
+
+| Status | Meaning | `part_size_bytes` / `max_parallel_parts` / `expires_at` | `file` |
+| --- | --- | --- | --- |
+| `UPLOAD_STATUS_ACTIVE` | New or still-active session | Present | Absent |
+| `UPLOAD_STATUS_COMPLETED` | The retained session already committed | Absent | Present |
+| `UPLOAD_STATUS_ABORTED` | The retained session was cancelled | Absent | Absent |
+| `UPLOAD_STATUS_EXPIRED` | The retained session expired | Absent | Absent |
+
+The configuration fields apply only to active sessions; for terminal
+outcomes they are omitted, not zero-filled. `upload_id` is always present
+and identifies the retained session. Terminal sessions are retained for a
+server-defined window; after retention, the key may be reused for a new
+session.
+
+**Zero-byte uploads** have no parts and complete immediately: `BeginUpload`
+returns `UPLOAD_STATUS_COMPLETED` with the committed `FileInfo` directly.
+That `FileInfo` carries `size_bytes` 0 (which serializes as absent under
+the contract's implicit-presence convention) and the server-computed
+SHA-256 of the empty byte sequence,
+`e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`. A
+client that ignores the status and calls `CompleteUpload` anyway still
+succeeds idempotently with the same file.
+
+## Part sizes and transport limits
+
+Part sizes are deployment and transport limits, not schema constants. The
+server negotiates **one exact part size per session** at creation,
+sized to fit the deployment's maximum transport message size with protobuf
+framing and envelopes included, and persists it for the session's
+lifetime:
+
+- Every non-final part must be exactly the negotiated size; the final part
+  must exactly complete the declared total size. Wrong-size parts are
+  rejected.
+- The contract's parts are application-level units. They are not storage
+  upload parts: servers may segment, buffer, or re-group the bytes however
+  their object storage requires, and no storage-internal identifier,
+  marker, or checksum ever surfaces in this contract.
+- A resumed session keeps its original part size. If a caller's current
+  transport cannot carry the negotiated size, the caller must not resume
+  with that transport — the boundary never silently changes, and
+  `GetUploadStatus` echoes the size so the client can detect the mismatch
+  before uploading.
+
+Download limits are discoverable per deployment: `GetFileInfoResponse`
+carries `max_download_part_bytes`, the largest data payload a single
+`DownloadPart` call may request. It is response/transport information, not
+an immutable `FileInfo` fact — it may differ between deployments and change
+over time, which is why it lives on the response rather than in `FileInfo`.
+A `DownloadPart` limit above that maximum is rejected; a server may still
+return fewer bytes than an in-range limit to respect its current transfer
+budget, and clients continue from `offset + len(data)`, never from the
+requested limit.
 
 ## Recovering an interrupted upload
 
@@ -58,19 +142,60 @@ When `CompleteUpload` is called with parts missing, it fails with a
 structured incomplete-upload error carrying the missing ranges (bounded,
 with a truncation flag). `GetUploadStatus` always provides the same
 information, so recovery does not depend on error details being preserved
-by the transport.
+by the transport — a client whose transport drops status details treats
+any failed completion as "consult `GetUploadStatus`".
+
+Part uploads have the same ambiguity rule in reverse: a timed-out or
+disconnected `UploadPart` proves nothing about the part's fate. Transport
+failure never reverses a committed part, so the client resubmits the
+identical part (which succeeds idempotently if it had committed) or
+consults `GetUploadStatus`. An acknowledgement always means durable
+acceptance — a part that is only queued in memory is never confirmed, and
+confirmed parts survive process restarts and requests routed to any
+replica.
 
 ## Status is a snapshot
 
 `GetUploadStatus` enumerates confirmed part ranges from one stable
-snapshot. Continuation tokens bind the snapshot, the session, and the
-caller: new acknowledgements never shift or merge ranges across pages of
-that snapshot, so paging during an active upload cannot skip a confirmed
-range. Expired tokens are rejected and pagination restarts from the first
-page. Every response carries the declared total size; active sessions
-additionally carry the negotiated part size and current expiry, both
-absent after a terminal transition — enough to resume after losing local
-upload state.
+snapshot. Continuation tokens bind the snapshot, the session, the caller,
+and an expiry: new acknowledgements never shift or merge ranges across
+pages of that snapshot, so paging during an active upload cannot skip a
+confirmed range. The whole response is snapshot-consistent — `status`,
+`received_ranges`, `size_bytes`, `expires_at`, `part_size_bytes`, and
+`file` all come from the same snapshot — and new parts or terminal
+transitions never produce contradictory pages: pages issued from an active
+snapshot keep reporting that snapshot's state, and only a fresh first-page
+request observes a terminal outcome. Expired or invalid tokens fail
+explicitly and pagination restarts from the first page; servers bound
+snapshot retention and page size as implementation policies. Every
+response carries the declared total size; active sessions additionally
+carry the negotiated part size and current expiry, both absent after a
+terminal transition — enough to resume after losing local upload state.
+
+## Completion, races, and recovery
+
+`CompleteUpload` verifies every required part and the exact total size
+before publishing. `FileInfo.sha256` is the SHA-256 of the complete stored
+bytes in order — never a storage-layer upload identifier or composite
+checksum. Optional expectations from `BeginUpload` and `CompleteUpload`
+must agree with the server-verified digest; a mismatch fails the
+completion, never publishes the file, and leaves the session active and
+retryable (re-check status, correct the expectation, or abort and start
+over).
+
+Atomic completion means atomic *application visibility*: the file becomes
+visible to authorized readers together with its canonical `FileInfo` in a
+single step, after its bytes are durably stored. It does not imply a
+distributed transaction between metadata and object storage.
+
+Timeouts are ambiguous by nature. A timed-out, cancelled, or disconnected
+completion call proves nothing — the commit may have happened, and a
+deadline does not establish rollback. Recovery is always the same: call
+`GetUploadStatus` (a committed session reports `UPLOAD_STATUS_COMPLETED`
+with the committed `FileInfo`), then retry `CompleteUpload`, which is
+idempotent and returns the same committed file. Concurrent successful
+completions resolve to one committed `file_id`, and exactly one terminal
+outcome wins when completion races abort or expiry.
 
 ## Identifiers
 
@@ -117,8 +242,52 @@ an authorized application object or uploader authorization, so a bare
 `file_id` obtained from any other source — for example an export or a
 guess — must not resolve. Servers report unknown and inaccessible files
 identically, and upload sessions of other principals are indistinguishable
-from unknown sessions. Runtime enforcement lives in the server
-implementation, not in this contract.
+from unknown sessions. The same rules apply to variant files such as
+thumbnails and previews: a `MediaVariantSource` or `MediaVariant` file
+reference is access-checked like any other file. Runtime enforcement lives
+in the server implementation, not in this contract.
+
+The contract also exposes no global existence oracle for content digests.
+An implementation may address storage by content hash internally, but no
+method reports "these bytes exist somewhere" for an arbitrary digest —
+content addressing must never become a way to probe what other principals
+have uploaded.
+
+## Errors
+
+All methods use the transport's standard status codes. The table below
+pins the intended code per situation; the statuses are the gRPC names,
+which other transports map onto their closest equivalents.
+
+| Method | Situation | Status |
+| --- | --- | --- |
+| `BeginUpload` | Malformed request (negative or oversized `size_bytes`, missing key, wrong digest length) | `INVALID_ARGUMENT` |
+| `BeginUpload` | Same key, conflicting parameters | `ALREADY_EXISTS` |
+| `BeginUpload` | Per-principal session or retention limits | `RESOURCE_EXHAUSTED` |
+| `UploadPart` | Wrong part size, out-of-range index, wrong digest length | `INVALID_ARGUMENT` |
+| `UploadPart` | Conflicting bytes for an already-confirmed index, including concurrent conflicting submissions | `FAILED_PRECONDITION` |
+| `UploadPart` | Session is terminal (completed, aborted, or expired) | `FAILED_PRECONDITION` |
+| `UploadPart` | Negotiated parallelism or resource limits exceeded | `RESOURCE_EXHAUSTED` |
+| `GetUploadStatus` | Invalid, foreign, or expired continuation token | `INVALID_ARGUMENT` |
+| `CompleteUpload` | Missing parts — `IncompleteUploadError` attached as a status detail where the transport supports details | `FAILED_PRECONDITION` |
+| `CompleteUpload` | Digest expectation disagrees with the server-verified digest | `FAILED_PRECONDITION` |
+| `CompleteUpload` | Session is terminal (aborted or expired) | `FAILED_PRECONDITION` |
+| `GetFileInfo`, `DownloadPart` | Unknown **or** inaccessible file (authorization-safe) | `NOT_FOUND` |
+| `GetUploadStatus`, `UploadPart`, `CompleteUpload`, `AbortUpload` | Unknown **or** foreign session (authorization-safe) | `NOT_FOUND` |
+| `DownloadPart` | `offset` beyond the size, nonpositive limit, or limit above `max_download_part_bytes` | `INVALID_ARGUMENT` |
+| `DownloadPart` | Current transfer budget exhausted | `RESOURCE_EXHAUSTED` |
+| All methods | Deadline exceeded or transport unavailable | Ambiguous — see below |
+
+Three rules apply across the table:
+
+- **Malformed input never consumes an idempotency key.** Requests rejected
+  as malformed are validated before idempotency binding, so they can never
+  conflict with a retained session.
+- **Digest mismatches leave the session retryable.** A failed expectation
+  check never publishes the file and never terminates the session.
+- **Timeouts and cancellation are ambiguous, never rollback.** No status
+  or transport cancellation reverses a committed part or a committed file;
+  recover through `GetUploadStatus` and idempotent retries.
 
 ## Encrypted media
 
@@ -131,6 +300,9 @@ through Tinkle's E2EE messaging system, not through this contract.
 
 ## Implementation defaults
 
-Part sizes and size limits are deployment configuration, not schema
-constants. Clients must honor the values returned by `BeginUpload`
-instead of assuming defaults.
+Part sizes, parallelism, session expiry, download limits, and retention
+windows are deployment configuration, not schema constants. Clients must
+honor the values returned by `BeginUpload` and
+`GetFileInfoResponse.max_download_part_bytes` instead of assuming
+defaults, and must treat all of them as potentially different on the next
+deployment.
