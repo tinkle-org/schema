@@ -110,13 +110,15 @@ access-checked like any other file reference.
 
 ## Authorization
 
-File access is determined by the application objects that reference a file
-— messages, profile photos, sticker packs — plus the uploader's own access.
-A bare `file_id` obtained outside such an authorized object — for example
-from an export or a guess — must not resolve. Servers report unknown and
-inaccessible files identically, and upload sessions of other principals are
-indistinguishable from unknown sessions. Runtime enforcement lives in the
-server implementation, not in this contract.
+File access flows from the application objects that reference a file —
+messages, profile photos, sticker packs — and from the uploader's own
+authorization. A `file_id` grants no access by itself: resolution requires
+an authorized application object or uploader authorization, so a bare
+`file_id` obtained from any other source — for example an export or a
+guess — must not resolve. Servers report unknown and inaccessible files
+identically, and upload sessions of other principals are indistinguishable
+from unknown sessions. Runtime enforcement lives in the server
+implementation, not in this contract.
 
 ## Encrypted media
 
