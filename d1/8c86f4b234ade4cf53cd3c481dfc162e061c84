@@ -1,0 +1,31 @@
+conformance/test_updates_schema.py
+  s_ee870de06f61a6::t_4871d0ccbd061c 22-32,74-114
+conformance/test_files_schema.py
+  s_ee870de06f61a6::t_0a514776ecd2db 663-665,667,676-680,682
+  s_ee870de06f61a6::t_7ba44a41dd4056 282-286
+  s_ee870de06f61a6::t_51e2c07ba483d2 693,705-712
+  s_ee870de06f61a6::t_c72be6769371fa 151-155
+  s_ee870de06f61a6::t_efc187a7cab7a4 527,529-532,537,543-545,547-549,554-555,559,564,566-567,570,575,577-578,583-584,586-588,594,614,617,624,627,634,637,644-645,649,653,655
+  s_ee870de06f61a6::t_1444189fb6a315 193
+  s_ee870de06f61a6::t_ab605dc58fe10c 223
+  s_ee870de06f61a6::t_1d74d48c4982b2 257
+  s_ee870de06f61a6::t_7dc0e8c752f309 1-150,156-192,194-222,224-256,258-281,287-526,528,533-536,538-542,546,550-553,556-558,560-563,565,568-569,571-574,576,579-582,585,589-593,595-613,615-616,618-623,625-626,628-633,635-636,638-643,646-648,650-652,654,656-662,666,668-675,681,683-692,694-704,713-716
+.github/workflows/conformance.yaml
+  s_ee870de06f61a6::t_50cf00cc37ffa0 1-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d18c86f4b234ade4cf53cd3c481dfc162e061c84",
+  "prompts": {},
+  "sessions": {
+    "s_ee870de06f61a6": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e8a516fceffeTxDFcEXr11E6Uh",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "oscarlaw <oscarlaw2010@gmail.com>"
+    }
+  }
+}
