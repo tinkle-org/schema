@@ -1,0 +1,27 @@
+website/content/_meta.js
+  s_ee870de06f61a6::t_e2b0dedc8eb2ed 7
+website/content/introduction.mdx
+  s_ee870de06f61a6::t_aec5f9878e9f6a 35-38
+website/content/file-transfers.mdx
+  s_ee870de06f61a6::t_2a8a4de49ffae0 1-130
+README.md
+  s_ee870de06f61a6::t_31941244e5bb84 222-231
+website/content/index.mdx
+  s_ee870de06f61a6::t_d5a32b3d89f497 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "84518d1adde3a47e55450162039c7384651c39a8",
+  "prompts": {},
+  "sessions": {
+    "s_ee870de06f61a6": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e8a516fceffeTxDFcEXr11E6Uh",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "oscarlaw <oscarlaw2010@gmail.com>"
+    }
+  }
+}
