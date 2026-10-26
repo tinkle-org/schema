@@ -43,9 +43,9 @@ built in three steps, and the contract keeps them separate on purpose:
    or sticker that carries the attachment.
 
 Client-declared MIME types, dimensions, durations, codecs, and encryption
-flags are claims, never server-verified facts; for encrypted files the
-server cannot inspect plaintext at all. Decryption keys and confidential
-metadata travel outside this contract.
+flags are non-authoritative claims: the server verifies them where it can
+inspect the bytes, and cannot verify anything for encrypted files.
+Decryption keys and confidential metadata travel outside this contract.
 
 | Step | Contract |
 | --- | --- |
@@ -83,9 +83,11 @@ session.
 
 **Zero-byte uploads** have no parts and complete immediately: `BeginUpload`
 returns `UPLOAD_STATUS_COMPLETED` with the committed `FileInfo` directly.
-That `FileInfo` carries `size_bytes` 0 (which serializes as absent under
-the contract's implicit-presence convention) and the server-computed
-SHA-256 of the empty byte sequence,
+The server validates the declared digest before completing — a `sha256`
+declaration that disagrees with the empty-sequence digest is rejected at
+creation. That `FileInfo` carries `size_bytes` 0 (which serializes as
+absent under the contract's implicit-presence convention) and the
+server-computed SHA-256 of the empty byte sequence,
 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`. A
 client that ignores the status and calls `CompleteUpload` anyway still
 succeeds idempotently with the same file.
@@ -116,10 +118,14 @@ carries `max_download_part_bytes`, the largest data payload a single
 `DownloadPart` call may request. It is response/transport information, not
 an immutable `FileInfo` fact — it may differ between deployments and change
 over time, which is why it lives on the response rather than in `FileInfo`.
-A `DownloadPart` limit above that maximum is rejected; a server may still
-return fewer bytes than an in-range limit to respect its current transfer
-budget, and clients continue from `offset + len(data)`, never from the
-requested limit.
+Its type matches the request limit, so an advertised bound is always
+requestable. Servers must set it for every file they serve; when it is
+present, a `DownloadPart` request above it is rejected, and when it is
+absent — a non-conforming response — clients must fall back to a
+conservative limit of their own choosing, with only nonpositive limits
+rejected. A server may still return fewer bytes than an in-range limit to
+respect its current transfer budget, and clients continue from
+`offset + len(data)`, never from the requested limit.
 
 ## Recovering an interrupted upload
 
@@ -142,17 +148,19 @@ When `CompleteUpload` is called with parts missing, it fails with a
 structured incomplete-upload error carrying the missing ranges (bounded,
 with a truncation flag). `GetUploadStatus` always provides the same
 information, so recovery does not depend on error details being preserved
-by the transport — a client whose transport drops status details treats
+by the transport — a client whose transport drops error details treats
 any failed completion as "consult `GetUploadStatus`".
 
 Part uploads have the same ambiguity rule in reverse: a timed-out or
 disconnected `UploadPart` proves nothing about the part's fate. Transport
-failure never reverses a committed part, so the client resubmits the
-identical part (which succeeds idempotently if it had committed) or
-consults `GetUploadStatus`. An acknowledgement always means durable
-acceptance — a part that is only queued in memory is never confirmed, and
-confirmed parts survive process restarts and requests routed to any
-replica.
+failure never reverses a committed part, so while the session is active
+the client resubmits the identical part (which succeeds idempotently if
+it had committed) or consults `GetUploadStatus`. An acknowledgement always
+means durable acceptance — a part that is only queued in memory is never
+confirmed, and confirmed parts survive process restarts and requests
+routed to any replica. Once the session is terminal, `UploadPart` rejects
+even identical retries of previously confirmed parts; recovery then goes
+through `GetUploadStatus` and, for committed sessions, `CompleteUpload`.
 
 ## Status is a snapshot
 
@@ -179,9 +187,12 @@ before publishing. `FileInfo.sha256` is the SHA-256 of the complete stored
 bytes in order — never a storage-layer upload identifier or composite
 checksum. Optional expectations from `BeginUpload` and `CompleteUpload`
 must agree with the server-verified digest; a mismatch fails the
-completion, never publishes the file, and leaves the session active and
-retryable (re-check status, correct the expectation, or abort and start
-over).
+completion and never publishes the file. The two mismatches differ in
+recovery: a `CompleteUpload`-supplied mismatch is retryable — re-check
+status and retry with a corrected or absent expectation — while a
+`BeginUpload` declaration is fixed for the session's lifetime, so an
+unsatisfiable declaration can never be corrected and the client must
+abort the session and start a new upload.
 
 Atomic completion means atomic *application visibility*: the file becomes
 visible to authorized readers together with its canonical `FileInfo` in a
@@ -255,36 +266,39 @@ have uploaded.
 
 ## Errors
 
-All methods use the transport's standard status codes. The table below
-pins the intended code per situation; the statuses are the gRPC names,
-which other transports map onto their closest equivalents.
+Every failure falls into a small set of conditions. The table pins the
+condition for each method and situation; concrete status codes and
+error-detail mechanics are transport bindings, defined by the
+implementation repositories, not by this page.
 
-| Method | Situation | Status |
-| --- | --- | --- |
-| `BeginUpload` | Malformed request (negative or oversized `size_bytes`, missing key, wrong digest length) | `INVALID_ARGUMENT` |
-| `BeginUpload` | Same key, conflicting parameters | `ALREADY_EXISTS` |
-| `BeginUpload` | Per-principal session or retention limits | `RESOURCE_EXHAUSTED` |
-| `UploadPart` | Wrong part size, out-of-range index, wrong digest length | `INVALID_ARGUMENT` |
-| `UploadPart` | Conflicting bytes for an already-confirmed index, including concurrent conflicting submissions | `FAILED_PRECONDITION` |
-| `UploadPart` | Session is terminal (completed, aborted, or expired) | `FAILED_PRECONDITION` |
-| `UploadPart` | Negotiated parallelism or resource limits exceeded | `RESOURCE_EXHAUSTED` |
-| `GetUploadStatus` | Invalid, foreign, or expired continuation token | `INVALID_ARGUMENT` |
-| `CompleteUpload` | Missing parts — `IncompleteUploadError` attached as a status detail where the transport supports details | `FAILED_PRECONDITION` |
-| `CompleteUpload` | Digest expectation disagrees with the server-verified digest | `FAILED_PRECONDITION` |
-| `CompleteUpload` | Session is terminal (aborted or expired) | `FAILED_PRECONDITION` |
-| `GetFileInfo`, `DownloadPart` | Unknown **or** inaccessible file (authorization-safe) | `NOT_FOUND` |
-| `GetUploadStatus`, `UploadPart`, `CompleteUpload`, `AbortUpload` | Unknown **or** foreign session (authorization-safe) | `NOT_FOUND` |
-| `DownloadPart` | `offset` beyond the size, nonpositive limit, or limit above `max_download_part_bytes` | `INVALID_ARGUMENT` |
-| `DownloadPart` | Current transfer budget exhausted | `RESOURCE_EXHAUSTED` |
-| All methods | Deadline exceeded or transport unavailable | Ambiguous — see below |
+| Method | Condition |
+| --- | --- |
+| `BeginUpload` | Malformed or inconsistent request — negative or oversized `size_bytes`, missing key, wrong digest length, or a declared digest that cannot match a zero-byte upload |
+| `BeginUpload` | Same key, conflicting parameters |
+| `BeginUpload` | Per-principal session or retention limits |
+| `UploadPart` | Wrong part size, out-of-range index, or wrong digest length |
+| `UploadPart` | Conflicting bytes for an already-confirmed index, including concurrent conflicting submissions |
+| `UploadPart` | Session is terminal (completed, aborted, or expired) |
+| `UploadPart` | Negotiated parallelism or resource limits exceeded |
+| `GetUploadStatus` | Invalid, foreign, or expired continuation token |
+| `CompleteUpload` | Missing parts — `IncompleteUploadError` attached to the error where the transport supports structured error details |
+| `CompleteUpload` | Digest expectation disagrees with the server-verified digest — retryable when supplied by `CompleteUpload`, permanent when declared at `BeginUpload` |
+| `CompleteUpload` | Session is terminal (aborted or expired) |
+| `GetFileInfo`, `DownloadPart` | Unknown **or** inaccessible file (authorization-safe) |
+| `GetUploadStatus`, `UploadPart`, `CompleteUpload`, `AbortUpload` | Unknown **or** foreign session (authorization-safe) |
+| `DownloadPart` | `offset` beyond the size, nonpositive limit, or — when advertised — a limit above `max_download_part_bytes` |
+| `DownloadPart` | Current transfer budget exhausted |
+| All methods | Deadline exceeded or transport unavailable — ambiguous, never rollback |
 
 Three rules apply across the table:
 
 - **Malformed input never consumes an idempotency key.** Requests rejected
   as malformed are validated before idempotency binding, so they can never
   conflict with a retained session.
-- **Digest mismatches leave the session retryable.** A failed expectation
-  check never publishes the file and never terminates the session.
+- **Digest mismatches never publish the file and never terminate the
+  session.** A `CompleteUpload`-supplied mismatch is correctable by
+  retrying with a corrected expectation; an unsatisfiable `BeginUpload`
+  declaration never is — the client aborts and starts over.
 - **Timeouts and cancellation are ambiguous, never rollback.** No status
   or transport cancellation reverses a committed part or a committed file;
   recover through `GetUploadStatus` and idempotent retries.

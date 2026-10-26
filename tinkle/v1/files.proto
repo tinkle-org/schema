@@ -27,11 +27,12 @@
 //   3. Send or edit the application object (message, profile photo,
 //      sticker, ...) that carries the attachment.
 //
-// BeginUpload deliberately carries no media metadata: attachment semantics
-// belong to the *Source types, and FileInfo stays limited to immutable
-// storage facts. Client-declared MIME types, dimensions, durations, codecs,
-// and encryption flags are claims, never server-verified facts; for
-// encrypted files the server cannot inspect plaintext at all. Decryption
+// BeginUpload deliberately carries no media-specific metadata: attachment
+// semantics belong to the *Source types, and FileInfo stays limited to
+// immutable storage facts. Everything clients declare — MIME types, file
+// names, dimensions, durations, codecs, encryption flags — is a
+// non-authoritative claim: the server verifies it where it can inspect
+// the bytes, and cannot verify anything for encrypted files. Decryption
 // keys and confidential metadata travel outside this contract.
 //
 // Authorization is never derived from content: this contract exposes no
@@ -61,7 +62,9 @@ service FilesService {
   //
   // Zero-byte uploads (size_bytes 0) have no parts and complete
   // immediately: the response reports UPLOAD_STATUS_COMPLETED with the
-  // committed FileInfo directly.
+  // committed FileInfo directly. The declared sha256 is validated before
+  // completion: a declaration that disagrees with the empty-sequence
+  // digest is rejected at creation.
   //
   // Terminal sessions are retained for a server-defined window: within it,
   // the same key resolves to the session's terminal outcome instead of a
@@ -106,9 +109,13 @@ service FilesService {
   // in order — never a storage-layer upload identifier or composite
   // checksum. Optional expectations (BeginUploadRequest.sha256 and
   // CompleteUploadRequest.sha256) must agree with the server-verified
-  // digest; a mismatch fails the completion and never publishes the file,
-  // and the session remains active and retryable: the client may re-check
-  // GetUploadStatus, correct its expectation, or abort and start over.
+  // digest; a mismatch fails the completion and never publishes the
+  // file. The two mismatches differ in recovery: a CompleteUpload-supplied
+  // mismatch is retryable — the client re-checks GetUploadStatus and
+  // retries with a corrected or absent expectation — while a
+  // BeginUpload-declared mismatch cannot be corrected, because the
+  // declaration is fixed at session creation; such a session can never
+  // complete and the client must abort it and start a new upload.
   //
   // Atomic completion means atomic application visibility: the file
   // becomes visible to authorized readers together with its canonical
@@ -153,7 +160,7 @@ service FilesService {
   // For encrypted files, size, offsets, data, and digests all describe the
   // stored ciphertext. Every download passes access checks, and the
   // maximum requestable range is discoverable through
-  // GetFileInfoResponse.max_download_part_bytes.
+  // GetFileInfoResponse.max_download_part_bytes when advertised.
   rpc DownloadPart(DownloadPartRequest) returns (DownloadPartResponse);
 }
 
@@ -193,7 +200,12 @@ message BeginUploadRequest {
   optional string mime_type = 4;
   // Optional client-computed SHA-256 digest of the exact stored bytes;
   // exactly 32 bytes when present. For encrypted uploads this covers the
-  // ciphertext the server will store.
+  // ciphertext the server will store. The declaration is fixed for the
+  // session's lifetime and completion verifies it, so an unsatisfiable
+  // declaration can never be corrected — the session must be aborted and
+  // re-created. For zero-byte uploads the server validates the
+  // declaration before completing: a digest other than the SHA-256 of
+  // the empty byte sequence is rejected at creation.
   optional bytes sha256 = 5;
   // Declares that the stored bytes are client-side encrypted. This is
   // informational: the server does not verify the encryption format, and
@@ -349,8 +361,9 @@ message CompleteUploadRequest {
   string upload_id = 1;
   // Optional SHA-256 expectation of the whole stored file; exactly 32
   // bytes when present. Completion fails when it disagrees with the
-  // authoritative digest, or with a BeginUpload-declared digest; the
-  // session stays active and retryable after such a failure.
+  // authoritative digest or with the BeginUpload-declared digest; the
+  // session stays active, and a CompleteUpload-supplied mismatch can be
+  // corrected on retry, while a BeginUpload-declared mismatch never can.
   optional bytes sha256 = 2;
 }
 
@@ -362,8 +375,8 @@ message CompleteUploadResponse {
 }
 
 // IncompleteUploadError identifies the confirmed gaps that prevented
-// completion. Servers attach it as a status detail on the failed
-// CompleteUpload where the transport supports details; the same information
+// completion. Servers attach it to the failed CompleteUpload error where
+// the transport supports structured error details; the same information
 // is always available through GetUploadStatus.
 message IncompleteUploadError {
   // Missing part ranges, sorted ascending, non-overlapping, and coalesced.
@@ -432,10 +445,14 @@ message GetFileInfoResponse {
   // for this deployment, as of this response. This is transport/response
   // information, not an immutable fact of the file: it may differ between
   // deployments and change over time, so it lives on this response rather
-  // than in FileInfo. Clients size DownloadPart limits from it; servers
-  // may still return fewer bytes than the limit to respect their current
-  // transfer budget.
-  optional int64 max_download_part_bytes = 2;
+  // than in FileInfo. The type matches DownloadPartRequest.limit, so an
+  // advertised bound is always requestable. Servers must set it for every
+  // file they serve; explicit presence keeps a missing value detectable
+  // rather than confused with zero. When present, limits above it are
+  // rejected; when absent — a non-conforming response — clients must fall
+  // back to a conservative limit of their own choosing, and only
+  // nonpositive limits are rejected.
+  optional int32 max_download_part_bytes = 2;
 }
 
 // DownloadPartRequest reads one byte range of a completed file.
@@ -446,11 +463,10 @@ message DownloadPartRequest {
   // inclusive; an offset equal to the size returns an empty range with
   // eof set. Offsets beyond the file size are rejected.
   int64 offset = 2;
-  // Maximum number of bytes to return; must be greater than zero and at
-  // most the deployment's max_download_part_bytes as advertised by
-  // GetFileInfoResponse. Servers may return fewer bytes than requested —
-  // at the end of the file, or to respect their current transfer budget —
-  // never more.
+  // Maximum number of bytes to return; must be greater than zero and,
+  // when the deployment advertises max_download_part_bytes, at most that
+  // bound. Servers may return fewer bytes than requested — at the end of
+  // the file, or to respect their current transfer budget — never more.
   int32 limit = 3;
 }
 
@@ -472,8 +488,8 @@ message DownloadPartResponse {
   // that is, when offset + len(data) equals the file size, including the
   // empty range at offset == size. False means more bytes remain and the
   // client continues from offset + len(data), never from offset plus the
-  // requested limit. Boundary arithmetic clamps at the file's end; because
-  // limits are bounded by max_download_part_bytes, offset-plus-limit
-  // arithmetic cannot overflow for valid requests.
+  // requested limit. Boundary arithmetic is checked and clamped: the read
+  // ends at the file's size and never wraps around, so servers must not
+  // compute the range end with unchecked offset-plus-limit addition.
   bool eof = 3;
 }

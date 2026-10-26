@@ -275,8 +275,10 @@ class FilesSchemaTests(unittest.TestCase):
         ], FILES_FILE)
         self.assert_fields("GetFileInfoResponse", [
             ("file", 1, "MESSAGE", "FileInfo", False, False),
-            # Transport/response information, not a FileInfo fact.
-            ("max_download_part_bytes", 2, "INT64", "", False, True),
+            # Transport/response information, not a FileInfo fact; the
+            # type matches DownloadPartRequest.limit so an advertised
+            # bound is always requestable.
+            ("max_download_part_bytes", 2, "INT32", "", False, True),
         ], FILES_FILE)
         self.assert_fields("DownloadPartRequest", [
             ("file_id", 1, "INT64", "", False, False),
@@ -575,8 +577,8 @@ class FilesSchemaTests(unittest.TestCase):
             decoded = self.round_trip(fixture, "BeginUploadResponse")
             self.assertEqual(status, decoded["status"])
             self.assertNotIn("file", decoded)
-            self.assertNotIn("partSizeBytes", decoded)
-            self.assertNotIn("expiresAt", decoded)
+            for absent in ("partSizeBytes", "maxParallelParts", "expiresAt"):
+                self.assertNotIn(absent, decoded)
 
     def test_begin_upload_request_optional_presence_round_trip(self):
         # Optional fields keep explicit presence: an explicitly empty value
@@ -716,7 +718,8 @@ class FilesSchemaTests(unittest.TestCase):
 
     def test_get_file_info_response_download_limit_round_trip(self):
         # The download limit is response/transport information carried
-        # beside the file, never inside FileInfo.
+        # beside the file, never inside FileInfo. Its type matches the
+        # request limit, so an advertised bound is always requestable.
         fixture = {
             "file": {
                 "fileId": "9007199254740993",
@@ -724,14 +727,15 @@ class FilesSchemaTests(unittest.TestCase):
                 "sha256": DIGEST_32,
                 "createdAt": "2026-10-25T12:00:00Z",
             },
-            "maxDownloadPartBytes": "262144",
+            "maxDownloadPartBytes": 262144,
         }
         decoded = self.round_trip(fixture, "GetFileInfoResponse")
-        self.assertEqual("262144", decoded["maxDownloadPartBytes"])
+        self.assertEqual(262144, decoded["maxDownloadPartBytes"])
         self.assertNotIn("maxDownloadPartBytes",
                          decoded["file"],
                          "download limit must not leak into FileInfo")
-        # The limit is optional: absent means "not advertised here".
+        # The limit is explicit presence: absent means "not advertised
+        # here", distinct from a zero-valued bound.
         decoded = self.round_trip({"file": fixture["file"]},
                                   "GetFileInfoResponse")
         self.assertNotIn("maxDownloadPartBytes", decoded)
