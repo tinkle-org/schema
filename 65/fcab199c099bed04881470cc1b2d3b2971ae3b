@@ -1,0 +1,40 @@
+website/content/file-transfers.mdx
+  s_1bf8472bc1cdec::t_ea546644f646bc 46-48
+  s_1bf8472bc1cdec::t_bae04dd46af306 190-195
+  s_1bf8472bc1cdec::t_4fa47c6ea9413d 86-90
+  s_1bf8472bc1cdec::t_89e8008f20315f 156-163
+  s_1bf8472bc1cdec::t_c1ce490e2671e2 151
+  s_1bf8472bc1cdec::t_c12bb631758dd8 269-272,274-291,298-301
+  s_1bf8472bc1cdec::t_e24a65dbcd70d6 121-128
+conformance/test_files_schema.py
+  s_1bf8472bc1cdec::t_db0cf7da77e555 278-281
+  s_1bf8472bc1cdec::t_5cb50d9b5e715a 580-581
+  s_1bf8472bc1cdec::t_5323aba3f2269a 721-722,730,733,737-738
+tinkle/v1/files.proto
+  s_1bf8472bc1cdec::t_5e4a25dc043b32 163
+  s_1bf8472bc1cdec::t_98d0168cb1447d 378-379
+  s_1bf8472bc1cdec::t_ed7c118e46a755 65-67
+  s_1bf8472bc1cdec::t_7e70e85467ca9b 30-35
+  s_1bf8472bc1cdec::t_6cc59f83e8fdb3 466-469
+  s_1bf8472bc1cdec::t_fe95636fb82a98 112-118
+  s_1bf8472bc1cdec::t_5ad1cea7f4b711 203-208
+  s_1bf8472bc1cdec::t_5a9a6fecb59256 448-455
+  s_1bf8472bc1cdec::t_131d8d6f95fc68 491-493
+  s_1bf8472bc1cdec::t_c67b09ad39f3f6 364-366
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "65fcab199c099bed04881470cc1b2d3b2971ae3b",
+  "prompts": {},
+  "sessions": {
+    "s_1bf8472bc1cdec": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e89f5d1dbffeVwdJVYWhdfvZ9x",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "oscarlaw <oscarlaw2010@gmail.com>"
+    }
+  }
+}
