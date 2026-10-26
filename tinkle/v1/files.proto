@@ -1,0 +1,337 @@
+// Files Service — File transfer and immutable file references.
+//
+// Provides explicit resumable upload sessions, authoritative upload status,
+// atomic completion, cancellation, storage metadata, and byte-range
+// downloads. The service is independent of the messaging services: any
+// tinkle.v1 contract can reference a completed file by its canonical
+// file_id, and every file access is authorized independently of knowing
+// the identifier.
+//
+// Core rules of the file-transfer contract:
+//   - An upload_id is a temporary, mutable session identifier bound to the
+//     authenticated uploader. It is never a file_id and never becomes one.
+//   - A completed file is immutable: its bytes, size, and digest never
+//     change after completion, and the file may be referenced by multiple
+//     authorized application objects.
+//   - Possessing an upload_id or file_id grants no access by itself.
+//   - All methods require a valid JWT token; the principal is extracted
+//     from token claims. Upload sessions of other principals are
+//     indistinguishable from unknown sessions.
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// FilesService manages file transfers and immutable file references.
+service FilesService {
+  // BeginUpload creates a resumable upload session and returns the
+  // negotiated part size, parallelism allowance, and expiry. Retrying with
+  // the same idempotency key (scoped to the authenticated principal) and
+  // identical parameters returns the same session; conflicting parameters
+  // are rejected. Sessions that reached a terminal state resolve per the
+  // server's documented retention window before the key may be reused.
+  rpc BeginUpload(BeginUploadRequest) returns (BeginUploadResponse);
+  // UploadPart stores one indexed part of an upload session. Parts are
+  // zero-based and exactly the negotiated part size, except the final part
+  // which may be shorter. Retrying the identical part succeeds; conflicting
+  // bytes for an already-confirmed part index are rejected.
+  rpc UploadPart(UploadPartRequest) returns (UploadPartResponse);
+  // GetUploadStatus reports the session state and confirmed part ranges
+  // from a stable snapshot, so a client can resume after reconnecting
+  // without guessing what arrived. The snapshot covers pagination:
+  // continuations never shift or merge ranges as new parts arrive.
+  rpc GetUploadStatus(GetUploadStatusRequest) returns (GetUploadStatusResponse);
+  // CompleteUpload atomically verifies every confirmed part and the exact
+  // total size, then publishes the file and returns its canonical
+  // FileInfo. A failed completion never produces a partially valid file;
+  // missing parts are reported in a structured incomplete-upload error,
+  // and GetUploadStatus provides the same recovery information. Repeated
+  // completion of the same session returns the same committed file.
+  rpc CompleteUpload(CompleteUploadRequest) returns (CompleteUploadResponse);
+  // AbortUpload cancels an unfinished upload session. It is a best-effort
+  // cleanup operation: disconnected clients are not expected to call it,
+  // so server-side expiry and garbage collection remain mandatory. Abort
+  // is idempotent and never deletes a file that already completed.
+  rpc AbortUpload(AbortUploadRequest) returns (AbortUploadResponse);
+  // GetFileInfo returns authoritative storage information for a completed
+  // file. Size and digest are server-verified facts; MIME type and file
+  // name reflect client declarations. Access is checked per call.
+  rpc GetFileInfo(GetFileInfoRequest) returns (GetFileInfoResponse);
+  // DownloadPart returns one byte range of a completed file. Offsets are
+  // byte-oriented, not part-oriented, which supports resumable downloads
+  // and video seeking. For encrypted files, offsets index the stored
+  // ciphertext. Every download passes access checks.
+  rpc DownloadPart(DownloadPartRequest) returns (DownloadPartResponse);
+}
+
+// UploadStatus describes the lifecycle state of an upload session.
+enum UploadStatus {
+  // Not used; treat as unknown.
+  UPLOAD_STATUS_UNSPECIFIED = 0;
+  // The session is active and accepts parts.
+  UPLOAD_STATUS_ACTIVE = 1;
+  // The upload committed atomically; the file is immutable and available.
+  UPLOAD_STATUS_COMPLETED = 2;
+  // The session was cancelled by the uploader; its bytes are eligible for
+  // garbage collection.
+  UPLOAD_STATUS_ABORTED = 3;
+  // The session expired server-side and can neither resume nor complete.
+  UPLOAD_STATUS_EXPIRED = 4;
+}
+
+// =============================================================================
+// Session creation
+// =============================================================================
+
+// BeginUploadRequest establishes a resumable upload session. The total size
+// must be known upfront so the server can derive the part count and verify
+// completion exactly.
+message BeginUploadRequest {
+  // Client-generated idempotency key, scoped to the authenticated
+  // principal. Two BeginUpload calls with the same key and identical
+  // parameters return the same session; differing parameters are rejected.
+  string idempotency_key = 1;
+  // Exact total size of the file in bytes. Zero uploads an empty file,
+  // which has no parts and completes immediately.
+  int64 size_bytes = 2;
+  // Client-declared original file name; informational and not verified.
+  optional string file_name = 3;
+  // Client-declared MIME type; informational and not verified.
+  optional string mime_type = 4;
+  // Optional client-computed SHA-256 digest of the exact stored bytes;
+  // exactly 32 bytes when present. For encrypted uploads this covers the
+  // ciphertext the server will store.
+  optional bytes sha256 = 5;
+  // Declares that the stored bytes are client-side encrypted. This is
+  // informational: the server does not verify the encryption format, and
+  // decryption keys are distributed through Tinkle's E2EE messaging
+  // system, not through this contract.
+  bool encrypted = 6;
+}
+
+// BeginUploadResponse carries the negotiated session configuration. The
+// client must honor it; the values are implementation defaults of the
+// deployment, not schema constants.
+message BeginUploadResponse {
+  // Opaque temporary upload session identifier. Bound to the uploading
+  // principal and usable until the session expires or terminates. Never a
+  // file identifier.
+  string upload_id = 1;
+  // Negotiated exact part size in bytes. Every part except the final part
+  // must be exactly this size.
+  int64 part_size_bytes = 2;
+  // Maximum number of parts the client may upload in parallel; at least
+  // one.
+  int32 max_parallel_parts = 3;
+  // Server-defined expiry of the active session, returned as configured.
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+// =============================================================================
+// Part upload and confirmation
+// =============================================================================
+
+// UploadPartRequest stores one part of an upload session. Parts are
+// idempotent by content: an identical retry is accepted.
+message UploadPartRequest {
+  // Upload session identifier returned by BeginUpload.
+  string upload_id = 1;
+  // Zero-based part index. All parts except the final part are exactly the
+  // negotiated part size; part indexes must stay within the part count
+  // derived from the declared total size.
+  int64 part_index = 2;
+  // The part's bytes. Exactly part_size_bytes long, except the final part,
+  // which completes the declared total size.
+  bytes data = 3;
+  // Optional SHA-256 digest of this part's bytes; exactly 32 bytes when
+  // present. Confirmed parts whose later submission carries a different
+  // digest are rejected.
+  optional bytes sha256 = 4;
+}
+
+// UploadPartResponse acknowledges one confirmed part.
+message UploadPartResponse {
+  // Echo of the confirmed part index.
+  int64 part_index = 1;
+  // True when the identical bytes were already confirmed by an earlier
+  // submission (retry); false when this call newly stored the part.
+  bool already_present = 2;
+}
+
+// UploadPartRange is a half-open range of confirmed part indexes:
+// start_index inclusive, end_index exclusive.
+message UploadPartRange {
+  // First confirmed part index (inclusive). Zero serializes as absent.
+  int64 start_index = 1;
+  // First unconfirmed part index (exclusive); always greater than
+  // start_index.
+  int64 end_index = 2;
+}
+
+// =============================================================================
+// Upload status
+// =============================================================================
+
+// GetUploadStatusRequest inspects an upload session for resumption or
+// progress reporting.
+message GetUploadStatusRequest {
+  // Upload session identifier returned by BeginUpload.
+  string upload_id = 1;
+  // Opaque continuation token from a previous page's next_page_token.
+  // Tokens bind the snapshot they were issued from, the upload session,
+  // and the caller; a token from a different session or caller is
+  // rejected. Expired tokens are rejected and pagination must restart
+  // from the first page. Omit for the first page.
+  optional string page_token = 2;
+  // Maximum number of ranges per page; servers may return fewer. Omit to
+  // use the server default.
+  optional int32 page_size = 3;
+}
+
+// GetUploadStatusResponse carries the session state, the confirmed part
+// ranges of one stable snapshot, and, once complete, the committed file.
+message GetUploadStatusResponse {
+  // Current lifecycle state of the session.
+  UploadStatus status = 1;
+  // Confirmed part ranges, sorted ascending, non-overlapping, and
+  // coalesced, bounded by the part count derived from size_bytes. The
+  // ranges are authoritative server-side confirmations, not echoes of
+  // client submissions. start_index zero serializes as absent.
+  repeated UploadPartRange received_ranges = 2;
+  // Opaque token for the next page of the same snapshot. Empty when the
+  // snapshot is exhausted.
+  optional string next_page_token = 3;
+  // Current session expiry. Present for active sessions; absent after a
+  // terminal transition.
+  optional google.protobuf.Timestamp expires_at = 4;
+  // Negotiated part size, echoed so a client that lost its local upload
+  // state can resume. Present for active sessions; absent after a
+  // terminal transition.
+  optional int64 part_size_bytes = 5;
+  // Declared total size of the upload in bytes; equals the committed
+  // file's size on completion. Zero serializes as absent.
+  int64 size_bytes = 6;
+  // Committed file, set if and only if status is UPLOAD_STATUS_COMPLETED.
+  optional FileInfo file = 7;
+}
+
+// =============================================================================
+// Completion and cancellation
+// =============================================================================
+
+// CompleteUploadRequest finalizes an upload session.
+message CompleteUploadRequest {
+  // Upload session identifier returned by BeginUpload.
+  string upload_id = 1;
+  // Optional SHA-256 expectation of the whole stored file; exactly 32
+  // bytes when present. Completion fails when it disagrees with the
+  // authoritative digest, or with a BeginUpload-declared digest.
+  optional bytes sha256 = 2;
+}
+
+// CompleteUploadResponse carries the committed file.
+message CompleteUploadResponse {
+  // The committed, immutable file. Concurrent successful completions
+  // resolve to one committed file.
+  FileInfo file = 1;
+}
+
+// IncompleteUploadError identifies the confirmed gaps that prevented
+// completion. Servers attach it as a status detail on the failed
+// CompleteUpload where the transport supports details; the same information
+// is always available through GetUploadStatus.
+message IncompleteUploadError {
+  // Missing part ranges, sorted ascending, non-overlapping, and coalesced.
+  repeated UploadPartRange missing_ranges = 1;
+  // True when missing_ranges was truncated because too many gaps exist to
+  // report; the client should consult GetUploadStatus for the full picture.
+  bool truncated = 2;
+}
+
+// AbortUploadRequest cancels an unfinished upload session.
+message AbortUploadRequest {
+  // Upload session identifier returned by BeginUpload.
+  string upload_id = 1;
+}
+
+// AbortUploadResponse reports the abort outcome. Aborting is idempotent.
+message AbortUploadResponse {
+  // True when the session is in the aborted state after this call,
+  // including when it had already been aborted. False when the session
+  // had already completed or expired and can no longer be cancelled;
+  // such sessions are never deleted retroactively.
+  bool aborted = 1;
+}
+
+// =============================================================================
+// Completed files and downloads
+// =============================================================================
+
+// FileInfo is the authoritative description of a completed, immutable
+// file. Size and digest are server-verified; MIME type and file name are
+// client declarations. Media-specific attributes are kept out of this
+// message and live with the media contracts.
+message FileInfo {
+  // Canonical, stable identifier of the committed file. Globally unique,
+  // opaque, and never reassigned; its numeric value exposes nothing about
+  // storage internals, and authorization never relies on possessing it.
+  int64 file_id = 1;
+  // Exact size of the stored bytes. Zero serializes as absent.
+  int64 size_bytes = 2;
+  // Authoritative SHA-256 digest of the stored bytes, always exactly 32
+  // bytes. For encrypted files this covers the ciphertext.
+  bytes sha256 = 3;
+  // Declared content type; client-provided and not verified.
+  optional string mime_type = 4;
+  // Original file name, if declared; client-provided and not verified.
+  optional string file_name = 5;
+  // Whether the stored bytes are client-side encrypted, as declared at
+  // upload time. The server does not verify the encryption format.
+  bool encrypted = 6;
+  // When the file was committed.
+  google.protobuf.Timestamp created_at = 7;
+}
+
+// GetFileInfoRequest requests storage information for one completed file.
+message GetFileInfoRequest {
+  // Canonical file ID of the completed file.
+  int64 file_id = 1;
+}
+
+// GetFileInfoResponse carries the requested file's information.
+message GetFileInfoResponse {
+  // Authoritative file information. Unknown or inaccessible files are
+  // reported as not found rather than partially described.
+  FileInfo file = 1;
+}
+
+// DownloadPartRequest reads one byte range of a completed file.
+message DownloadPartRequest {
+  // Canonical file ID of the completed file.
+  int64 file_id = 1;
+  // Byte offset to read from. Valid range: zero through the file size
+  // inclusive; an offset equal to the size returns an empty range with
+  // eof set. Offsets beyond the file size are rejected.
+  int64 offset = 2;
+  // Maximum number of bytes to return; must be greater than zero and
+  // within the transport maximum. Servers may return fewer bytes than
+  // requested, never more.
+  int32 limit = 3;
+}
+
+// DownloadPartResponse carries one byte range of a completed file.
+message DownloadPartResponse {
+  // The requested bytes, possibly shorter than the requested limit at the
+  // end of the file. Empty serializes as absent.
+  bytes data = 1;
+  // Byte offset of the first returned byte; echo of the request offset.
+  // Zero serializes as absent.
+  int64 offset = 2;
+  // True when the returned range reaches the end of the file, including
+  // the empty range at offset == size. False means more bytes remain and
+  // the client may continue from offset + len(data).
+  bool eof = 3;
+}
