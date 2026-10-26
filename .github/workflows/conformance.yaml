@@ -32,6 +32,10 @@ jobs:
           # Baseline comparison builds declarations from origin/main.
           fetch-depth: 0
       - uses: bufbuild/buf-setup-action@v1
+        with:
+          # Pinned so codec round trips stay reproducible: the suite asserts
+          # protojson emission details. Keep in sync with local Buf.
+          version: '1.59.0'
       - name: Run conformance suite
         env:
           PYTHONDONTWRITEBYTECODE: '1'

@@ -186,6 +186,12 @@ class ConnectivitySchemaTests(unittest.TestCase):
 
     def round_trip(self, fixture, message_type="ObserveConnectivityResponse"):
         encoded = self.convert(fixture, message_type).stdout
+        if not encoded:
+            # All-defaults messages encode to zero bytes, and newer Buf
+            # versions reject zero-length binary payloads on stdin. An
+            # empty wire form decodes to an empty message by definition,
+            # so the empty case asserts the encoding alone.
+            return {}
         decoded = json.loads(self.convert(encoded, message_type, "binpb", "json").stdout)
         self.assertEqual(encoded, self.convert(decoded, message_type).stdout)
         return decoded
