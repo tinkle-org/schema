@@ -1,0 +1,23 @@
+conformance/test_files_schema.py
+  s_ee870de06f61a6::t_1ebc6bb381de5f 94-99
+conformance/test_updates_schema.py
+  s_ee870de06f61a6::t_ad22b93a85387d 189-194
+.github/workflows/conformance.yaml
+  s_ee870de06f61a6::t_f96be47167d1d8 35-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "03fc3c94f3746d390114a993ccf82869be86d29c",
+  "prompts": {},
+  "sessions": {
+    "s_ee870de06f61a6": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e8a516fceffeTxDFcEXr11E6Uh",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "oscarlaw <oscarlaw2010@gmail.com>"
+    }
+  }
+}
