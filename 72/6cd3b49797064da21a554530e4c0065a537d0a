@@ -1,0 +1,35 @@
+tinkle/v1/media.proto
+  s_ee870de06f61a6::t_8313d6b8068db6 1-158
+tinkle/v1/messages.proto
+  s_ee870de06f61a6::t_bb3defece6ee42 1078
+  s_ee870de06f61a6::t_39094485d710c5 14
+  s_ee870de06f61a6::t_26fc5011ec947c 878
+  s_ee870de06f61a6::t_9a581e2a21bd2c 395-398,404-409,413-416,423-428
+  s_ee870de06f61a6::t_fedd09be7ddc0e 476,479-486,488-496,500-552,554-558,561-564,566-569,572-573,578-579,586-587,604-607,609,611,613-614,618-620
+  s_ee870de06f61a6::t_2f67f770aa3c7f 1037
+  s_ee870de06f61a6::t_779c38c00008f6 1058
+tinkle/v1/stickers.proto
+  s_ee870de06f61a6::t_e8201812656263 88-90,94,96,100-102
+  s_ee870de06f61a6::t_989ff3f46240f4 6
+tinkle/v1/common.proto
+  s_ee870de06f61a6::t_bc9d2d2bc3ebe3 16
+  s_ee870de06f61a6::t_2643bb0e27e821 114-116,118,120-121
+tinkle/v1/channels.proto
+  s_ee870de06f61a6::t_91c1bc8b7df5d5 532-534
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "726cd3b49797064da21a554530e4c0065a537d0a",
+  "prompts": {},
+  "sessions": {
+    "s_ee870de06f61a6": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e8a516fceffeTxDFcEXr11E6Uh",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "oscarlaw <oscarlaw2010@gmail.com>"
+    }
+  }
+}
