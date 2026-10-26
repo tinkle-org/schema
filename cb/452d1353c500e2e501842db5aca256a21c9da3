@@ -1,0 +1,49 @@
+conformance/test_files_schema.py
+  s_1bf8472bc1cdec::t_75f4782aa206a6 550,554-600
+  s_1bf8472bc1cdec::t_b150a7db2a1994 701-703,706-708,710-738
+  s_1bf8472bc1cdec::t_058a4d779c06bd 704-705,709
+  s_1bf8472bc1cdec::t_ae0866b9bd03ac 7-12
+  s_1bf8472bc1cdec::t_f9906c0a793a2a 200-203,206-207
+  s_1bf8472bc1cdec::t_71c103033b8e31 832-844
+  s_1bf8472bc1cdec::t_b6f42686218ed2 646-673
+  s_1bf8472bc1cdec::t_2188ecdbc74ee1 278-279
+  s_1bf8472bc1cdec::t_9e811bd389aaf5 601
+website/content/file-transfers.mdx
+  s_1bf8472bc1cdec::t_58f34d879cab5c 145-155,160-198
+  s_1bf8472bc1cdec::t_8e4b2cfe609f3a 245-290
+  s_1bf8472bc1cdec::t_5392333b7fe046 303-308
+  s_1bf8472bc1cdec::t_b0127942050911 31-49,59-122
+  s_1bf8472bc1cdec::t_f4dc2abc9f0be8 123
+tinkle/v1/files.proto
+  s_1bf8472bc1cdec::t_bacc734ee68ba8 75-90
+  s_1bf8472bc1cdec::t_a235386fb377c4 145-147
+  s_1bf8472bc1cdec::t_f2642328c12518 449-453,458-459,461-466,471-477
+  s_1bf8472bc1cdec::t_bb9d3957f2f0ce 149-156
+  s_1bf8472bc1cdec::t_3dd607410d2332 352-353
+  s_1bf8472bc1cdec::t_adbb2a11f7be92 431-438
+  s_1bf8472bc1cdec::t_63ce2371572da7 311-314,316
+  s_1bf8472bc1cdec::t_4df68a4fac083d 20-40
+  s_1bf8472bc1cdec::t_f2f26814f6b4ad 331-333
+  s_1bf8472bc1cdec::t_1534f1bafc4598 94-101
+  s_1bf8472bc1cdec::t_530969685005b6 135-141
+  s_1bf8472bc1cdec::t_e4f344e8c339d3 205-209,213-214,217-220,222-223,225-226,228-243
+  s_1bf8472bc1cdec::t_2a52e8aa48ccff 55-70
+  s_1bf8472bc1cdec::t_7c24a18278e1cc 263-265
+  s_1bf8472bc1cdec::t_7719aaab937ef9 105-129
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cb452d1353c500e2e501842db5aca256a21c9da3",
+  "prompts": {},
+  "sessions": {
+    "s_1bf8472bc1cdec": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e89f5d1dbffeVwdJVYWhdfvZ9x",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "oscarlaw <oscarlaw2010@gmail.com>"
+    }
+  }
+}
