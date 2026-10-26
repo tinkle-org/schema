@@ -1,0 +1,57 @@
+tinkle/v1/messages.proto
+  s_ee870de06f61a6::t_834ee6f323f18a 557-558
+website/content/file-transfers.mdx
+  s_ee870de06f61a6::t_9e5a553ea521b4 33
+  s_ee870de06f61a6::t_6782ec0d6ed162 54-56
+  s_ee870de06f61a6::t_3345a524054cb6 133-134
+  s_ee870de06f61a6::t_5399a67ba9dacf 115-117
+  s_ee870de06f61a6::t_918e672580cf95 70-73
+tinkle/v1/bot_api.proto
+  s_ee870de06f61a6::t_7747f7f61f3c1c 684-686
+  s_ee870de06f61a6::t_bb687ca653470c 421-429
+  s_ee870de06f61a6::t_48a66c4e234952 156-164,175-184,195-204,218-227,241-250,262-271
+tinkle/v1/stickers.proto
+  s_ee870de06f61a6::t_6150651ed65dd1 94-96,98-99
+.github/workflows/conformance.yaml
+  s_ee870de06f61a6::t_291402106de4ea 7-9,19-20
+conformance/test_files_schema.py
+  s_ee870de06f61a6::t_2c8b1659a047d9 338
+  s_ee870de06f61a6::t_1d906563964b8f 214
+  s_ee870de06f61a6::t_640d87423975b8 164
+  s_ee870de06f61a6::t_8e07343c30ccbf 349
+  s_ee870de06f61a6::t_87663b674e11b3 500,514-515,520-521
+  s_ee870de06f61a6::t_3c6549940e9a15 525-528
+  s_ee870de06f61a6::t_866c328957744d 674-675,677-682
+  s_ee870de06f61a6::t_fe00e009b6ea3f 295
+  s_ee870de06f61a6::t_c11610102beb60 245
+  s_ee870de06f61a6::t_0543b4316fe4cc 227
+  s_ee870de06f61a6::t_2c6830745c0aaf 501-502,506
+  s_ee870de06f61a6::t_8649e173dba767 24
+conformance/test_updates_schema.py
+  s_ee870de06f61a6::t_3e7f615281bb71 253-257
+  s_ee870de06f61a6::t_730b2b4cbf5a7b 116-130
+  s_ee870de06f61a6::t_b31763ade51dfc 234-252,258-268
+tinkle/v1/files.proto
+  s_ee870de06f61a6::t_9c79f2e8aef0c6 34-38
+  s_ee870de06f61a6::t_9d58254f9fd6fe 207,252
+  s_ee870de06f61a6::t_a60888f279579e 167-171,173
+tinkle/v1/media.proto
+  s_ee870de06f61a6::t_f8636147479a2a 53-55
+  s_ee870de06f61a6::t_79dc129019452f 102-104
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ab95f45eaca221fef3da8f6c7f6a99a099b45601",
+  "prompts": {},
+  "sessions": {
+    "s_ee870de06f61a6": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e8a516fceffeTxDFcEXr11E6Uh",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "oscarlaw <oscarlaw2010@gmail.com>"
+    }
+  }
+}
