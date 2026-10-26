@@ -1,0 +1,19 @@
+tinkle/v1/files.proto
+  s_ee870de06f61a6::t_9f49f01baaad0a 1-337
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "209a1630abb780a178cb5a61e107469217ebef73",
+  "prompts": {},
+  "sessions": {
+    "s_ee870de06f61a6": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e8a516fceffeTxDFcEXr11E6Uh",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "oscarlaw <oscarlaw2010@gmail.com>"
+    }
+  }
+}
