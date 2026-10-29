@@ -4,6 +4,7 @@ export default {
   '*': { theme: { sidebar: false, pagination: false } },
   index: 'Overview',
   introduction: 'Introduction',
+  'connection-initialization': 'Connection Initialization',
   'file-transfers': 'File Transfers',
   reference: 'Reference',
 }

@@ -185,7 +185,8 @@ npm run check      # internal /schema/... links resolve + structure is sane
 ```
 
 Hand-written pages live in `website/content/` (`index.mdx`,
-`introduction.mdx`) and are committed; generated
+`introduction.mdx`, [Connection Initialization](website/content/connection-initialization.mdx),
+and `file-transfers.mdx`) and are committed; generated
 output (`website/content/reference/`) is
 git-ignored. To preview the rendered site, run the website repo locally —
 it fetches this repo and generates the content as part of its build.
@@ -221,6 +222,14 @@ Public contracts live under [`tinkle/v1/`](tinkle/v1/): authentication, accounts
 users, contacts, messaging, channels, bots, stickers, and help APIs. Shared types
 are in [`common.proto`](tinkle/v1/common.proto); the shared media vocabulary
 (metadata, attributes, file variants) is in [`media.proto`](tinkle/v1/media.proto).
+
+[`connection.proto`](tinkle/v1/connection.proto) defines
+`ConnectionService.InitConnect`: a full `ClientInfo` snapshot plus a selected
+public unary request, returning that method's serialized response. The
+[connection-initialization guide](website/content/connection-initialization.mdx)
+covers validation, authorization, snapshot replacement, and binding scope.
+This is the schema contract; runtime bindings and Chorus adapters are not
+implemented here, and schema publication does not imply runtime support.
 
 [`files.proto`](tinkle/v1/files.proto) defines `FilesService`: resumable upload
 sessions (`BeginUpload`, `UploadPart`), authoritative snapshot-based status

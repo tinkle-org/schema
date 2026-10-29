@@ -1,0 +1,131 @@
+// Client initialization for the public tinkle.v1 API.
+//
+// This application-level wrapper carries client information and one typed
+// unary request. It does not define transport handshakes or authentication.
+syntax = "proto3";
+
+package tinkle.v1;
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// ConnectionService initializes descriptive client information independently
+// of sign-in. It is available before and after authentication; the wrapped
+// method always retains its own authentication and authorization requirements.
+service ConnectionService {
+  // InitConnect initializes client information and invokes one public unary
+  // method using it. Wrap the first application request after each connection
+  // establishment, reconnect, or application restart. Repeat initialization
+  // when any client parameter changes, even for an already authenticated user.
+  // Await initialization before issuing calls that rely on the new information.
+  //
+  // Validate client, resolve and decode the target request, and authorize the
+  // target before installing information or executing the application handler.
+  // Anonymous callers may invoke only targets independently available before
+  // authentication; deny protected and unknown targets without an existence
+  // oracle. Initialization never creates or changes an authenticated principal.
+  //
+  // A binding with a documented live-connection scope installs a complete,
+  // immutable client snapshot before invoking the target. Subsequent calls in
+  // that scope use it; reinitialization atomically replaces it, including
+  // clearing omitted optional labels. In-flight calls retain their snapshot.
+  // The snapshot is authoritative over legacy client-label metadata: do not
+  // merge fields or fabricate missing labels from agent or other fallbacks.
+  // It does not replace trusted identity, credential, or network context.
+  // Discard connection-scoped information on disconnect; never key it solely
+  // by user identity or share it between simultaneous connections.
+  //
+  // Bindings without a persistent initialization scope apply client to this
+  // wrapped invocation only; callers must wrap every metadata-dependent call.
+  // A prior successful RPC does not establish cross-request connection affinity.
+  // Binding-specific retention and carriage belong in implementation contracts.
+  //
+  // Validation, resolution, decoding, or authorization failure leaves the old
+  // snapshot unchanged and does not invoke the target. Once installed, a
+  // snapshot is not rolled back by a target error or later cancellation.
+  // Repeating client initialization is safe, but the wrapped method retains
+  // its own side effects and retry semantics. A timeout can be ambiguous; never
+  // automatically replay a non-idempotent target just to retry initialization.
+  //
+  // Invalid client information, a malformed method name or payload, recursive
+  // initialization, or a streaming target is invalid input. An unknown public
+  // target is unimplemented for an authorized caller. Target failures propagate
+  // through the normal RPC error mechanism, not an InitConnectResponse body.
+  // The wrapped invocation inherits the caller's deadline, cancellation,
+  // request/response size bounds, rate limits, and target-specific policy;
+  // wrapping must not bypass or extend those limits.
+  rpc InitConnect(InitConnectRequest) returns (InitConnectResponse);
+}
+
+// InitConnectRequest supplies client information and exactly one public unary
+// invocation. It is not a batch or a transport envelope. Payloads can contain
+// verification codes, personal data, or session tokens; never log raw payloads.
+message InitConnectRequest {
+  // Required client information. All five core device/app labels must be valid
+  // and nonblank; omitted optional labels mean unknown, not "preserve previous".
+  ClientInfo client = 1;
+  // Required canonical full method name: "/tinkle.v1.Service/Method", for
+  // example "/tinkle.v1.AuthService/SendCode". Resolve only against registered
+  // public tinkle.v1 unary methods and decode payload as that method's request.
+  // InitConnect itself, streaming methods, internal services, health, and
+  // reflection are not valid targets. No aliases, URLs, or type-name dispatch.
+  string method = 2;
+  // Binary Protobuf encoding of the selected method's request, not JSON or an
+  // InitConnectRequest. Empty bytes are valid for an empty/all-default request;
+  // the selected method still applies its own required-field validation.
+  bytes payload = 3;
+}
+
+// InitConnectResponse carries the wrapped method's successful response. Decode
+// it using that method's response type; success is the RPC outcome, not whether
+// payload is nonempty. Initialization or target failure returns an RPC error.
+message InitConnectResponse {
+  // Binary Protobuf encoding of the selected method's response. Empty bytes
+  // are a valid empty/all-default response, not a missing result or an error.
+  bytes payload = 1;
+}
+
+// ClientInfo contains untrusted, client-reported descriptive labels. These
+// labels are not device attestation, credentials, identity, or access grants.
+// Never infer trusted IP, geolocation, session validity, or ownership from them.
+//
+// For every field, validate raw bytes as printable ASCII (0x20 through 0x7e)
+// before trimming surrounding ASCII spaces. Enforce each byte limit on the
+// trimmed value, without truncation; reject invalid supplied values. The five
+// required labels must remain nonempty. Optional empty/space-only labels mean
+// unknown. Platform is normalized to lowercase after validation. These are
+// server validation requirements, not constraints enforced by Protobuf codecs.
+message ClientInfo {
+  // Required hardware/device model, at most 128 bytes, e.g. "iPhone17,2".
+  // A descriptive model label, not a unique device identifier.
+  string device_model = 1;
+  // Required OS family, at most 32 bytes, e.g. "ios", "android", or "web".
+  // Stored lowercase; this is not a verified platform claim.
+  string platform = 2;
+  // Required operating-system version, at most 64 bytes, e.g. "18.5".
+  string os_version = 3;
+  // Required host application version, at most 64 bytes, e.g. "1.4.2".
+  // Do not substitute the SDK version.
+  string app_version = 4;
+  // Required host application build identifier, at most 64 bytes. An opaque
+  // string, not a number; preserve identifiers such as "00142" or "142-beta".
+  string app_build = 5;
+  // Optional combined application/SDK agent label, at most 256 bytes.
+  // Does not replace any required explicit device/app label.
+  string agent = 6;
+  // Optional app-scoped pseudonymous device identifier, at most 128 bytes.
+  // Not a hardware identity, authentication factor, or proof of ownership.
+  string device_id = 7;
+  // Optional per-install identifier, at most 128 bytes. Not a session token
+  // and not required to identify or authorize an installation.
+  string install_id = 8;
+  // Optional language preference list, at most 64 bytes,
+  // e.g. "en-US,en;q=0.9". A method's explicit language parameter retains its
+  // own documented meaning; this preference does not overwrite that parameter.
+  string accept_language = 9;
+  // Optional IANA timezone identifier, at most 64 bytes,
+  // e.g. "America/New_York". A client preference, not observed geolocation.
+  string time_zone = 10;
+  // Optional client-reported User-Agent, at most 1024 bytes. Descriptive
+  // attribution only; does not prove which software sent the request.
+  string user_agent = 11;
+}

@@ -1,0 +1,183 @@
+---
+title: Connection Initialization
+description: Client metadata, wrapped unary calls, validation, and snapshot lifecycle for ConnectionService.InitConnect.
+---
+
+# Connection Initialization
+
+[`connection.proto`](https://github.com/tinkle-org/schema/blob/main/tinkle/v1/connection.proto)
+defines
+[`ConnectionService.InitConnect`](/schema/reference/methods/connection/init-connect).
+It pairs a full client metadata snapshot with one selected public unary call.
+The selected handler sees the accepted snapshot, and the wrapper returns the
+serialized response of that method.
+
+This page describes the transport-independent contract. Runtime bindings and
+Chorus adapters for it are not implemented in this repository. Publishing the
+schema or generating an SDK does not establish runtime support; binding scope
+and implementation status belong in the implementation repositories.
+
+## First call and lifecycle
+
+Initialize as the first application request on each new app connection,
+including reconnects and app restarts, on both anonymous and authenticated
+connections. Initialize again when client parameters change. Serialize
+initialization and metadata updates before calls that must use the new snapshot.
+
+A typical anonymous sign-in flow is:
+
+```text
+Open an anonymous app connection
+  → InitConnect(client = full ClientInfo,
+                method = "/tinkle.v1.AuthService/SendCode",
+                payload = serialize(SendCodeRequest))
+  ← InitConnectResponse.payload = serialize(SendCodeResponse)
+  → SignIn(SignInRequest) on the same initialized connection
+  ← SignInResponse
+```
+
+Decode the returned `payload` as `SendCodeResponse`, the selected method's typed
+response. On a persistent binding, `SignIn` uses the already installed client
+snapshot. On a request-scoped binding, wrap `SignIn` with the full snapshot too.
+
+Initialization does not promote an anonymous principal after `SignIn`.
+Token adoption remains a separate authentication lifecycle: where the runtime
+requires reconnecting with the issued token, reconnect and initialize that new
+authenticated connection before further application calls. This schema does
+not change that requirement or promise live principal promotion.
+
+### Persistent and request-scoped bindings
+
+A binding that defines a persistent application connection scope may reuse the
+snapshot for later calls in that scope. A request-only or stateless binding
+**must apply the snapshot to the nested call** and must not assume cross-request
+connection affinity. Wrap each metadata-dependent call as needed in such a
+binding. A shared transport connection alone does not define an application
+metadata scope.
+
+Discard connection-scoped information on disconnect. Concurrent connections,
+even for the same user, have independent snapshots; user identity alone is not
+a valid key for storing initialized client information.
+
+## Wrapper fields and target selection
+
+| Message | Field | Tag | Meaning |
+| --- | --- | --- | --- |
+| `InitConnectRequest` | `client` | 1 | `ClientInfo`; required by server validation |
+| `InitConnectRequest` | `method` | 2 | String in canonical `/tinkle.v1.Service/Method` form |
+| `InitConnectRequest` | `payload` | 3 | Bytes containing the serialized request for the selected unary method |
+| `InitConnectResponse` | `payload` | 1 | Bytes containing that method's serialized response |
+
+Only registered public `tinkle.v1` unary methods are eligible targets. Nested
+`InitConnect`, internal, health, reflection, and streaming methods are excluded.
+The canonical method name determines both the request decoder and the response
+type the client must decode.
+
+An empty byte payload is valid when it represents an all-default or empty
+request or response. Empty serialization alone is not a wrapper error; the
+selected method's own request validation still applies.
+
+Wrapper failures and nested method failures use normal RPC status errors.
+There is no custom success/error envelope inside `payload`.
+The wrapped call retains its deadline, cancellation, size bounds, rate limits,
+and method-specific policy. Wrapping must not extend or bypass those limits.
+
+## ClientInfo
+
+The generated [`ClientInfo` reference](/schema/reference/messages/ClientInfo)
+contains the individual field definitions.
+
+All fields below are strings. The first five must be explicitly supplied and
+nonblank after normalization. Limits are bytes of the trimmed value.
+
+| Tag | Field | Required | Limit | Meaning |
+| --- | --- | --- | --- | --- |
+| 1 | `device_model` | Yes | 128 | Client-reported device model |
+| 2 | `platform` | Yes | 32 | Client platform; lowercased by the server |
+| 3 | `os_version` | Yes | 64 | Operating system version |
+| 4 | `app_version` | Yes | 64 | Host application version, not the SDK version |
+| 5 | `app_build` | Yes | 64 | Opaque build label; a string, not a number |
+| 6 | `agent` | No | 256 | Descriptive agent label |
+| 7 | `device_id` | No | 128 | App-scoped pseudonymous identifier, not hardware identity |
+| 8 | `install_id` | No | 128 | Per-install identifier |
+| 9 | `accept_language` | No | 64 | Language preference list |
+| 10 | `time_zone` | No | 64 | IANA time zone |
+| 11 | `user_agent` | No | 1024 | Client-reported user-agent string |
+
+### Validation and normalization
+
+For every supplied nonempty raw value:
+
+1. Require every byte to be printable ASCII `0x20..0x7e` **before trimming**.
+   Tabs, newlines, control bytes, and non-ASCII input are invalid even at the
+   edges of a value.
+2. Trim leading and trailing ASCII spaces (`0x20`) and check the field's byte
+   limit against the trimmed value.
+3. Require the five required fields to remain nonblank, and lowercase
+   `platform` on the server.
+
+An omitted, empty, or space-only optional field normalizes to unknown/clear.
+Invalid supplied optional fields reject initialization; they are not silently
+discarded or truncated. No metadata is fabricated from `agent`. Current
+authentication enforcement requires all five explicit labels; parsing an
+`agent` string as a fallback does not satisfy that requirement.
+
+## Installation, replacement, and failures
+
+Before installing new metadata, initialization validation, method resolution,
+request decoding, and authorization must all succeed. If any of these fails,
+the previous metadata remains unchanged and the selected application method
+does not execute. This is an installation boundary, not a requirement to expose
+target-resolution details before authorization.
+
+Once those checks pass, install the accepted **full snapshot before invoking
+the application handler**. If that handler then fails or is cancelled, the
+installed metadata is not rolled back.
+
+| Outcome | Metadata | Selected application handler |
+| --- | --- | --- |
+| Initialization validation, resolution, decoding, or authorization fails | Previous snapshot unchanged | Not executed |
+| Checks pass and handler succeeds | New snapshot installed | Executes with new snapshot |
+| Checks pass and handler fails or is cancelled after installation | New snapshot remains installed | Failure/cancellation does not roll back metadata |
+
+Reinitialization replaces the entire snapshot. Omitted optional fields clear
+their old values; updates are not patches. Requests already in flight retain
+their previous immutable snapshot, while calls using the newly accepted
+snapshot see the replacement.
+
+For initialized calls, the client snapshot is authoritative over legacy display
+headers. There is no per-field fallback or merging with those headers, including
+when an optional value is unknown or cleared.
+
+### Repetition and ambiguous outcomes
+
+Installing the same snapshot is safely repeatable. The selected inner operation
+is **not automatically idempotent**: repeating the wrapper invokes that
+operation again unless the operation itself supplies idempotency guarantees.
+
+A timeout or lost response may occur after metadata installation or application
+side effects. Do not blindly retry a wrapped mutation or `SignIn` after an
+ambiguous timeout. Use the selected operation's recovery rules; neither the
+wrapper nor cancellation establishes rollback.
+
+## Authentication and trust
+
+`InitConnect` being available before authentication grants no access to
+protected targets. The server must recheck the inner method's authorization
+against the caller's actual principal. Anonymous denials must be uniform before
+exposing target details, so target names, registration, or decoding diagnostics
+cannot become a discovery oracle for an unauthorized caller.
+
+`ClientInfo` consists of descriptive, untrusted labels and is never
+authentication. Initialization adds no credentials, verified identity, client
+IP, or session state; it issues no connection token. Any authentication fields
+belong to the selected method's own request, and authentication remains the
+runtime's responsibility. Device and install identifiers grant no authority.
+
+The wrapper changes no protocol version, layer, or authentication key. The
+pattern is inspired by Telegram's
+[`initConnection`](https://core.telegram.org/method/initConnection) and
+[saving client info](https://core.telegram.org/api/invoking#saving-client-info),
+without importing MTProto. Telegram's persistence keys and lifecycle differ;
+its rules should not be read as requiring initialization on every TCP reconnect.
+Use the application-connection and request-scope rules above for this contract.

@@ -19,6 +19,12 @@ service AuthService {
 
   // SignIn verifies code and returns user data with a session token.
   // Creates a new user account if the phone number is not registered.
+  // Requires valid device_model, platform, os_version, app_version, and
+  // app_build labels. ConnectionService.InitConnect supplies them to its
+  // wrapped SignIn invocation, or to later SignIn calls within a binding's
+  // documented initialization scope. Bindings may retain explicit per-call
+  // metadata carriage for clients that do not use initialization. Labels are
+  // descriptive only; they do not authenticate the caller or verify a device.
   rpc SignIn(SignInRequest) returns (SignInResponse);
 }
 

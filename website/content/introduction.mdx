@@ -32,6 +32,15 @@ reference and `website/content/` for schema overview pages.
 
 The package defines authentication, accounts, users, contacts, messaging,
 channels, bots, stickers, and help APIs, with shared types in `common.proto`.
+
+[`connection.proto`](https://github.com/tinkle-org/schema/blob/main/tinkle/v1/connection.proto)
+defines `ConnectionService.InitConnect`, pairing a full `ClientInfo` snapshot
+with a selected public unary call. See
+[Connection Initialization](/schema/connection-initialization) for validation,
+authorization, replacement semantics, and persistent versus request-scoped
+binding requirements. Runtime bindings and Chorus adapters for this contract
+are not implemented here; the schema does not establish runtime availability.
+
 [`files.proto`](https://github.com/tinkle-org/schema/blob/main/tinkle/v1/files.proto)
 defines `FilesService` — resumable upload sessions, authoritative status,
 atomic completion, and byte-range downloads — with the shared media
