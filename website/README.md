@@ -13,7 +13,8 @@ bindings are documented in their implementation repositories.
 - `content/` — the Nextra content directory. This is what the website
   build consumes.
   - Hand-written (committed): `index.mdx` landing, `introduction.mdx`,
-    plus `_meta.js` files (page titles; sidebar/pagination disabled).
+    `connection-initialization.mdx`, `file-transfers.mdx`, plus `_meta.js`
+    files (page titles; sidebar/pagination disabled).
   - Generated (git-ignored): `reference/` and its `_meta.js` files.
 - `scripts/generate-reference.mjs` — descriptor set → reference pages.
 - `scripts/sync-docs.mjs` — compatibility cleanup for website builds that still
