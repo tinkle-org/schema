@@ -1,0 +1,21 @@
+website/content/device-enrollment.mdx
+  s_9b47eed0966f63::t_62072f8a227d8e 111-117
+tinkle/v1/account.proto
+  s_9b47eed0966f63::t_62072f8a227d8e 79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "38d383bd5df7033fd7c7fb8ff32d0ef855ff47a3",
+  "prompts": {},
+  "sessions": {
+    "s_9b47eed0966f63": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e514950d5ffe7mpfABSUsiL0qY",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "oscarlaw <oscarlaw2010@gmail.com>"
+    }
+  }
+}
