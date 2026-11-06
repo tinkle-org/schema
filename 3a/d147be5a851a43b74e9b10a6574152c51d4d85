@@ -1,0 +1,82 @@
+tinkle/v1/channels.proto
+  s_7d83f0f758e13e::t_96dbaa1c8ebc7e 16
+website/content/introduction.mdx
+  s_7d83f0f758e13e::t_e38168f3e4e5d3 36-38,42
+  s_7d83f0f758e13e::t_943ea90ab62638 39-41
+conformance/test_updates_schema.py
+  s_7d83f0f758e13e::t_cd0759e2e6a772 32-34,38
+tinkle/v1/messages.proto
+  s_7d83f0f758e13e::t_96dbaa1c8ebc7e 7-8
+tinkle/v1/auth.proto
+  s_7d83f0f758e13e::t_682ac3df9239dc 114,116
+  s_7d83f0f758e13e::t_8b3e4172a10b61 1,13-14,20-21,24-25,30-33,35-41,51-55,57-58,73,91,100-103,106,109,111-113,118-134,136-198,200-208,212-222,226-238,241-247
+  s_7d83f0f758e13e::t_b96b167654292b 15
+  s_7d83f0f758e13e::t_f804bfc8f7ee85 26-29,56
+  s_7d83f0f758e13e::t_7116d4ba3cef9a 16-18
+  s_7d83f0f758e13e::t_dc8d328cc1e2f4 2-3,42-50,83,104-105,135,199,209-211,223-225,239-240
+tinkle/v1/connection.proto
+  s_7d83f0f758e13e::t_899a8803592226 1,3-4,11-14,58-82,113-125
+  s_7d83f0f758e13e::t_194fc5ee99f8af 32,87
+  s_7d83f0f758e13e::t_dc8d328cc1e2f4 158
+  s_7d83f0f758e13e::t_3c92e066b7168c 126
+tinkle/v1/account.proto
+  s_7d83f0f758e13e::t_dc8d328cc1e2f4 358
+  s_7d83f0f758e13e::t_0ecc18cf571d38 17,80,84-85,88-89,92-93,197,372,397,408,418,421,423,427-428,430,457
+tinkle/v1/contacts.proto
+  s_7d83f0f758e13e::t_96dbaa1c8ebc7e 16-17,169
+tinkle/v1/files.proto
+  s_7d83f0f758e13e::t_96dbaa1c8ebc7e 17-18
+website/content/_meta.js
+  s_7d83f0f758e13e::t_e38168f3e4e5d3 8
+website/content/index.mdx
+  s_7d83f0f758e13e::t_e38168f3e4e5d3 18
+  s_7d83f0f758e13e::t_111d279e7c7683 17
+tinkle/v1/bots.proto
+  s_7d83f0f758e13e::t_96dbaa1c8ebc7e 11-12,406
+tinkle/v1/stickers.proto
+  s_7d83f0f758e13e::t_96dbaa1c8ebc7e 11-12
+tinkle/v1/users.proto
+  s_7d83f0f758e13e::t_96dbaa1c8ebc7e 6-7
+tinkle/v1/help.proto
+  s_7d83f0f758e13e::t_96dbaa1c8ebc7e 18-19,53,59,77,224
+conformance/test_connection_schema.py
+  s_7d83f0f758e13e::t_59edd838c0963b 201,223,339-349
+  s_7d83f0f758e13e::t_f804bfc8f7ee85 180-185
+  s_7d83f0f758e13e::t_cd0759e2e6a772 236-256
+  s_7d83f0f758e13e::t_17c887abf2db14 1,3,38,94,102-103,111-142
+  s_7d83f0f758e13e::t_b75ea6c6924af7 165-166,168-176,189-194,196-200,202-222,224-234,283-285,304,311-336
+  s_7d83f0f758e13e::t_682ac3df9239dc 279,303
+  s_7d83f0f758e13e::t_194fc5ee99f8af 337-338
+  s_7d83f0f758e13e::t_5f26a03b0238ec 235
+  s_7d83f0f758e13e::t_1b67b2f16e49db 350
+website/content/connection-initialization.mdx
+  s_7d83f0f758e13e::t_943ea90ab62638 34,43-45,54-55,58-59
+  s_7d83f0f758e13e::t_e38168f3e4e5d3 39,41-42,52-53,165,176-178,194-196
+  s_7d83f0f758e13e::t_7116d4ba3cef9a 56-57
+  s_7d83f0f758e13e::t_e404bc48144315 197-199
+README.md
+  s_7d83f0f758e13e::t_e38168f3e4e5d3 189-190,227-230,235-236
+  s_7d83f0f758e13e::t_943ea90ab62638 231-234
+  s_7d83f0f758e13e::t_9c596c9e6b26be 237
+website/content/device-enrollment.mdx
+  s_7d83f0f758e13e::t_943ea90ab62638 11-20,29-30,37-45,51-52,54-56,87,90-94,104-105,111-113,124-125
+  s_7d83f0f758e13e::t_e38168f3e4e5d3 1-10,21-28,31-36,46-50,53,57-86,88-89,95-103,106,108-110,114-123,128-144
+  s_7d83f0f758e13e::t_f804bfc8f7ee85 107
+  s_7d83f0f758e13e::t_7116d4ba3cef9a 126-127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3ad147be5a851a43b74e9b10a6574152c51d4d85",
+  "prompts": {},
+  "sessions": {
+    "s_7d83f0f758e13e": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e52de9e3bffe3sV6kGkzJjV0mc",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "oscarlaw <oscarlaw2010@gmail.com>"
+    }
+  }
+}
