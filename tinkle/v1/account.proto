@@ -76,7 +76,7 @@ service AccountService {
   // For each scope: if enabled, disables it; if disabled, enables it.
   rpc SetContentSetting(SetContentSettingRequest) returns (SetContentSettingResponse);
 
-  // Logout invalidates the current session.
+  // Logout invalidates the current session and cancels its staged replacements.
   // The session UUID and exact key binding come from trusted connection context.
   rpc Logout(LogoutRequest) returns (LogoutResponse);
 

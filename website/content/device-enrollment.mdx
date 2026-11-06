@@ -108,10 +108,13 @@ are the operation UUID (1), session UUID (2), handle bytes (3), enrollment epoch
 | Key or recovery window expired, key was replaced or revoked, or account generation changed | Recovery returns no key; follow a new authorized sign-in flow |
 
 Keep the recovery material until the client has durably recorded successful
-activation. It authorizes recovery and Bootstrap activation of that one operation;
-it cannot authenticate a Returning connection or ordinary account request. Keep
-it out of logs, analytics, crash reports, and application-level
-payload tracing, along with SMS codes and authorization keys.
+activation, then delete it. During the recovery window, `ResumeEnrollment` can
+use the retained operation UUID and secret to redeliver the ACTIVE authorization
+key. The secret is therefore key-equivalent and must be protected as securely as
+that key. It authorizes recovery and Bootstrap activation of that one operation,
+but cannot itself authenticate a Returning connection or ordinary account request.
+Keep it out of logs, analytics, crash reports, and application-level payload
+tracing, along with SMS codes and authorization keys.
 
 ## Rotate a device key
 
