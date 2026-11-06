@@ -5,6 +5,7 @@ export default {
   index: 'Overview',
   introduction: 'Introduction',
   'connection-initialization': 'Connection Initialization',
+  'device-enrollment': 'Device Enrollment',
   'file-transfers': 'File Transfers',
   reference: 'Reference',
 }

@@ -1,16 +1,17 @@
-// Client initialization for the public tinkle.v1 API.
+// Client initialization and authenticated application liveness for tinkle.v1.
 //
-// This application-level wrapper carries client information and one typed
-// unary request. It does not define transport handshakes or authentication.
+// Application messages define metadata initialization and channel-local liveness.
+// They do not define transport handshakes, heartbeat schedules, or authentication.
 syntax = "proto3";
 
 package tinkle.v1;
 
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
-// ConnectionService initializes descriptive client information independently
-// of sign-in. It is available before and after authentication; the wrapped
-// method always retains its own authentication and authorization requirements.
+// ConnectionService initializes descriptive client information and observes
+// authenticated application liveness. InitConnect is available before and after
+// authentication; KeepAlive requires a current ACTIVE authenticated channel.
+// Wrapped methods retain their own authentication and authorization requirements.
 service ConnectionService {
   // InitConnect initializes client information and invokes one public unary
   // method using it. Wrap the first application request after each connection
@@ -28,7 +29,7 @@ service ConnectionService {
   // immutable client snapshot before invoking the target. Subsequent calls in
   // that scope use it; reinitialization atomically replaces it, including
   // clearing omitted optional labels. In-flight calls retain their snapshot.
-  // The snapshot is authoritative over legacy client-label metadata: do not
+  // The snapshot is authoritative over per-call client-label metadata: do not
   // merge fields or fabricate missing labels from agent or other fallbacks.
   // It does not replace trusted identity, credential, or network context.
   // Discard connection-scoped information on disconnect; never key it solely
@@ -54,11 +55,36 @@ service ConnectionService {
   // request/response size bounds, rate limits, and target-specific policy;
   // wrapping must not bypass or extend those limits.
   rpc InitConnect(InitConnectRequest) returns (InitConnectResponse);
+
+  // KeepAlive reports application-endpoint liveness on this live authenticated
+  // channel, after client labels have been initialized. Require current ACTIVE
+  // authentication and authorization for every call before any liveness or
+  // presence-lease effect, including duplicate requests. Anonymous, Bootstrap,
+  // STAGED, revoked, expired, or otherwise unauthorized contexts cannot renew.
+  // InitConnect may wrap this unary method for an already authenticated caller;
+  // it must validate and install labels and authorize the target before effects.
+  //
+  // A positive sequence strictly greater than the last accepted sequence is a
+  // new liveness observation. Only the authenticated request actually observed
+  // by the server may renew this channel's presence lease. Echo the request's
+  // sequence on success; duplicate or reordered sequences do not extend the
+  // lease. Retries retain their original sequence and source-observation deadline;
+  // never fabricate observations from retry attempts, elapsed time, or a timer.
+  //
+  // Sequences are local to this live channel, never global, durable, resumable
+  // across channels, or a session/replay cursor. A response does not establish
+  // authentication or extend key validity. No activity, foreground, log payload,
+  // or client timestamp is carried; do not log request/response data or sequences.
+  // This application RPC is independent of transport-core heartbeats and their
+  // automatic acknowledgements, which do not establish application liveness.
+  // The runtime binding owns scheduling, observation deadlines, and lease policy;
+  // no interval, transport port, or lease duration is specified by this schema.
+  rpc KeepAlive(KeepAliveRequest) returns (KeepAliveResponse);
 }
 
 // InitConnectRequest supplies client information and exactly one public unary
 // invocation. It is not a batch or a transport envelope. Payloads can contain
-// verification codes, personal data, or session tokens; never log raw payloads.
+// verification codes, personal data, or enrollment secrets; never log raw payloads.
 message InitConnectRequest {
   // Required client information. All five core device/app labels must be valid
   // and nonblank; omitted optional labels mean unknown, not "preserve previous".
@@ -82,6 +108,20 @@ message InitConnectResponse {
   // Binary Protobuf encoding of the selected method's response. Empty bytes
   // are a valid empty/all-default response, not a missing result or an error.
   bytes payload = 1;
+}
+
+// KeepAliveRequest supplies one channel-local application liveness observation.
+message KeepAliveRequest {
+  // Required positive sequence, strictly increasing for new observations on
+  // this live authenticated channel. Reuse on retry; never resume on a new channel.
+  uint64 sequence = 1;
+}
+
+// KeepAliveResponse acknowledges the observed request without a durable cursor.
+message KeepAliveResponse {
+  // Exact request sequence, echoed after current authentication/authorization
+  // checks. An echo of a duplicate or reordered sequence does not renew a lease.
+  uint64 sequence = 1;
 }
 
 // ClientInfo contains untrusted, client-reported descriptive labels. These
@@ -115,7 +155,7 @@ message ClientInfo {
   // Optional app-scoped pseudonymous device identifier, at most 128 bytes.
   // Not a hardware identity, authentication factor, or proof of ownership.
   string device_id = 7;
-  // Optional per-install identifier, at most 128 bytes. Not a session token
+  // Optional per-install identifier, at most 128 bytes. Not a credential
   // and not required to identify or authorize an installation.
   string install_id = 8;
   // Optional language preference list, at most 64 bytes,

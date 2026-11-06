@@ -8,8 +8,8 @@ import "tinkle/v1/common.proto";
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
 // BotsService provides public-facing bot management operations.
-// All RPCs require JWT authentication via the Authorization header.
-// The authenticated user's identity is extracted from the JWT context.
+// All RPCs require an active device-key-authenticated session.
+// The authenticated user's identity comes from trusted session context.
 // Ownership verification is delegated to the downstream internal bot service.
 service BotsService {
   // ============================================================================
@@ -403,7 +403,7 @@ message ReorderUsernamesResponse {
 // ============================================================================
 
 // GetOwnedBotsRequest retrieves bots owned by the authenticated user.
-// No fields needed — user identity comes from JWT context.
+// No fields needed; user identity comes from trusted session context.
 message GetOwnedBotsRequest {}
 
 // GetOwnedBotsResponse contains the list of owned bots.

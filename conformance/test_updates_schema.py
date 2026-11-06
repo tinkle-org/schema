@@ -29,11 +29,13 @@ UPDATES_FILE = "tinkle/v1/updates.proto"
 # changes. Anything else drifting from origin/main fails the suite. Trim
 # entries on branches that touch other files, and drop entries once included
 # in origin/main.
-# connection.proto is an additive wrapper, independently pinned by
-# test_connection_schema.py; existing authentication declarations stay covered.
+# connection.proto and auth.proto are independently pinned by
+# test_connection_schema.py, including sign-in's intentional field reservation
+# and the recoverable enrollment replacement. Other account fields stay covered.
 CHANGED_FILES = {
     "tinkle/v1/updates.proto", "tinkle/v1/files.proto", "tinkle/v1/media.proto",
     "tinkle/v1/connection.proto",
+    "tinkle/v1/auth.proto",
 }
 CHANGED_DECLARATIONS = {
     "tinkle.v1.PeerInput",

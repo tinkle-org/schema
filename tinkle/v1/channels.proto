@@ -13,7 +13,7 @@ import "tinkle/v1/messages.proto";
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
 // ChannelsService provides public-facing channel management operations.
-// All RPCs require JWT authentication via the x-authorization header.
+// All RPCs require an active device-key-authenticated session.
 service ChannelsService {
   // GetChannels retrieves basic channel info for a list of channel IDs.
   // Missing IDs are silently skipped. Max 100 IDs per request.

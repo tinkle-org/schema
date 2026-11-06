@@ -14,7 +14,7 @@ option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
 // AccountService provides authenticated user account operations.
 //
-// All methods require an active Ory Kratos session with user context.
+// All methods require an active device-key-authenticated session with user context.
 // User ID is derived from the session, not passed in requests.
 service AccountService {
   // RegisterPush registers a device for push notifications.
@@ -76,20 +76,21 @@ service AccountService {
   // For each scope: if enabled, disables it; if disabled, enables it.
   rpc SetContentSetting(SetContentSettingRequest) returns (SetContentSettingResponse);
 
-  // Logout invalidates the current session.
-  // The session ID is taken from the active Ory Kratos session.
+  // Logout invalidates the current session and cancels its staged replacements.
+  // The session UUID and exact key binding come from trusted connection context.
   rpc Logout(LogoutRequest) returns (LogoutResponse);
 
   // RevokeSession invalidates a specific session by its ID.
-  // The caller's user identity is taken from the active Ory Kratos session.
+  // The target must be another device of the authenticated account; use Logout
+  // for the current device. Revocation also cancels its staged replacements.
   rpc RevokeSession(RevokeSessionRequest) returns (RevokeSessionResponse);
 
-  // RevokeSessions invalidates all sessions for the current user.
-  // The user ID is taken from the active Ory Kratos session.
+  // RevokeSessions invalidates every other device session of the current account
+  // and their staged replacements, preserving the caller's current session.
   rpc RevokeSessions(RevokeSessionsRequest) returns (RevokeSessionsResponse);
 
-  // GetSessions lists all active Ory Kratos sessions for the current user.
-  // The user ID is taken from the active Ory Kratos session.
+  // GetSessions lists active device sessions for the authenticated account.
+  // Staged enrollments do not appear as active devices.
   rpc GetSessions(GetSessionsRequest) returns (GetSessionsResponse);
 }
 
@@ -193,7 +194,7 @@ message UnregisterPushResponse {
 // Notification Settings RPCs
 // =============================================================================
 
-// GetNotificationSettingsRequest is empty - user ID from token.
+// GetNotificationSettingsRequest is empty; identity comes from trusted session context.
 message GetNotificationSettingsRequest {}
 
 // GetNotificationSettingsResponse contains the user's notification settings.
@@ -354,7 +355,7 @@ message ChangePhoneNumberRequest {
   // Verification code received via SMS.
   string code = 2;
   // Required identifier returned by SendChangePhoneCodeResponse.verification_id.
-  // Bound to the new phone_number; not an authenticated session token.
+  // Bound to the new phone_number; grants no account access.
   string verification_id = 3;
 }
 
@@ -368,7 +369,7 @@ message ChangePhoneNumberResponse {
 // Content Settings RPCs
 // =============================================================================
 
-// GetContentSettingsRequest is empty - user ID from token.
+// GetContentSettingsRequest is empty; identity comes from trusted session context.
 message GetContentSettingsRequest {}
 
 // GetContentSettingsResponse returns the content settings.
@@ -393,7 +394,7 @@ message SetContentSettingResponse {
 // Session Management RPCs
 // =============================================================================
 
-// LogoutRequest is empty - session ID is taken from the active Ory Kratos session.
+// LogoutRequest is empty; the current device session comes from trusted context.
 message LogoutRequest {}
 
 // LogoutResponse confirms the current session was invalidated.
@@ -404,7 +405,7 @@ message LogoutResponse {
 
 // RevokeSessionRequest identifies the session to invalidate.
 message RevokeSessionRequest {
-  // Session ID to revoke.
+  // Neutral device-session UUID to revoke; not a credential or key handle.
   string session_id = 1;
 }
 
@@ -414,18 +415,19 @@ message RevokeSessionResponse {
   bool revoked = 1;
 }
 
-// RevokeSessionsRequest is empty - revokes all sessions for the user identified by the active Ory Kratos session.
+// RevokeSessionsRequest is empty; revoke other devices of the current account.
 message RevokeSessionsRequest {}
 
-// RevokeSessionsResponse confirms all sessions were invalidated.
+// RevokeSessionsResponse confirms all other device sessions were invalidated.
 message RevokeSessionsResponse {
-  // True if all sessions were invalidated.
+  // True once every other device session and its staged replacements are revoked.
   bool revoked = 1;
 }
 
-// Session represents one active Ory Kratos session for a user.
+// Session represents one active device session for an account. It contains no
+// authorization key or provider credential and remains stable across rotations.
 message Session {
-  // Session identifier.
+  // Neutral device-session UUID, suitable for display and revocation only.
   string id = 1;
   // Device model reported by the client (e.g. "iPhone 15 Pro").
   string device_model = 2;
@@ -452,7 +454,7 @@ message Session {
   string app_build = 12;
 }
 
-// GetSessionsRequest is empty - lists all sessions for the user from the active Ory Kratos session.
+// GetSessionsRequest is empty; the account comes from trusted session context.
 message GetSessionsRequest {}
 
 // GetSessionsResponse returns all active sessions for the user.

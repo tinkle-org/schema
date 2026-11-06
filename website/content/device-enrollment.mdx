@@ -1,0 +1,147 @@
+---
+title: Device Enrollment
+description: Phone verification, recoverable device-key delivery, durable storage acknowledgement, activation, and device-session management.
+---
+
+# Device Enrollment
+
+[`AuthService`](/schema/reference/services/auth) verifies phone ownership and
+enrolls one authorization key for each device session. The server generates a
+32-byte key and an 8-byte opaque handle. It first stages the key, delivers it
+through confidential pinned Bootstrap, and waits for the client's secure-storage
+acknowledgement. The server authenticates activation with the original operation
+and its pre-retained 32-byte provisioning capability, matching the exact staged
+candidate. **STAGED keys MUST NOT pass Returning admission.** Account access
+begins only on a fresh Returning connection after activation.
+
+The messages are transport independent. The runtime binding specifies pinned
+Bootstrap provisioning and ACTIVE-key Returning authentication without adding
+transport envelopes to these messages. An SDK containing these types does not
+by itself implement those operations.
+
+## Sign in and retain the result
+
+1. Initialize descriptive client information with
+   [`ConnectionService.InitConnect`](/schema/connection-initialization), wrapping
+   `AuthService.SendCode`. Retain the returned `verification_id`.
+2. Generate a random UUID `operation_id` and 32 cryptographically random bytes
+   `resume_secret`. **Durably retain both before sending `SignIn`.** Keep them
+   together so a process restart can recover an uncertain result. This secret is
+   the provisioning capability for both recovery and Bootstrap activation.
+3. Send the phone number, SMS code, verification identifier, operation UUID,
+   and recovery secret. Device/app labels come from initialization. The server
+   verifies the phone, resolves or creates the account, and stages the key.
+4. Atomically persist the complete returned `DeviceEnrollment` in secure storage.
+   It contains the key and its exact session, handle, generation, purpose,
+   account generation, and deadline. Receiving bytes into memory is insufficient.
+5. Over **pinned Bootstrap**, call `ActivateEnrollment` with the retained
+   operation UUID and `resume_secret`, plus the delivered session UUID, handle,
+   enrollment epoch, and scope. The server authenticates the operation capability
+   and requires an exact match to that operation's staged candidate. These tuple
+   fields are untrusted proposals, not authenticated ACTIVE session context.
+   The acknowledgement claims durable secure storage; the server cannot infer
+   storage or key possession from that claim. Do not attempt staged Returning.
+6. After activation succeeds, establish a **fresh Returning connection** proving
+   possession of the now-ACTIVE key. Initialize client information again and then
+   make authenticated calls. Neither `SignIn` nor activation promotes the
+   existing connection's principal.
+
+```text
+SendCode → verification identifier (durably accepted for SMS delivery)
+retain operation UUID + 32-byte provisioning capability
+SignIn → STAGED key through pinned Bootstrap delivery
+securely persist the complete enrollment
+pinned Bootstrap + same operation/capability + exact candidate
+  → ActivateEnrollment storage acknowledgement → ACTIVE status, no key
+fresh Returning authentication of ACTIVE key → InitConnect → account calls
+```
+
+Successful `SendCode` means the server durably accepted delivery work. It does
+not mean the handset has already received the SMS. Verification-provider
+credentials and delivery-worker protocols are not public API fields.
+
+## Delivery fields
+
+`SignInResponse.enrollment`, `ResumeEnrollmentResponse.enrollment`, and
+`RotateEnrollmentResponse.enrollment` are `DeviceEnrollment` messages:
+
+| Tag | Field | Meaning |
+| --- | --- | --- |
+| 1 | `operation_id` | Client-retained random UUID for this enrollment operation |
+| 2 | `session_id` | Neutral device-session UUID; stable across key rotation |
+| 3 | `authorization_key` | Exactly 32 host-generated random bytes |
+| 4 | `handle` | Exactly 8 opaque bytes |
+| 5 | `enrollment_epoch` | Positive key generation; increases on replacement |
+| 6 | `scope` | `DEVICE_KEY_SCOPE_ACCOUNT`; part of the immutable tuple |
+| 7 | `expires_at` | Absolute key deadline; recovery may end sooner |
+| 8 | `state` | `STAGED` on first delivery; `ACTIVE` on authorized recovery |
+| 9 | `user_id` | Account resolved by the server, not a client identity assertion |
+| 10 | `account_auth_epoch` | Positive account-wide revocation generation |
+
+The exact `(handle, enrollment_epoch, scope)` tuple identifies one immutable key
+binding. Do not reinterpret the handle as an integer or use a handle-only lookup.
+An account generation change invalidates keys from prior generations.
+
+`ActivateEnrollmentResponse.enrollment` is a `DeviceEnrollmentStatus`, containing
+the same identifying information and state but **no authorization key**.
+Ordinary Returning authentication and session listing also do not redeliver
+keys. Key redelivery requires an authorized `ResumeEnrollment` within the
+operation's recovery window.
+
+`ActivateEnrollmentRequest.resume_secret` is field **6**, containing the same
+exactly 32 random bytes retained before `SignIn` or rotation. Its other fields
+are the operation UUID (1), session UUID (2), handle bytes (3), enrollment epoch
+(4), and scope (5). There is no authenticated user ID in this acknowledgement.
+
+## Recover uncertain outcomes
+
+| Situation | Next action |
+| --- | --- |
+| `SignIn` or rotation response is lost | Call `ResumeEnrollment` with the retained operation UUID and recovery secret |
+| The operation is still being processed | Retry recovery after the retryable result; retain the same operation |
+| No operation was accepted | Retry the identical initial request with the retained operation and secret |
+| The process restarts before durable key storage | Recover the same key, persist it, then activate |
+| Activation response is lost | Repeat the exact operation, capability, and tuple over pinned Bootstrap, or resume to recover its authoritative state |
+| Recovery reports `ACTIVE` | Retain the returned record and establish a fresh Returning connection |
+| Operation parameters changed under the same UUID | Treat as a conflict; never overwrite a retained operation with different inputs |
+| `SignIn` is repeated after activation | It returns `FAILED_PRECONDITION` without key material; use authorized recovery if needed |
+| Key or recovery window expired, key was replaced or revoked, or account generation changed | Recovery returns no key; follow a new authorized sign-in flow |
+
+Keep the recovery material until the client has durably recorded successful
+activation, then delete it. During the recovery window, `ResumeEnrollment` can
+use the retained operation UUID and secret to redeliver the ACTIVE authorization
+key. The secret is therefore key-equivalent and must be protected as securely as
+that key. It authorizes recovery and Bootstrap activation of that one operation,
+but cannot itself authenticate a Returning connection or ordinary account request.
+Keep it out of logs, analytics, crash reports, and application-level payload
+tracing, along with SMS codes and authorization keys.
+
+## Rotate a device key
+
+On an authenticated connection, retain a **fresh** operation UUID and recovery
+secret, then call `RotateEnrollment`. The server stages one replacement for the
+same device-session UUID with a new random key and handle and a larger enrollment
+epoch. The existing tuple continues working until activation. Overlapping
+rotations conflict; identical retries return the same candidate.
+
+Persist the candidate securely, then activate it over pinned Bootstrap with the
+same operation, provisioning capability, and exact candidate as above. Activation
+atomically replaces the old tuple. Establish fresh Returning using the ACTIVE
+replacement; the old key can no longer authorize requests. Expiry or revocation cannot be
+undone by activating or resuming a candidate.
+
+## Manage device sessions
+
+`AccountService.GetSessions` lists active devices using `Session.id`, a neutral
+UUID suitable for display and revocation. Staged enrollments are not active
+devices. Device labels describe the client; they are not identity or attestation.
+
+- `RevokeSession` revokes another device of the current account and its staged
+  replacements. Use `Logout` for the current device.
+- `RevokeSessions` revokes other devices while preserving the current session.
+- `Logout` invalidates the current device and every associated candidate.
+
+Account-wide key revocation also invalidates pending enrollments and recovery
+paths. The server derives identity from the authenticated session and exact key
+binding at each effect boundary. A client-supplied account ID or a previously
+successful admission lookup cannot authorize a request.
