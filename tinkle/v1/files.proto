@@ -14,8 +14,8 @@
 //     change after completion, and the file may be referenced by multiple
 //     authorized application objects.
 //   - Possessing an upload_id or file_id grants no access by itself.
-//   - All methods require a valid JWT token; the principal is extracted
-//     from token claims. Upload sessions of other principals are
+//   - All methods require an active device-key-authenticated session; the
+//     principal comes from trusted session context. Uploads of other principals are
 //     indistinguishable from unknown sessions.
 //
 // Lifecycle of a media attachment:

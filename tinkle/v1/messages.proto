@@ -4,7 +4,8 @@
 // poll, and thread operations. Aggregates dialog/chat/messaging state
 // across the message, dialog, chat, and roster core services.
 //
-// All methods require a valid JWT token; user_id is extracted from token claims.
+// All methods require an active device-key-authenticated session; user_id comes
+// from trusted session context.
 syntax = "proto3";
 
 package tinkle.v1;

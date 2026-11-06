@@ -1,7 +1,6 @@
-// Auth RPC Service - Aggregator Layer.
-//
-// Aggregator service between rpc-gateway and core services.
-// Provides authentication flows by orchestrating identity-service and user-service.
+// Recoverable device-key enrollment for the public API. These messages describe
+// application behavior; pinned Bootstrap provisioning and ACTIVE-only Returning
+// authentication are binding responsibilities. No transport handshake is defined here.
 syntax = "proto3";
 
 package tinkle.v1;
@@ -11,21 +10,52 @@ import "tinkle/v1/common.proto";
 
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
-// AuthService provides authentication operations for the gateway layer.
+// AuthService verifies phone ownership and enrolls per-device authorization keys.
+// No authentication response issues a bearer credential. Enrollment delivery
+// and activation use the binding's confidential pinned Bootstrap channel for
+// provisioning; rotation delivery may use the current ACTIVE connection.
+// Returning clients prove possession of an ACTIVE key before account calls;
+// STAGED keys MUST NOT pass Returning admission.
 service AuthService {
-  // SendCode initiates verification code delivery via SMS.
-  // Returns the delivery method and request tracking information.
+  // SendCode durably accepts an SMS delivery job and returns its verification
+  // identifier. Acceptance does not promise the handset has received the SMS.
   rpc SendCode(SendCodeRequest) returns (SendCodeResponse);
 
-  // SignIn verifies code and returns user data with a session token.
-  // Creates a new user account if the phone number is not registered.
-  // Requires valid device_model, platform, os_version, app_version, and
-  // app_build labels. ConnectionService.InitConnect supplies them to its
-  // wrapped SignIn invocation, or to later SignIn calls within a binding's
-  // documented initialization scope. Bindings may retain explicit per-call
-  // metadata carriage for clients that do not use initialization. Labels are
-  // descriptive only; they do not authenticate the caller or verify a device.
+  // SignIn verifies the SMS code, resolves or creates the account, and stages a
+  // host-generated key. Before sending, durably retain operation_id and a random
+  // resume_secret. Identical staged retries resolve the same operation and key;
+  // changing its inputs is a conflict. After activation, retries return
+  // FAILED_PRECONDITION without key material; use authorized ResumeEnrollment.
+  // A lost response is recovered with ResumeEnrollment.
+  // An in-progress operation is retryable, not permission to mint another key.
+  // Requires initialized, descriptive device_model, platform, os_version,
+  // app_version, and app_build labels from ConnectionService.InitConnect.
+  // SignIn neither activates the key nor promotes the current connection.
   rpc SignIn(SignInRequest) returns (SignInResponse);
+
+  // ResumeEnrollment recovers protected delivery using the retained operation
+  // UUID and secret, without reusing the SMS code. It may redeliver the same key
+  // while staged, or after activation within the operation's recovery window.
+  // Expired, revoked, replaced, or wrongly authenticated operations return no key.
+  rpc ResumeEnrollment(ResumeEnrollmentRequest) returns (ResumeEnrollmentResponse);
+
+  // ActivateEnrollment is called over pinned Bootstrap after the client claims
+  // secure, durable storage of the delivered key. Authenticate the same operation
+  // and pre-retained 32-byte resume_secret, then require an exact match of the
+  // proposed session and staged tuple. The tuple is not an authenticated device
+  // principal, and the acknowledgement is not proof of storage or key possession.
+  // Activation is idempotent for this operation, capability, and tuple, returns
+  // no secret, and never rebinds the live principal. Only after activation may a
+  // fresh Returning connection authenticate the ACTIVE key; initialize it before
+  // account calls. Rotation activation atomically replaces the previous tuple.
+  rpc ActivateEnrollment(ActivateEnrollmentRequest) returns (ActivateEnrollmentResponse);
+
+  // RotateEnrollment stages a replacement for the current authenticated device
+  // session. Retain a fresh operation UUID and random resume secret before the
+  // call. The old tuple remains usable until activation; replacement never
+  // extends a revoked session. Identical staged retries return the same candidate;
+  // overlapping rotations conflict. ResumeEnrollment recovers a lost delivery.
+  rpc RotateEnrollment(RotateEnrollmentRequest) returns (RotateEnrollmentResponse);
 }
 
 // =============================================================================
@@ -40,7 +70,7 @@ message SendCodeRequest {
   string lang_code = 2;
 }
 
-// SendCodeResponse confirms code was sent and provides tracking info.
+// SendCodeResponse confirms durable acceptance for SMS delivery.
 message SendCodeResponse {
   // Delivery method used for this request.
   VerificationCodeType code_type = 1;
@@ -50,7 +80,7 @@ message SendCodeResponse {
   google.protobuf.Timestamp expires_at = 3;
   // Opaque verification flow identifier. Retain on the client and return
   // unchanged in SignInRequest.verification_id alongside the SMS code.
-  // This is not an authenticated session token and must not be logged.
+  // It grants no account access and must not be logged.
   string verification_id = 4;
 }
 
@@ -58,7 +88,7 @@ message SendCodeResponse {
 // SignIn RPC
 // =============================================================================
 
-// SignInRequest contains the phone number and verification code.
+// SignInRequest binds phone verification to a recoverable enrollment operation.
 message SignInRequest {
   // Phone number in E.164 format.
   string phone_number = 1;
@@ -67,17 +97,152 @@ message SignInRequest {
   // Required identifier returned by SendCodeResponse.verification_id.
   // Bound to phone_number; never substitute a flow issued for another phone.
   string verification_id = 3;
+  // Required random UUID generated and durably retained before the first call.
+  // Reuse only for identical retries of this operation.
+  string operation_id = 4;
+  // Required 32 cryptographically random bytes retained before the first call.
+  // Provisioning capability for recovery and Bootstrap activation of operation_id
+  // only; never log or use as an account key.
+  bytes resume_secret = 5;
 }
 
-// SignInResponse contains user information and an opaque session token.
-// Aggregated from identity-service (session token) and user-service (user data).
+// SignInResponse delivers the account and a staged key over a protected channel.
 message SignInResponse {
-  // User information (Empty if user is not active, UserData if active).
+  reserved 2;
+  reserved "session_token";
+
+  // Resolved user projection; profile availability does not activate the device.
   User user = 1;
-  // Opaque, long-lived session token. Persisted on the client device and
-  // presented on every authenticated request. The server is stateless and
-  // validates the token directly (no refresh, renewal, or rotation flow).
-  string session_token = 2;
-  // True if this sign-in created a new user account.
+  // True if the initial operation created the account; retained on retries.
   bool is_new_user = 3;
+  // Secret-bearing enrollment. Persist securely before acknowledging activation.
+  DeviceEnrollment enrollment = 4;
+}
+
+// DeviceKeyScope separates keys by their permitted application use. The scope
+// is part of the immutable (handle, enrollment_epoch, scope) binding.
+enum DeviceKeyScope {
+  // Never accepted for enrollment or authentication.
+  DEVICE_KEY_SCOPE_UNSPECIFIED = 0;
+  // Device authentication for this account's public application API.
+  DEVICE_KEY_SCOPE_ACCOUNT = 1;
+}
+
+// DeviceEnrollmentState describes whether the exact key tuple is usable.
+enum DeviceEnrollmentState {
+  // Unknown state; grants no access.
+  DEVICE_ENROLLMENT_STATE_UNSPECIFIED = 0;
+  // Delivered for durable storage and Bootstrap activation; never Returning admission.
+  DEVICE_ENROLLMENT_STATE_STAGED = 1;
+  // Activated; usable on a fresh connection after key-possession authentication.
+  DEVICE_ENROLLMENT_STATE_ACTIVE = 2;
+  // Revoked or replaced; cannot be resumed or activated.
+  DEVICE_ENROLLMENT_STATE_REVOKED = 3;
+  // Expired; cannot be resumed or activated.
+  DEVICE_ENROLLMENT_STATE_EXPIRED = 4;
+}
+
+// DeviceEnrollment is secret-bearing key delivery, available only from SignIn,
+// RotateEnrollment, or an authorized ResumeEnrollment. Never log this message.
+// The host generates the key and handle; descriptive client IDs cannot choose
+// them. Persist the whole record atomically in secure storage before activation.
+message DeviceEnrollment {
+  // Client-generated enrollment operation UUID.
+  string operation_id = 1;
+  // Neutral device-session UUID; stable through key rotations, never a credential.
+  string session_id = 2;
+  // Exactly 32 random authorization-key bytes. Never an SMS or provider token.
+  bytes authorization_key = 3;
+  // Exactly 8 opaque handle bytes, bound immutably to this key, epoch, and scope.
+  bytes handle = 4;
+  // Positive key generation for this session. A replacement has a larger epoch.
+  uint64 enrollment_epoch = 5;
+  // Immutable key purpose; unspecified is invalid.
+  DeviceKeyScope scope = 6;
+  // Absolute key deadline. Activation and recovery cannot extend this deadline;
+  // a server-defined recovery window may end sooner.
+  google.protobuf.Timestamp expires_at = 7;
+  // STAGED on first delivery; ACTIVE is possible on authorized recovery only.
+  DeviceEnrollmentState state = 8;
+  // Resolved account ID. Informational; the caller cannot assert this identity.
+  int64 user_id = 9;
+  // Positive account-wide revocation generation bound to this enrollment.
+  uint64 account_auth_epoch = 10;
+}
+
+// DeviceEnrollmentStatus reports the exact enrollment without secret material.
+message DeviceEnrollmentStatus {
+  // Client-generated enrollment operation UUID.
+  string operation_id = 1;
+  // Neutral device-session UUID.
+  string session_id = 2;
+  // Exactly 8 handle bytes identifying the acknowledged key tuple.
+  bytes handle = 3;
+  // Positive generation of the acknowledged key.
+  uint64 enrollment_epoch = 4;
+  // Immutable key purpose.
+  DeviceKeyScope scope = 5;
+  // Absolute key deadline.
+  google.protobuf.Timestamp expires_at = 6;
+  // ACTIVE after successful activation.
+  DeviceEnrollmentState state = 7;
+  // Account resolved by the server.
+  int64 user_id = 8;
+  // Account-wide revocation generation bound to this key.
+  uint64 account_auth_epoch = 9;
+}
+
+// ResumeEnrollmentRequest authorizes redelivery for one retained operation.
+message ResumeEnrollmentRequest {
+  // Required original operation UUID, retained before SignIn or RotateEnrollment.
+  string operation_id = 1;
+  // Required original 32-byte provisioning capability. Never log this value.
+  bytes resume_secret = 2;
+}
+
+// ResumeEnrollmentResponse redelivers the same key through protected delivery.
+message ResumeEnrollmentResponse {
+  // Secret-bearing enrollment for this operation; never a newly minted key.
+  DeviceEnrollment enrollment = 1;
+}
+
+// ActivateEnrollmentRequest claims secure durable storage over pinned Bootstrap.
+// The operation capability authorizes activation only of the exact stored staged
+// candidate. Tuple fields are untrusted proposals, not authenticated session claims.
+message ActivateEnrollmentRequest {
+  // Required UUID of the operation whose result was stored.
+  string operation_id = 1;
+  // Required device-session UUID from delivery.
+  string session_id = 2;
+  // Required 8-byte handle from delivery.
+  bytes handle = 3;
+  // Required positive generation from delivery.
+  uint64 enrollment_epoch = 4;
+  // Required immutable purpose from delivery.
+  DeviceKeyScope scope = 5;
+  // Required original provisioning capability: exactly 32 random bytes retained
+  // before SignIn or RotateEnrollment. Must authenticate operation_id; never log.
+  bytes resume_secret = 6;
+}
+
+// ActivateEnrollmentResponse confirms activation without redelivering the key.
+message ActivateEnrollmentResponse {
+  // Secret-free acknowledgement of the activated tuple.
+  DeviceEnrollmentStatus enrollment = 1;
+}
+
+// RotateEnrollmentRequest starts one recoverable rotation of the current session.
+// The authenticated binding supplies the current tuple and trusted session.
+message RotateEnrollmentRequest {
+  // Required fresh UUID, durably retained before making the request.
+  string operation_id = 1;
+  // Required fresh 32-byte random provisioning capability retained before the
+  // request, used for recovery and Bootstrap activation of this operation only.
+  bytes resume_secret = 2;
+}
+
+// RotateEnrollmentResponse delivers a staged replacement through protection.
+message RotateEnrollmentResponse {
+  // Secret-bearing replacement; the session UUID remains unchanged.
+  DeviceEnrollment enrollment = 1;
 }

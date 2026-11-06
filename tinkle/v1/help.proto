@@ -15,8 +15,8 @@ option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
 // HelpService provides remote configuration, app metadata, and reference data operations.
 //
-// All methods require a valid JWT token with user context.
-// User ID is extracted from the token claims, not passed in requests.
+// Protected methods require an active device-key-authenticated session.
+// User ID comes from trusted session context, not request fields.
 // Workforce RPCs (GetUserInfo, EditUserInfo) additionally require a workforce admin role claim.
 service HelpService {
   // GetConfig retrieves server-side operational configuration.
@@ -50,13 +50,13 @@ service HelpService {
   rpc AcceptTermsOfService(AcceptTermsOfServiceRequest) returns (AcceptTermsOfServiceResponse);
 
   // GetUserInfo retrieves user information for workforce administration.
-  // Requires workforce admin role claim in JWT token.
+  // Requires authorization by the server's workforce administration policy.
   // Returns PERMISSION_DENIED if caller lacks the required role.
   // Returns NOT_FOUND if user does not exist.
   rpc GetUserInfo(GetUserInfoRequest) returns (GetUserInfoResponse);
 
   // EditUserInfo updates user metadata for workforce administration.
-  // Requires workforce admin role claim in JWT token.
+  // Requires authorization by the server's workforce administration policy.
   // Returns PERMISSION_DENIED if caller lacks the required role.
   // Returns NOT_FOUND if user does not exist.
   // Returns INVALID_ARGUMENT if message is empty.
@@ -74,7 +74,7 @@ service HelpService {
 // Core Config
 // =============================================================================
 
-// GetConfigRequest is empty - user ID from token.
+// GetConfigRequest is empty; authentication requirements belong to the binding.
 message GetConfigRequest {}
 
 // GetConfigResponse contains server-side operational configuration.
@@ -221,7 +221,7 @@ message SaveAppLogResponse {
 // Legal and Terms
 // =============================================================================
 
-// GetTermsOfServiceUpdateRequest is empty - user ID from token.
+// GetTermsOfServiceUpdateRequest is empty; identity comes from trusted session context.
 message GetTermsOfServiceUpdateRequest {}
 
 // GetTermsOfServiceUpdateResponse indicates whether the user has pending terms.

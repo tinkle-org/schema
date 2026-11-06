@@ -13,8 +13,8 @@ option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
 // ContactsService provides contact management operations for the gateway layer.
 //
-// All methods require a valid JWT token with user context.
-// User ID is extracted from the token claims.
+// All methods require an active device-key-authenticated session.
+// User ID comes from trusted session context.
 service ContactsService {
   // ImportContacts imports phone contacts from device address book.
   // Resolves phone numbers to Tinkle users and stores for future matching.
@@ -166,7 +166,7 @@ message GetContactsResponse {
 // Contact Presence
 // =============================================================================
 
-// GetPresencesRequest is empty - the caller's identity comes from JWT.
+// GetPresencesRequest is empty; identity comes from trusted session context.
 message GetPresencesRequest {}
 
 // GetPresencesResponse is the response for GetPresences.

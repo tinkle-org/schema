@@ -8,8 +8,8 @@ import "tinkle/v1/media.proto";
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
 // StickersService provides public-facing sticker management operations.
-// All RPCs require JWT authentication via the Authorization header.
-// The authenticated user's identity is extracted from the JWT context.
+// All RPCs require an active device-key-authenticated session.
+// The authenticated user's identity comes from trusted session context.
 service StickersService {
   // ============================================================================
   // Installed Pack Management

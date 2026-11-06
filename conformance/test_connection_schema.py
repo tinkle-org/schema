@@ -1,6 +1,6 @@
-"""InitConnect descriptor and real Buf codec checks; no generated SDKs.
+"""Connection RPC descriptor and real Buf codec checks; no generated SDKs.
 
-These checks pin the public wrapper and ClientInfo shapes and preserve opaque
+These checks pin the public wrapper, KeepAlive, and ClientInfo shapes and preserve opaque
 nested protobuf payloads. They do not implement or test runtime validation,
 authorization, connection state, dispatch, concurrency, or retry semantics.
 Those requirements are specified in connection.proto and enforced by servers.
@@ -35,7 +35,7 @@ def run_buf(*arguments, input_bytes=None, check=True):
 
 
 class ConnectionSchemaTests(unittest.TestCase):
-    """Pin InitConnect signatures, field tags, and binary/JSON carriage."""
+    """Pin connection signatures, field tags, and binary/JSON carriage."""
 
     @classmethod
     def setUpClass(cls):
@@ -91,6 +91,7 @@ class ConnectionSchemaTests(unittest.TestCase):
         }
 
     def test_connection_file_surface(self):
+        """Pin both unary methods and their transport-independent message shapes."""
         descriptor = self.files[CONNECTION_FILE]
         self.assertEqual("tinkle.v1", descriptor["package"])
         self.assertEqual(
@@ -98,7 +99,8 @@ class ConnectionSchemaTests(unittest.TestCase):
             descriptor["options"]["goPackage"],
         )
         self.assertEqual(
-            ["InitConnectRequest", "InitConnectResponse", "ClientInfo"],
+            ["InitConnectRequest", "InitConnectResponse", "KeepAliveRequest",
+             "KeepAliveResponse", "ClientInfo"],
             [m["name"] for m in descriptor["messageType"]],
         )
         self.assertFalse(descriptor.get("dependency"))
@@ -106,13 +108,38 @@ class ConnectionSchemaTests(unittest.TestCase):
         self.assertEqual(1, len(descriptor["service"]))
         service = descriptor["service"][0]
         self.assertEqual("ConnectionService", service["name"])
-        self.assertEqual(1, len(service["method"]))
-        method = service["method"][0]
-        self.assertEqual("InitConnect", method["name"])
-        self.assertEqual(".tinkle.v1.InitConnectRequest", method["inputType"])
-        self.assertEqual(".tinkle.v1.InitConnectResponse", method["outputType"])
-        self.assertFalse(method.get("clientStreaming", False))
-        self.assertFalse(method.get("serverStreaming", False))
+        self.assertEqual(["InitConnect", "KeepAlive"], [m["name"] for m in service["method"]])
+        for method in service["method"]:
+            self.assertEqual(".tinkle.v1." + method["name"] + "Request", method["inputType"])
+            self.assertEqual(".tinkle.v1." + method["name"] + "Response", method["outputType"])
+            self.assertFalse(method.get("clientStreaming", False))
+            self.assertFalse(method.get("serverStreaming", False))
+
+    def test_keep_alive_shapes_and_sequence_round_trip(self):
+        """KeepAlive carries only a lossless uint64 sequence in each direction."""
+        for name in ("KeepAliveRequest", "KeepAliveResponse"):
+            self.assert_fields(name, [("sequence", 1, "UINT64", None)])
+            for sequence in ("1", "9007199254740993", "18446744073709551615"):
+                with self.subTest(message=name, sequence=sequence):
+                    fixture = {"sequence": sequence}
+                    self.assertEqual(fixture, self.round_trip(fixture, name))
+
+    def test_wrapped_keep_alive_preserves_application_sequence(self):
+        """InitConnect can carry the unary liveness payload without changing it."""
+        fixture = {"sequence": "9007199254740993"}
+        request = self.convert(fixture, "KeepAliveRequest").stdout
+        wrapper = {
+            "client": self.client(),
+            "method": "/tinkle.v1.ConnectionService/KeepAlive",
+            "payload": base64.b64encode(request).decode(),
+        }
+        decoded = self.round_trip(wrapper, "InitConnectRequest")
+        self.assertEqual(request, base64.b64decode(decoded["payload"]))
+        response = self.convert(fixture, "KeepAliveResponse").stdout
+        decoded = self.round_trip(
+            {"payload": base64.b64encode(response).decode()}, "InitConnectResponse",
+        )
+        self.assertEqual(response, base64.b64decode(decoded["payload"]))
 
     def test_wrapper_shapes(self):
         self.assert_fields("InitConnectRequest", [
@@ -135,16 +162,98 @@ class ConnectionSchemaTests(unittest.TestCase):
             "userAgent",
         ], [f["jsonName"] for f in self.messages["ClientInfo"]["field"]])
 
-    def test_existing_auth_requests_are_unchanged(self):
+    def test_auth_enrollment_surface(self):
+        """Pin the recoverable enrollment RPCs and retained sign-in field tags."""
         service = self.files["tinkle/v1/auth.proto"]["service"][0]
-        self.assertEqual(["SendCode", "SignIn"], [m["name"] for m in service["method"]])
+        self.assertEqual([
+            "SendCode", "SignIn", "ResumeEnrollment", "ActivateEnrollment",
+            "RotateEnrollment",
+        ], [m["name"] for m in service["method"]])
+        for method in service["method"]:
+            self.assertEqual(".tinkle.v1." + method["name"] + "Request", method["inputType"])
+            self.assertEqual(".tinkle.v1." + method["name"] + "Response", method["outputType"])
+            self.assertFalse(method.get("clientStreaming", False))
+            self.assertFalse(method.get("serverStreaming", False))
         self.assert_fields("SendCodeRequest", [
             ("phone_number", 1, "STRING", None), ("lang_code", 2, "STRING", None),
+        ])
+        self.assert_fields("SendCodeResponse", [
+            ("code_type", 1, "ENUM", ".tinkle.v1.VerificationCodeType"),
+            ("request_id", 2, "STRING", None),
+            ("expires_at", 3, "MESSAGE", ".google.protobuf.Timestamp"),
+            ("verification_id", 4, "STRING", None),
         ])
         self.assert_fields("SignInRequest", [
             ("phone_number", 1, "STRING", None), ("code", 2, "STRING", None),
             ("verification_id", 3, "STRING", None),
+            ("operation_id", 4, "STRING", None), ("resume_secret", 5, "BYTES", None),
         ])
+        self.assert_fields("SignInResponse", [
+            ("user", 1, "MESSAGE", ".tinkle.v1.User"),
+            ("is_new_user", 3, "BOOL", None),
+            ("enrollment", 4, "MESSAGE", ".tinkle.v1.DeviceEnrollment"),
+        ])
+        response = self.messages["SignInResponse"]
+        self.assertEqual([{"start": 2, "end": 3}], response["reservedRange"])
+        self.assertEqual(["session_token"], response["reservedName"])
+
+    def test_enrollment_shapes_and_secret_free_activation(self):
+        """Activation takes a capability and tuple; its response carries no key."""
+        self.assert_fields("DeviceEnrollment", [
+            ("operation_id", 1, "STRING", None), ("session_id", 2, "STRING", None),
+            ("authorization_key", 3, "BYTES", None), ("handle", 4, "BYTES", None),
+            ("enrollment_epoch", 5, "UINT64", None),
+            ("scope", 6, "ENUM", ".tinkle.v1.DeviceKeyScope"),
+            ("expires_at", 7, "MESSAGE", ".google.protobuf.Timestamp"),
+            ("state", 8, "ENUM", ".tinkle.v1.DeviceEnrollmentState"),
+            ("user_id", 9, "INT64", None), ("account_auth_epoch", 10, "UINT64", None),
+        ])
+        self.assert_fields("DeviceEnrollmentStatus", [
+            ("operation_id", 1, "STRING", None), ("session_id", 2, "STRING", None),
+            ("handle", 3, "BYTES", None), ("enrollment_epoch", 4, "UINT64", None),
+            ("scope", 5, "ENUM", ".tinkle.v1.DeviceKeyScope"),
+            ("expires_at", 6, "MESSAGE", ".google.protobuf.Timestamp"),
+            ("state", 7, "ENUM", ".tinkle.v1.DeviceEnrollmentState"),
+            ("user_id", 8, "INT64", None), ("account_auth_epoch", 9, "UINT64", None),
+        ])
+        self.assert_fields("ActivateEnrollmentRequest", [
+            ("operation_id", 1, "STRING", None), ("session_id", 2, "STRING", None),
+            ("handle", 3, "BYTES", None), ("enrollment_epoch", 4, "UINT64", None),
+            ("scope", 5, "ENUM", ".tinkle.v1.DeviceKeyScope"),
+            ("resume_secret", 6, "BYTES", None),
+        ])
+        self.assert_fields("ActivateEnrollmentResponse", [
+            ("enrollment", 1, "MESSAGE", ".tinkle.v1.DeviceEnrollmentStatus"),
+        ])
+        for name in ("ResumeEnrollment", "RotateEnrollment"):
+            self.assert_fields(name + "Request", [
+                ("operation_id", 1, "STRING", None), ("resume_secret", 2, "BYTES", None),
+            ])
+            self.assert_fields(name + "Response", [
+                ("enrollment", 1, "MESSAGE", ".tinkle.v1.DeviceEnrollment"),
+            ])
+
+    def test_enrollment_enums_and_neutral_session_identifier(self):
+        """Pin lifecycle values and keep UI session IDs separate from key material."""
+        enums = {e["name"]: e for e in self.files["tinkle/v1/auth.proto"]["enumType"]}
+        for name, values in (
+            ("DeviceKeyScope", ["UNSPECIFIED", "ACCOUNT"]),
+            ("DeviceEnrollmentState", ["UNSPECIFIED", "STAGED", "ACTIVE", "REVOKED", "EXPIRED"]),
+        ):
+            prefix = "DEVICE_KEY_SCOPE_" if name == "DeviceKeyScope" else "DEVICE_ENROLLMENT_STATE_"
+            self.assertEqual(
+                [(prefix + value, number) for number, value in enumerate(values)],
+                [(v["name"], v["number"]) for v in enums[name]["value"]],
+            )
+        session_fields = self.messages["Session"]["field"]
+        self.assertEqual(("id", 1, "TYPE_STRING"), (
+            session_fields[0]["name"], session_fields[0]["number"], session_fields[0]["type"],
+        ))
+        self.assertTrue({"authorization_key", "session_token", "resume_secret", "handle"}.isdisjoint(
+            f["name"] for f in session_fields
+        ))
+        fixture = {"id": "ce3ae9e5-ff55-4d2f-921d-e83a9ee77893", "current": True}
+        self.assertEqual(fixture, self.round_trip(fixture, "Session"))
 
     def test_minimal_client_and_full_client_round_trip(self):
         minimal = self.client()
@@ -167,10 +276,13 @@ class ConnectionSchemaTests(unittest.TestCase):
                 self.assertEqual(fixture, self.round_trip(fixture, "InitConnectRequest"))
 
     def test_wrapped_auth_requests_preserve_typed_payload(self):
+        """Initialization preserves verification and retained recovery inputs."""
         fixtures = [
             ("SendCode", {"phoneNumber": "+14155551234", "langCode": "en"}),
             ("SignIn", {"phoneNumber": "+14155551234", "code": "012345",
-                        "verificationId": "e6f64856-0caa-4b02-a329-061a872b30f0"}),
+                        "verificationId": "e6f64856-0caa-4b02-a329-061a872b30f0",
+                        "operationId": "a280178a-0789-4924-9c51-9af9d74f3349",
+                        "resumeSecret": base64.b64encode(bytes(range(32))).decode()}),
         ]
         for method, request in fixtures:
             with self.subTest(method=method):
@@ -188,12 +300,53 @@ class ConnectionSchemaTests(unittest.TestCase):
                 ))
 
     def test_wrapped_response_preserves_typed_payload(self):
-        response = {"sessionToken": "synthetic-fixture-token", "isNewUser": True}
+        """Initialization preserves the protected typed enrollment response."""
+        response = {"enrollment": self.enrollment(), "isNewUser": True}
         encoded = self.convert(response, "SignInResponse").stdout
         decoded = self.round_trip(
             {"payload": base64.b64encode(encoded).decode()}, "InitConnectResponse",
         )
         self.assertEqual(encoded, base64.b64decode(decoded["payload"]))
+
+    def enrollment(self):
+        """Build a synthetic staged-key fixture with lossless uint64 epochs."""
+        return {
+            "operationId": "a280178a-0789-4924-9c51-9af9d74f3349",
+            "sessionId": "ce3ae9e5-ff55-4d2f-921d-e83a9ee77893",
+            "authorizationKey": base64.b64encode(bytes(range(32))).decode(),
+            "handle": base64.b64encode(bytes(range(8))).decode(),
+            "enrollmentEpoch": "18446744073709551615",
+            "scope": "DEVICE_KEY_SCOPE_ACCOUNT",
+            "expiresAt": "2026-11-06T12:00:00Z",
+            "state": "DEVICE_ENROLLMENT_STATE_STAGED",
+            "userId": "9007199254740993", "accountAuthEpoch": "9007199254740995",
+        }
+
+    def test_enrollment_delivery_and_ack_round_trip(self):
+        """Keys remain binary, and a large epoch survives JSON/binary conversion."""
+        fixture = self.enrollment()
+        for name in ("SignIn", "ResumeEnrollment", "RotateEnrollment"):
+            with self.subTest(name=name):
+                result = self.round_trip({"enrollment": fixture}, name + "Response")
+                self.assertEqual(fixture, result["enrollment"])
+        status = {key: value for key, value in fixture.items() if key != "authorizationKey"}
+        status["state"] = "DEVICE_ENROLLMENT_STATE_ACTIVE"
+        self.assertEqual({"enrollment": status}, self.round_trip(
+            {"enrollment": status}, "ActivateEnrollmentResponse",
+        ))
+        # Descriptor shape, rather than unknown-field handling by a JSON codec,
+        # guarantees that activation has no key field and sign-in has no token.
+
+    def test_activation_provisioning_capability_round_trip(self):
+        """Bootstrap activation preserves the exact candidate and binary capability."""
+        enrollment = self.enrollment()
+        request = {key: enrollment[key] for key in (
+            "operationId", "sessionId", "handle", "enrollmentEpoch", "scope",
+        )}
+        request["resumeSecret"] = base64.b64encode(bytes(range(32))).decode()
+        decoded = self.round_trip(request, "ActivateEnrollmentRequest")
+        self.assertEqual(request, decoded)
+        self.assertEqual(bytes(range(32)), base64.b64decode(decoded["resumeSecret"]))
 
     def test_empty_nested_messages_are_valid_wire_shapes(self):
         self.assertEqual(b"", self.convert({}, "GetConfigRequest").stdout)

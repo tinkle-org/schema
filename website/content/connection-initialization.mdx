@@ -1,6 +1,6 @@
 ---
 title: Connection Initialization
-description: Client metadata, wrapped unary calls, validation, and snapshot lifecycle for ConnectionService.InitConnect.
+description: Client metadata initialization, wrapped unary calls, and authenticated channel-local application liveness through ConnectionService.
 ---
 
 # Connection Initialization
@@ -11,6 +11,10 @@ defines
 It pairs a full client metadata snapshot with one selected public unary call.
 The selected handler sees the accepted snapshot, and the wrapper returns the
 serialized response of that method.
+
+[`ConnectionService.KeepAlive`](/schema/reference/methods/connection/keep-alive)
+separately reports application-endpoint liveness on an initialized, ACTIVE
+authenticated channel. It does not initialize metadata or authenticate a caller.
 
 This page describes the transport-independent contract. Runtime bindings and
 Chorus adapters for it are not implemented in this repository. Publishing the
@@ -27,24 +31,32 @@ initialization and metadata updates before calls that must use the new snapshot.
 A typical anonymous sign-in flow is:
 
 ```text
-Open an anonymous app connection
+Open a pinned Bootstrap connection
   → InitConnect(client = full ClientInfo,
                 method = "/tinkle.v1.AuthService/SendCode",
                 payload = serialize(SendCodeRequest))
   ← InitConnectResponse.payload = serialize(SendCodeResponse)
+Durably retain a random operation UUID and 32-byte recovery secret
   → SignIn(SignInRequest) on the same initialized connection
-  ← SignInResponse
+  ← SignInResponse with a staged enrollment through protected delivery
+Securely persist the full enrollment
+Over pinned Bootstrap, acknowledge storage with the same operation/capability
+  and exact candidate tuple in ActivateEnrollment
+Open fresh Returning with the ACTIVE key, then initialize it
 ```
 
 Decode the returned `payload` as `SendCodeResponse`, the selected method's typed
 response. On a persistent binding, `SignIn` uses the already installed client
 snapshot. On a request-scoped binding, wrap `SignIn` with the full snapshot too.
 
-Initialization does not promote an anonymous principal after `SignIn`.
-Token adoption remains a separate authentication lifecycle: where the runtime
-requires reconnecting with the issued token, reconnect and initialize that new
-authenticated connection before further application calls. This schema does
-not change that requirement or promise live principal promotion.
+Initialization does not promote an anonymous principal after `SignIn` or
+activation. Enrollment requires durable key storage followed by activation,
+then fresh ACTIVE-key Returning authentication. STAGED keys cannot pass Returning
+admission. Activation authenticates the pre-retained operation capability over
+pinned Bootstrap and does not rebind its live principal. Initialize the new
+Returning connection before account calls; see [Device Enrollment](/schema/device-enrollment) for recovery
+and rotation. The runtime binding defines pinned Bootstrap delivery and
+ACTIVE-key Returning authentication.
 
 ### Persistent and request-scoped bindings
 
@@ -72,6 +84,11 @@ Only registered public `tinkle.v1` unary methods are eligible targets. Nested
 `InitConnect`, internal, health, reflection, and streaming methods are excluded.
 The canonical method name determines both the request decoder and the response
 type the client must decode.
+
+An already ACTIVE authenticated caller may wrap `KeepAlive` to initialize labels
+on a fresh Returning channel. The server validates and installs the full snapshot
+and checks the target's current authorization before any presence-lease effect.
+An anonymous or Bootstrap wrapper cannot make `KeepAlive` eligible.
 
 An empty byte payload is valid when it represents an all-default or empty
 request or response. Empty serialization alone is not a wrapper error; the
@@ -145,7 +162,7 @@ their old values; updates are not patches. Requests already in flight retain
 their previous immutable snapshot, while calls using the newly accepted
 snapshot see the replacement.
 
-For initialized calls, the client snapshot is authoritative over legacy display
+For initialized calls, the client snapshot is authoritative over per-call display
 headers. There is no per-field fallback or merging with those headers, including
 when an optional value is unknown or cleared.
 
@@ -156,9 +173,9 @@ is **not automatically idempotent**: repeating the wrapper invokes that
 operation again unless the operation itself supplies idempotency guarantees.
 
 A timeout or lost response may occur after metadata installation or application
-side effects. Do not blindly retry a wrapped mutation or `SignIn` after an
-ambiguous timeout. Use the selected operation's recovery rules; neither the
-wrapper nor cancellation establishes rollback.
+side effects. Use `ResumeEnrollment` with the pre-retained operation and secret
+to recover an uncertain `SignIn` result. Other mutations retain their own retry
+rules; neither the wrapper nor cancellation establishes rollback.
 
 ## Authentication and trust
 
@@ -174,10 +191,36 @@ IP, or session state; it issues no connection token. Any authentication fields
 belong to the selected method's own request, and authentication remains the
 runtime's responsibility. Device and install identifiers grant no authority.
 
-The wrapper changes no protocol version, layer, or authentication key. The
-pattern is inspired by Telegram's
-[`initConnection`](https://core.telegram.org/method/initConnection) and
-[saving client info](https://core.telegram.org/api/invoking#saving-client-info),
-without importing MTProto. Telegram's persistence keys and lifecycle differ;
-its rules should not be read as requiring initialization on every TCP reconnect.
-Use the application-connection and request-scope rules above for this contract.
+The wrapper changes no protocol version, layer, or authentication key. Use the
+application-connection and request-scope rules above for metadata lifetime, and
+the enrollment contract for key activation and authentication.
+
+## Authenticated application liveness
+
+Call `KeepAlive` only on a live **ACTIVE authenticated channel**, after valid
+client labels are initialized. Current authentication and authorization must run
+on every request, including retries. Anonymous, Bootstrap, STAGED, revoked, or
+expired contexts cannot renew a presence lease.
+
+| Message | Field | Tag | Meaning |
+| --- | --- | --- | --- |
+| `KeepAliveRequest` | `sequence` | 1 | Positive `uint64`, strictly increasing for new observations on this channel |
+| `KeepAliveResponse` | `sequence` | 1 | Exact request sequence echoed after authorization |
+
+For example, send sequence `1` and then `2` for successive observations. If a
+response is lost, retry with the **same sequence** and the original bounded
+observation deadline. A duplicate or reordered sequence may be echoed, but it
+does not extend the lease. Never turn a retry attempt into a new observation.
+Each new channel has its own sequence namespace; no sequence resumes globally,
+across device sessions, or after reconnect. It is not a durable replay cursor.
+
+The server counts the **authenticated request it actually observes** as endpoint
+liveness. Only an authorized new observation may update that channel's presence
+lease. A running timer, automatic transport acknowledgement, or successfully
+queued outbound write is not an observed application request. The application
+RPC operates independently of the transport core's heartbeat machinery.
+
+No activity, foreground state, client timestamp, or log data is carried. Do not
+log KeepAlive payloads or sequence values. An echo grants no authority and never
+extends key validity. Scheduling, source deadlines, and lease policy belong to
+the runtime binding; this schema specifies no interval, duration, or port.

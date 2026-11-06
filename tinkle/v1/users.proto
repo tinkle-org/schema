@@ -3,8 +3,8 @@
 // Aggregator service between rpc-gateway and core services.
 // Provides user data retrieval by orchestrating user-service.
 //
-// All methods require a valid JWT token with user context.
-// User ID is extracted from the token claims for privacy filtering.
+// All methods require an active device-key-authenticated session.
+// User ID comes from trusted session context for privacy filtering.
 syntax = "proto3";
 
 package tinkle.v1;

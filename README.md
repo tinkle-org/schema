@@ -186,7 +186,8 @@ npm run check      # internal /schema/... links resolve + structure is sane
 
 Hand-written pages live in `website/content/` (`index.mdx`,
 `introduction.mdx`, [Connection Initialization](website/content/connection-initialization.mdx),
-and `file-transfers.mdx`) and are committed; generated
+[Device Enrollment](website/content/device-enrollment.mdx), and `file-transfers.mdx`)
+and are committed; generated
 output (`website/content/reference/`) is
 git-ignored. To preview the rendered site, run the website repo locally —
 it fetches this repo and generates the content as part of its build.
@@ -223,11 +224,27 @@ users, contacts, messaging, channels, bots, stickers, and help APIs. Shared type
 are in [`common.proto`](tinkle/v1/common.proto); the shared media vocabulary
 (metadata, attributes, file variants) is in [`media.proto`](tinkle/v1/media.proto).
 
+[`auth.proto`](tinkle/v1/auth.proto) defines recoverable device-key enrollment:
+`SendCode`, `SignIn`, `ResumeEnrollment`, `ActivateEnrollment`, and
+`RotateEnrollment`. Clients retain an operation UUID and 32-byte recovery secret
+before sign-in, securely persist the staged 32-byte key and 8-byte handle,
+acknowledge storage over pinned Bootstrap with the same operation, 32-byte
+provisioning capability, and exact candidate tuple, then establish fresh Returning
+with the ACTIVE key. STAGED keys cannot pass Returning admission. Activation does
+not rebind the live principal. Typed enrollment is `SignInResponse` field 4.
+Account session lists use neutral device-session UUIDs. See the
+[device-enrollment guide](website/content/device-enrollment.mdx).
+
 [`connection.proto`](tinkle/v1/connection.proto) defines
 `ConnectionService.InitConnect`: a full `ClientInfo` snapshot plus a selected
-public unary request, returning that method's serialized response. The
+public unary request, returning that method's serialized response, and
+`ConnectionService.KeepAlive`: an ACTIVE-authenticated application liveness
+request with a channel-local positive `uint64 sequence = 1`, echoed by the
+response. Duplicate or reordered sequences cannot extend a presence lease;
+current authorization runs before every effect. Runtime bindings own scheduling
+and deadlines independently of transport-core heartbeats. The
 [connection-initialization guide](website/content/connection-initialization.mdx)
-covers validation, authorization, snapshot replacement, and binding scope.
+covers validation, authorization, snapshot replacement, binding scope, and liveness.
 This is the schema contract; runtime bindings and Chorus adapters are not
 implemented here, and schema publication does not imply runtime support.
 

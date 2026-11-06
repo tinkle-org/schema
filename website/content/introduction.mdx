@@ -33,9 +33,19 @@ reference and `website/content/` for schema overview pages.
 The package defines authentication, accounts, users, contacts, messaging,
 channels, bots, stickers, and help APIs, with shared types in `common.proto`.
 
+[`auth.proto`](https://github.com/tinkle-org/schema/blob/main/tinkle/v1/auth.proto)
+defines phone verification and recoverable device-key enrollment. See
+[Device Enrollment](/schema/device-enrollment) for protected key delivery,
+capability-authorized storage acknowledgement over pinned Bootstrap, activation,
+rotation, and fresh ACTIVE-key Returning authentication. STAGED keys cannot pass
+Returning admission. Account session identifiers are neutral device-session UUIDs.
+
 [`connection.proto`](https://github.com/tinkle-org/schema/blob/main/tinkle/v1/connection.proto)
 defines `ConnectionService.InitConnect`, pairing a full `ClientInfo` snapshot
-with a selected public unary call. See
+with a selected public unary call, and `ConnectionService.KeepAlive`, observing
+ACTIVE-authenticated application liveness with a channel-local sequence and
+current authorization before presence-lease effects. Duplicate sequences do not
+renew a lease; runtime bindings own scheduling and deadlines. See
 [Connection Initialization](/schema/connection-initialization) for validation,
 authorization, replacement semantics, and persistent versus request-scoped
 binding requirements. Runtime bindings and Chorus adapters for this contract
