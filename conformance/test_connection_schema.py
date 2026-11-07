@@ -167,7 +167,7 @@ class ConnectionSchemaTests(unittest.TestCase):
         service = self.files["tinkle/v1/auth.proto"]["service"][0]
         self.assertEqual([
             "SendCode", "SignIn", "ResumeEnrollment", "ActivateEnrollment",
-            "RotateEnrollment",
+            "RotateEnrollment", "GetEnrollmentDisposition",
         ], [m["name"] for m in service["method"]])
         for method in service["method"]:
             self.assertEqual(".tinkle.v1." + method["name"] + "Request", method["inputType"])
@@ -196,6 +196,61 @@ class ConnectionSchemaTests(unittest.TestCase):
         response = self.messages["SignInResponse"]
         self.assertEqual([{"start": 2, "end": 3}], response["reservedRange"])
         self.assertEqual(["session_token"], response["reservedName"])
+
+    def test_enrollment_disposition_is_exact_and_negative_only(self):
+        """Disposition exposes one retired-binding fact, not account authority."""
+        self.assert_fields("DeviceEnrollmentReference", [
+            ("session_id", 1, "STRING", None), ("handle", 2, "BYTES", None),
+            ("enrollment_epoch", 3, "UINT64", None),
+            ("scope", 4, "ENUM", ".tinkle.v1.DeviceKeyScope"),
+            ("account_auth_epoch", 5, "UINT64", None),
+        ])
+        self.assert_fields("GetEnrollmentDispositionRequest", [
+            ("reference", 1, "MESSAGE", ".tinkle.v1.DeviceEnrollmentReference"),
+        ])
+        self.assert_fields("GetEnrollmentDispositionResponse", [
+            ("reference", 1, "MESSAGE", ".tinkle.v1.DeviceEnrollmentReference"),
+            ("disposition", 2, "ENUM", ".tinkle.v1.DeviceEnrollmentDisposition"),
+        ])
+        enums = {e["name"]: e for e in self.files["tinkle/v1/auth.proto"]["enumType"]}
+        self.assertEqual([
+            ("DEVICE_ENROLLMENT_DISPOSITION_" + name, value)
+            for value, name in enumerate(("UNSPECIFIED", "UNKNOWN", "RETIRED"))
+        ], [(v["name"], v["number"]) for v in enums["DeviceEnrollmentDisposition"]["value"]])
+        reference = {
+            "sessionId": "ce3ae9e5-ff55-4d2f-921d-e83a9ee77893",
+            "handle": base64.b64encode(bytes(range(1, 9))).decode(),
+            "enrollmentEpoch": "9007199254740993",
+            "scope": "DEVICE_KEY_SCOPE_ACCOUNT", "accountAuthEpoch": "7",
+        }
+        for disposition in ("UNKNOWN", "RETIRED"):
+            fixture = {"reference": reference,
+                       "disposition": "DEVICE_ENROLLMENT_DISPOSITION_" + disposition}
+            self.assertEqual(fixture, self.round_trip(fixture, "GetEnrollmentDispositionResponse"))
+
+    def test_reference_preserves_delivered_uint64_epochs(self):
+        """Disposition queries preserve issued epochs across the full positive range."""
+        values = (
+            "1", "9007199254740993", "9223372036854775807",
+            "9223372036854775808", "18446744073709551615",
+        )
+        for value in values:
+            for enrollment_epoch, account_epoch in ((value, "7"), ("7", value), (value, value)):
+                with self.subTest(enrollment=enrollment_epoch, account=account_epoch):
+                    delivered = self.enrollment()
+                    delivered.update(enrollmentEpoch=enrollment_epoch, accountAuthEpoch=account_epoch)
+                    delivered = self.round_trip(delivered, "DeviceEnrollment")
+                    self.assertEqual(enrollment_epoch, delivered["enrollmentEpoch"])
+                    self.assertEqual(account_epoch, delivered["accountAuthEpoch"])
+                    reference = {key: delivered[key] for key in (
+                        "sessionId", "handle", "enrollmentEpoch", "scope", "accountAuthEpoch",
+                    )}
+                    request = {"reference": reference}
+                    self.assertEqual(request, self.round_trip(request, "GetEnrollmentDispositionRequest"))
+                    for disposition in ("UNKNOWN", "RETIRED"):
+                        response = {"reference": reference,
+                                    "disposition": "DEVICE_ENROLLMENT_DISPOSITION_" + disposition}
+                        self.assertEqual(response, self.round_trip(response, "GetEnrollmentDispositionResponse"))
 
     def test_enrollment_shapes_and_secret_free_activation(self):
         """Activation takes a capability and tuple; its response carries no key."""

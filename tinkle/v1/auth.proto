@@ -56,6 +56,72 @@ service AuthService {
   // extends a revoked session. Identical staged retries return the same candidate;
   // overlapping rotations conflict. ResumeEnrollment recovers a lost delivery.
   rpc RotateEnrollment(RotateEnrollmentRequest) returns (RotateEnrollmentResponse);
+
+  // GetEnrollmentDisposition observes permanent retirement of an exact retained
+  // enrollment reference over a server-authenticated pre-authentication binding.
+  // It is separate from account admission and recovery: possession of a reference
+  // is lookup input, not proof of ownership. A holder of the complete reference
+  // may learn only whether that binding is permanently retired, not its owner,
+  // current account state, successor, or reason for retirement.
+  //
+  // RETIRED requires an exact known binding and committed terminal evidence, or
+  // a fresh authoritative source account epoch strictly greater than its stored
+  // original epoch. A missing record, mismatched reference, live or staged key,
+  // generic denial, elapsed recovery window, or dependency failure is not proof.
+  // UNKNOWN supplies no retirement evidence and never grants admission. The
+  // method cannot activate, recover, refresh activity, or return key material.
+  //
+  // Accept only a correlated successful response for the still-current retained
+  // reference under the expected server trust. Unspecified/future values, errors,
+  // malformed responses, and connection loss authorize no destructive cleanup.
+  // Retirement does not confirm a particular Logout invocation or socket closure.
+  rpc GetEnrollmentDisposition(GetEnrollmentDispositionRequest) returns (GetEnrollmentDispositionResponse);
+}
+
+// DeviceEnrollmentReference identifies one immutable previously issued binding.
+// It contains no key or recovery capability and is never a trusted caller context.
+// Do not log its fields or use them as metric labels. The authenticated binding
+// determines the authority namespace; the reference cannot override that namespace.
+// Preserve each epoch exactly as delivered with the enrollment, across the full
+// positive uint64 range. Do not narrow or reinterpret it as a signed value.
+message DeviceEnrollmentReference {
+  // Required canonical, nonzero device-session UUID issued by the authority.
+  string session_id = 1;
+  // Exactly eight opaque bytes, not all zero; matched in full with the session.
+  bytes handle = 2;
+  // Positive original enrollment generation; the full uint64 range is supported.
+  uint64 enrollment_epoch = 3;
+  // Original immutable key purpose; ACCOUNT is the only supported purpose today.
+  DeviceKeyScope scope = 4;
+  // Positive original source account epoch; the full uint64 range is supported.
+  // This is not an authority service's internal revocation revision.
+  uint64 account_auth_epoch = 5;
+}
+
+// DeviceEnrollmentDisposition supplies negative evidence, never an active grant.
+enum DeviceEnrollmentDisposition {
+  // Invalid or unsupported evidence; never authorizes cleanup.
+  DEVICE_ENROLLMENT_DISPOSITION_UNSPECIFIED = 0;
+  // No retirement evidence. Includes unmatched, live, and staged references.
+  DEVICE_ENROLLMENT_DISPOSITION_UNKNOWN = 1;
+  // This exact known binding has permanently lost authorization.
+  DEVICE_ENROLLMENT_DISPOSITION_RETIRED = 2;
+}
+
+// GetEnrollmentDispositionRequest observes one reference, not a batch or search.
+message GetEnrollmentDispositionRequest {
+  // Required exact reference retained from protected enrollment delivery.
+  DeviceEnrollmentReference reference = 1;
+}
+
+// GetEnrollmentDispositionResponse contains no identity or secret-bearing data.
+// Missing retirement history yields UNKNOWN, not inferred retirement. An authority
+// restore must retain its independent safety gate; this query is not rollback protection.
+message GetEnrollmentDispositionResponse {
+  // Exact echoed reference; a mismatch makes the response unusable as evidence.
+  DeviceEnrollmentReference reference = 1;
+  // Negative-only observation for the reference, within the original call budget.
+  DeviceEnrollmentDisposition disposition = 2;
 }
 
 // =============================================================================
