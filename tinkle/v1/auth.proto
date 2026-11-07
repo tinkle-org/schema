@@ -82,16 +82,18 @@ service AuthService {
 // It contains no key or recovery capability and is never a trusted caller context.
 // Do not log its fields or use them as metric labels. The authenticated binding
 // determines the authority namespace; the reference cannot override that namespace.
+// Preserve each epoch exactly as delivered with the enrollment, across the full
+// positive uint64 range. Do not narrow or reinterpret it as a signed value.
 message DeviceEnrollmentReference {
   // Required canonical, nonzero device-session UUID issued by the authority.
   string session_id = 1;
   // Exactly eight opaque bytes, not all zero; matched in full with the session.
   bytes handle = 2;
-  // Positive original enrollment generation, at most 9223372036854775807.
+  // Positive original enrollment generation; the full uint64 range is supported.
   uint64 enrollment_epoch = 3;
   // Original immutable key purpose; ACCOUNT is the only supported purpose today.
   DeviceKeyScope scope = 4;
-  // Positive original source account epoch, at most 9223372036854775807.
+  // Positive original source account epoch; the full uint64 range is supported.
   // This is not an authority service's internal revocation revision.
   uint64 account_auth_epoch = 5;
 }

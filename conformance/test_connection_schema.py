@@ -228,6 +228,30 @@ class ConnectionSchemaTests(unittest.TestCase):
                        "disposition": "DEVICE_ENROLLMENT_DISPOSITION_" + disposition}
             self.assertEqual(fixture, self.round_trip(fixture, "GetEnrollmentDispositionResponse"))
 
+    def test_reference_preserves_delivered_uint64_epochs(self):
+        """Disposition queries preserve issued epochs across the full positive range."""
+        values = (
+            "1", "9007199254740993", "9223372036854775807",
+            "9223372036854775808", "18446744073709551615",
+        )
+        for value in values:
+            for enrollment_epoch, account_epoch in ((value, "7"), ("7", value), (value, value)):
+                with self.subTest(enrollment=enrollment_epoch, account=account_epoch):
+                    delivered = self.enrollment()
+                    delivered.update(enrollmentEpoch=enrollment_epoch, accountAuthEpoch=account_epoch)
+                    delivered = self.round_trip(delivered, "DeviceEnrollment")
+                    self.assertEqual(enrollment_epoch, delivered["enrollmentEpoch"])
+                    self.assertEqual(account_epoch, delivered["accountAuthEpoch"])
+                    reference = {key: delivered[key] for key in (
+                        "sessionId", "handle", "enrollmentEpoch", "scope", "accountAuthEpoch",
+                    )}
+                    request = {"reference": reference}
+                    self.assertEqual(request, self.round_trip(request, "GetEnrollmentDispositionRequest"))
+                    for disposition in ("UNKNOWN", "RETIRED"):
+                        response = {"reference": reference,
+                                    "disposition": "DEVICE_ENROLLMENT_DISPOSITION_" + disposition}
+                        self.assertEqual(response, self.round_trip(response, "GetEnrollmentDispositionResponse"))
+
     def test_enrollment_shapes_and_secret_free_activation(self):
         """Activation takes a capability and tuple; its response carries no key."""
         self.assert_fields("DeviceEnrollment", [
