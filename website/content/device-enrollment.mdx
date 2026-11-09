@@ -199,7 +199,7 @@ subscription or delivery RPC.
 Notifications may duplicate, coalesce, arrive stale, or be missed while offline.
 On a hint, fetch `GetSessions`; never create a prompt or restore a session from
 the hint alone. If a hint arrives during a fetch, schedule another refresh after
-that fetch completes so an in-flight snapshot cannot hide a subsequent change.
+that fetch completes, so an in-flight snapshot cannot hide a subsequent change.
 If `GetSessions` fails, keep the refresh pending and retry with backoff while
 the connection remains open, without waiting for another hint. A successful
 refresh stops failure retries, but any newer hints received during that fetch

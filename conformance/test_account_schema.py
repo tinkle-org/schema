@@ -32,6 +32,7 @@ class AccountSchemaTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        """Build the account descriptors and retain an image for codec checks."""
         temporary = tempfile.TemporaryDirectory(prefix="tinkle-account-")
         cls.addClassCleanup(temporary.cleanup)
         result = run_buf(
@@ -46,6 +47,7 @@ class AccountSchemaTests(unittest.TestCase):
         cls.image_path.write_bytes(result.stdout)
 
     def convert(self, fixture, message_type, source="json", target="binpb", check=True):
+        """Convert a fixture through Buf using the retained descriptor image."""
         payload = json.dumps(fixture).encode() if source == "json" else fixture
         return run_buf(
             "convert", f"{self.image_path}#format=json",
@@ -55,6 +57,7 @@ class AccountSchemaTests(unittest.TestCase):
         )
 
     def round_trip(self, fixture, message_type):
+        """Round-trip JSON through binary and verify stable re-encoding."""
         encoded = self.convert(fixture, message_type).stdout
         # All-defaults protobufs encode to no bytes; Buf rejects empty stdin.
         if not encoded:
@@ -83,6 +86,7 @@ class AccountSchemaTests(unittest.TestCase):
             )
 
     def session(self) -> dict[str, str | bool]:
+        """Return a fresh session fixture with lossless dates and build labels."""
         return {
             "id": "ce3ae9e5-ff55-4d2f-921d-e83a9ee77893",
             "deviceModel": "Test device", "platform": "web",
@@ -93,6 +97,7 @@ class AccountSchemaTests(unittest.TestCase):
         }
 
     def test_account_service_methods(self):
+        """Pin every account method's name, request, response, and unary mode."""
         self.assertEqual(1, len(self.account["service"]))
         service = self.account["service"][0]
         self.assertEqual("AccountService", service["name"])
@@ -115,6 +120,7 @@ class AccountSchemaTests(unittest.TestCase):
                 self.assertFalse(method.get("serverStreaming", False))
 
     def test_credential_free_session_shape(self):
+        """Preserve session field tags and exclude credential-bearing fields."""
         # Exact inventory forbids credentials, key handles and provider payloads,
         # while preserving all pre-review fields at tags 1-12.
         self.assert_fields("Session", [
@@ -134,6 +140,7 @@ class AccountSchemaTests(unittest.TestCase):
         ])
 
     def test_session_rpc_shapes(self):
+        """Pin the request and response shapes for session management."""
         for name in ("LogoutRequest", "RevokeSessionsRequest",
                      "GetSessionsRequest"):
             with self.subTest(message=name):
@@ -149,11 +156,13 @@ class AccountSchemaTests(unittest.TestCase):
         ])
 
     def test_session_changed_is_an_identifier_only_refresh_hint(self):
+        """Limit the notification payload to the neutral session identifier."""
         self.assert_fields("SessionChanged", [
             ("session_id", 1, "STRING", "", False, False),
         ])
 
     def test_unconfirmed_round_trip_in_session_responses(self):
+        """Preserve true review flags and omit false or unset implicit defaults."""
         # True is representable even in ConfirmSessionResponse: only the server
         # can enforce that a successful confirmation returns false.
         for name in ("GetSessionsResponse", "ConfirmSessionResponse"):
@@ -173,6 +182,7 @@ class AccountSchemaTests(unittest.TestCase):
                     self.assertIs(state is True, projection.get("unconfirmed", False))
 
     def test_snapshots_preserve_multiple_sessions_and_current_flag(self):
+        """Preserve distinct sessions and the caller-relative current flag."""
         sessions = [dict(self.session(), current=True), {
             "id": "a280178a-0789-4924-9c51-9af9d74f3349", "unconfirmed": True,
         }]
@@ -180,6 +190,7 @@ class AccountSchemaTests(unittest.TestCase):
         self.assertEqual(fixture, self.round_trip(fixture, "GetSessionsResponse"))
 
     def test_empty_requests_snapshots_and_message_presence(self):
+        """Distinguish empty wire defaults from a present nested session."""
         for name in ("LogoutRequest", "RevokeSessionsRequest",
                      "GetSessionsRequest"):
             with self.subTest(message=name):
@@ -193,6 +204,7 @@ class AccountSchemaTests(unittest.TestCase):
         ))
 
     def test_confirm_session_identifier_round_trip_and_defaults(self):
+        """Round-trip confirmation IDs and pin review-flag wire defaults."""
         fixture = {"sessionId": self.session()["id"]}
         self.assertEqual(fixture, self.round_trip(fixture, "ConfirmSessionRequest"))
         # Required UUIDs and response projections are runtime requirements, not
@@ -204,6 +216,7 @@ class AccountSchemaTests(unittest.TestCase):
         self.assertEqual(b"\x68\x01", self.convert({"unconfirmed": True}, "Session").stdout)
 
     def test_session_changed_identifier_round_trip_and_defaults(self):
+        """Round-trip notification IDs without treating them as validated UUIDs."""
         fixture = {"sessionId": self.session()["id"]}
         self.assertEqual(fixture, self.round_trip(fixture, "SessionChanged"))
         for fixture in ({}, {"sessionId": ""}):
@@ -211,6 +224,7 @@ class AccountSchemaTests(unittest.TestCase):
                 self.assertEqual(b"", self.convert(fixture, "SessionChanged").stdout)
 
     def test_wrong_field_types_are_rejected_by_codec(self):
+        """Reject incompatible JSON types in session messages and notifications."""
         for name, fixture in (
             ("ConfirmSessionRequest", {"sessionId": 42}),
             ("SessionChanged", {"sessionId": 42}),
