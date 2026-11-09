@@ -38,6 +38,13 @@ CHANGED_FILES = {
     "tinkle/v1/auth.proto",
 }
 CHANGED_DECLARATIONS = {
+    # Session review additions are pinned by test_account_schema.py; all other
+    # account declarations remain in the baseline comparison.
+    "tinkle.v1.AccountService",
+    "tinkle.v1.Session",
+    "tinkle.v1.ConfirmSessionRequest",
+    "tinkle.v1.ConfirmSessionResponse",
+    "tinkle.v1.SessionChanged",
     "tinkle.v1.PeerInput",
     "tinkle.v1.Target",
     "tinkle.v1.Message",
