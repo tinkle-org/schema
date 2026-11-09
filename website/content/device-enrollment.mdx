@@ -145,3 +145,69 @@ Account-wide key revocation also invalidates pending enrollments and recovery
 paths. The server derives identity from the authenticated session and exact key
 binding at each effect boundary. A client-supplied account ID or a previously
 successful admission lookup cannot authorize a request.
+
+### Review a new login
+
+Login recognition is separate from key activation. Already-active sessions retain
+account access, including those with `Session.unconfirmed = true`; confirmation
+does not activate a key or extend its lifetime. In `tinkle/v1/account.proto`,
+`Session.unconfirmed` stays pending until another active, confirmed session of
+the same account confirms it, or the session is revoked or expires. There is no automatic
+confirmation timeout. The first session of a newly created account and sessions
+predating this feature start confirmed (`unconfirmed = false`).
+
+A review is created only when a new device session first becomes ACTIVE. Staging,
+retries, reconnects, recovery, and key rotation neither create duplicate reviews
+nor reset review state.
+
+Prompt only for sessions with `unconfirmed = true` and `current = false`, asking
+whether the user recognizes the login. Use the `current = true` entry from the
+authoritative `GetSessions` snapshot to check the caller: offer **Yes** or call
+`ConfirmSession` only if that entry has `unconfirmed = false`. If the entry is
+missing or unconfirmed, do not offer **Yes** or call `ConfirmSession`.
+
+- **Yes:** call
+  [`AccountService.ConfirmSession`](/schema/reference/methods/account/confirm-session)
+  with the target `Session.id` as `session_id`. A session cannot confirm itself.
+  The caller must already be confirmed, preventing two unconfirmed sessions
+  from confirming each other.
+- **No:** use the existing
+  [`AccountService.RevokeSession`](/schema/reference/methods/account/revoke-session)
+  with that `session_id` to revoke the device and its staged replacements, even
+  when the caller is unconfirmed.
+
+If no confirmed device remains available, unconfirmed sessions retain ordinary
+account access but cannot clear reviews by confirming one another.
+
+Review state is account-wide. Use
+[`AccountService.GetSessions`](/schema/reference/methods/account/get-sessions)
+as the authoritative active-session snapshot. Fetch on startup, foreground, and
+reconnect, even without a notification. Reconcile sessions and prompts by
+`Session.id`, regardless of list order; prompt only for unconfirmed, non-current
+sessions, and clear prompts for resolved sessions or sessions absent from the
+snapshot. Do not duplicate alerts on repeated refreshes or reconnects.
+
+The runtime's general notification mechanism delivers the standalone
+[`SessionChanged`](/schema/reference/messages/SessionChanged) message defined in
+`tinkle/v1/account.proto`. Its `session_id` string field (tag 1) is the changed
+session's neutral UUID, not a credential or proof that the session remains active.
+Publish this refresh hint only after committed activation of a new device session,
+confirmation, revocation, or expiry, and only to authorized sessions of the same
+account, rechecking recipient authorization at delivery. There is no public
+subscription or delivery RPC.
+
+Notifications may duplicate, coalesce, arrive stale, or be missed while offline.
+On a hint, fetch `GetSessions`; never create a prompt or restore a session from
+the hint alone. If a hint arrives during a fetch, schedule another refresh after
+that fetch completes so an in-flight snapshot cannot hide a subsequent change.
+If `GetSessions` fails, keep the refresh pending and retry with backoff while
+the connection remains open, without waiting for another hint. A successful
+refresh stops failure retries, but any newer hints received during that fetch
+must still schedule another refresh.
+RPC responses, including `ConfirmSession` results, must not overwrite a newer
+`GetSessions` snapshot or restore a session already removed from it.
+
+The schema defines the contract; it does not implement push delivery, server
+handling, or transport bindings.
+Device/app labels are descriptive, not identity or attestation; IP and derived
+country/region must come from trusted server network context, not client labels.

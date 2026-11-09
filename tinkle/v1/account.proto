@@ -90,8 +90,26 @@ service AccountService {
   rpc RevokeSessions(RevokeSessionsRequest) returns (RevokeSessionsResponse);
 
   // GetSessions lists active device sessions for the authenticated account.
-  // Staged enrollments do not appear as active devices.
+  // Returns a complete, consistent snapshot, including pending login reviews.
+  // Staged, revoked, and expired sessions do not appear as active devices.
+  // Refresh on SessionChanged notifications and on startup or reconnect;
+  // notifications are hints, not an authoritative session list or access grant.
   rpc GetSessions(GetSessionsRequest) returns (GetSessionsResponse);
+
+  // ConfirmSession records that the user recognizes another active device's
+  // login. The target must belong to the authenticated account and must not be
+  // the caller's current session. The caller must already be confirmed; two
+  // unconfirmed sessions cannot confirm each other. Review is account-wide,
+  // not per observer. Check caller authorization and confirmed state atomically
+  // with the target transition at the effect boundary.
+  // Unconfirmed sessions already have account access; confirmation neither
+  // activates a key nor extends its lifetime or prevents later revocation.
+  // Reconfirming an already-confirmed active target succeeds. Confirmation and
+  // revocation must serialize: confirmation never restores a revoked session.
+  // Returns INVALID_ARGUMENT for a malformed session UUID, FAILED_PRECONDITION
+  // for an unconfirmed caller or the current session, and NOT_FOUND for unknown,
+  // foreign, or inactive targets without distinguishing those cases.
+  rpc ConfirmSession(ConfirmSessionRequest) returns (ConfirmSessionResponse);
 }
 
 // PushDevice represents a registered push notification device.
@@ -426,8 +444,10 @@ message RevokeSessionsResponse {
 
 // Session represents one active device session for an account. It contains no
 // authorization key or provider credential and remains stable across rotations.
+// Review state is separate from key activation: unconfirmed sessions have
+// ordinary account access but cannot confirm other sessions.
 message Session {
-  // Neutral device-session UUID, suitable for display and revocation only.
+  // Neutral device-session UUID for display, review, and revocation; not a credential.
   string id = 1;
   // Device model reported by the client (e.g. "iPhone 15 Pro").
   string device_model = 2;
@@ -452,13 +472,55 @@ message Session {
   // Client-reported application build identifier captured at sign-in (e.g. "142").
   // Empty when unknown; descriptive only, not an authentication signal.
   string app_build = 12;
+  // True until another active, confirmed session of the account confirms this
+  // login, or this session is revoked or expires. No timeout confirms it.
+  // Set once when a new device session first becomes ACTIVE; staging, retries,
+  // recovery, reconnects, and key rotation do not create another review or reset
+  // its state. The initial session of a newly created account and sessions
+  // predating this feature start confirmed (false). Persist review state with
+  // session activation. Clients prompt only for unconfirmed non-current sessions.
+  bool unconfirmed = 13;
 }
 
 // GetSessionsRequest is empty; the account comes from trusted session context.
 message GetSessionsRequest {}
 
-// GetSessionsResponse returns all active sessions for the user.
+// GetSessionsResponse returns a complete active-session snapshot for the user.
 message GetSessionsResponse {
   // All active sessions for the user.
   repeated Session sessions = 1;
+}
+
+// ConfirmSessionRequest identifies the login recognized by the user.
+message ConfirmSessionRequest {
+  // Required canonical, nonzero device-session UUID of another active session
+  // of the current account. Never a credential or authorization-key handle.
+  string session_id = 1;
+}
+
+// ConfirmSessionResponse reports the target at the confirmation commit point.
+// A later revocation or expiry may already have removed it; do not use this
+// response to overwrite a newer GetSessions snapshot.
+message ConfirmSessionResponse {
+  // Required target projection with unconfirmed=false and current=false.
+  Session session = 1;
+}
+
+// SessionChanged is a refresh hint carried by the runtime's general notification
+// mechanism, not an RPC response, subscription, or transport envelope. Publish
+// after committed activation of a new device session, confirmation, revocation,
+// or expiry, only to authorized sessions of the same account. Recheck recipient
+// authorization at delivery. Key rotation and enrollment retries do not create
+// another login review; activity-only changes need not notify.
+// Notifications may duplicate, coalesce, arrive late, or be missed while offline.
+// Call GetSessions for current review and lifecycle state; never create a prompt
+// or restore a session from this hint alone. Fetch on startup, foreground, and
+// reconnect even without a hint. If a hint arrives during a fetch, refresh again
+// afterwards so that an in-flight snapshot cannot swallow a subsequent change.
+// Routing, push delivery, and transport bindings belong to the implementation.
+message SessionChanged {
+  // Required neutral UUID of the changed session, not a credential or proof of
+  // current activity. It may no longer appear in GetSessions after revocation
+  // or expiry. A hint about one's own session does not replace authorization.
+  string session_id = 1;
 }
