@@ -36,12 +36,73 @@ enum MediaVariantRole {
 enum StickerFormat {
   // Unspecified or unknown format.
   STICKER_FORMAT_UNSPECIFIED = 0;
-  // Static WebP image.
+  // WebP container; may be static or animated as declared separately.
   STICKER_FORMAT_WEBP = 1;
   // Animated Lottie-based TGS archive.
   STICKER_FORMAT_TGS = 2;
   // Video (WebM) sticker.
   STICKER_FORMAT_WEBM = 3;
+  // Static PNG image.
+  STICKER_FORMAT_PNG = 4;
+}
+
+// StickerKind identifies how an asset is used, independently of its format.
+enum StickerKind {
+  // Invalid when authoring an asset; no kind filter when querying assets.
+  STICKER_KIND_UNSPECIFIED = 0;
+  // Standalone message sticker.
+  STICKER_KIND_STICKER = 1;
+  // Inline custom emoji, referenced by asset ID with plain-text fallback.
+  STICKER_KIND_CUSTOM_EMOJI = 2;
+}
+
+// ImageFormat identifies the encoded container, not its animation behavior.
+enum ImageFormat {
+  // Format was not declared.
+  IMAGE_FORMAT_UNSPECIFIED = 0;
+  // Static PNG; APNG is not accepted by STRICT_LOSSLESS version 1.
+  IMAGE_FORMAT_PNG = 1;
+  // Static or animated WebP; consult ImageMetadata.animated.
+  IMAGE_FORMAT_WEBP = 2;
+}
+
+// MediaValidationProfile selects a fixed validation rule set, not transcoding.
+enum MediaValidationProfile {
+  // Invalid for sticker-asset and profile-photo authoring.
+  MEDIA_VALIDATION_PROFILE_UNSPECIFIED = 0;
+  // Only static PNG and lossless WebP. WebP image/frame payloads must use VP8L,
+  // never lossy VP8; format alone does not prove losslessness. TGS, WebM, APNG,
+  // unknown containers and encrypted files are rejected. GIF is a client input
+  // format only: normalize to supported lossless bytes before upload, preserving
+  // animation unless the user explicitly chooses a still frame. Servers neither
+  // transcode nor silently flatten animation or substitute lossy media.
+  MEDIA_VALIDATION_PROFILE_STRICT_LOSSLESS = 1;
+}
+
+// MediaValidation declares the rules clients must satisfy and servers verify.
+// STRICT_LOSSLESS version 1 requires fully decodable, bounded files; declared
+// format, dimensions, animation, duration and frame count must match the bytes.
+// Reject malformed/truncated containers, trailing data, unknown versions and
+// unsupported profiles, never silently downgrade. Validate every supplied
+// variant under the same profile. Server results attest successful validation;
+// client inputs remain untrusted claims. These rules apply at authoring, not at
+// raw upload completion, which publishes only immutable storage facts.
+message MediaValidation {
+  // Required validation profile for the application object being authored.
+  MediaValidationProfile profile = 1;
+  // Exact rule-set version; only 1 is defined, zero is invalid.
+  uint32 version = 2;
+}
+
+// AssetReference pins one immutable sticker/custom-emoji version. Both fields
+// must be positive; version zero never means "head". ID-only head discovery uses
+// GetStickerAssetsRequest.asset_ids and returns the exact version it resolved.
+// Consumers bind/send the returned pair, never substitute a later catalog head.
+message AssetReference {
+  // Canonical unified asset ID, not a file ID.
+  int64 asset_id = 1;
+  // Exact immutable version of files, metadata and fallback text.
+  uint64 asset_version = 2;
 }
 
 // ImageMetadata describes an image attachment.
@@ -54,6 +115,10 @@ message ImageMetadata {
   // source of truth for image animation; it applies to `PhotoSource` and
   // to the image attribute of `DocumentSource`.
   bool animated = 3;
+  // Encoded format, independent of animated; required for profile-photo sources.
+  ImageFormat format = 4;
+  // Required for profile-photo authoring; returned after successful validation.
+  MediaValidation validation = 5;
 }
 
 // VideoMetadata describes a video attachment.
@@ -99,9 +164,18 @@ message StickerMetadata {
   uint32 width = 2;
   // Sticker height in pixels.
   uint32 height = 3;
-  // File format of the sticker image. Animation has a single source of
-  // truth here: TGS and WebM stickers animate, WebP stickers do not.
+  // Encoded format, independent of animation. STRICT_LOSSLESS version 1 accepts
+  // PNG and WebP only; the other declared formats do not satisfy that profile.
   StickerFormat format = 4;
+  // Whether the asset animates; lossless WebP can be static or animated.
+  bool animated = 5;
+  // Required for animation: total loop duration in milliseconds, 1..3000.
+  // Must be absent for static assets. Frames must have positive durations.
+  optional uint64 duration_ms = 6;
+  // Required for animation: 2..180 frames; absent for static assets.
+  optional uint32 frame_count = 7;
+  // Required on authored assets and their returned metadata.
+  MediaValidation validation = 8;
 }
 
 // MediaAttribute is one typed attribute of a document-like attachment.

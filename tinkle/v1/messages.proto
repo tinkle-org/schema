@@ -12,6 +12,7 @@ package tinkle.v1;
 
 import "google/protobuf/timestamp.proto";
 import "tinkle/v1/common.proto";
+import "tinkle/v1/entities.proto";
 import "tinkle/v1/media.proto";
 
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
@@ -26,8 +27,8 @@ service MessagesService {
   rpc GetHistory(GetHistoryRequest) returns (GetHistoryResponse);
   // GetMessages fetches specific messages by ID in one conversation.
   rpc GetMessages(GetMessagesRequest) returns (GetMessagesResponse);
-  // GetTargetChanges lists retained edits, deletions, and revocations of one
-  // conversation strictly after a caller-supplied acceptance position.
+  // GetTargetChanges lists authorized retained body, metadata and removal changes
+  // of one conversation after a caller-supplied mutation acceptance position.
   rpc GetTargetChanges(GetTargetChangesRequest) returns (GetTargetChangesResponse);
   // ReadHistory marks messages as read up to a specified message_id.
   rpc ReadHistory(ReadHistoryRequest) returns (ReadHistoryResponse);
@@ -137,29 +138,6 @@ enum ChatType {
   CHAT_TYPE_BROADCAST = 3;
 }
 
-// MessageTextEntityType describes the type of a rich text formatting span in a message.
-enum MessageTextEntityType {
-  MESSAGE_TEXT_ENTITY_TYPE_UNSPECIFIED = 0;
-  MESSAGE_TEXT_ENTITY_TYPE_BOLD = 1;
-  MESSAGE_TEXT_ENTITY_TYPE_ITALIC = 2;
-  MESSAGE_TEXT_ENTITY_TYPE_UNDERLINE = 3;
-  MESSAGE_TEXT_ENTITY_TYPE_STRIKETHROUGH = 4;
-  MESSAGE_TEXT_ENTITY_TYPE_CODE = 5;
-  MESSAGE_TEXT_ENTITY_TYPE_PRE = 6;
-  MESSAGE_TEXT_ENTITY_TYPE_URL = 7;
-  MESSAGE_TEXT_ENTITY_TYPE_TEXT_URL = 8;
-  MESSAGE_TEXT_ENTITY_TYPE_MENTION = 9;
-  MESSAGE_TEXT_ENTITY_TYPE_MENTION_NAME = 10;
-  MESSAGE_TEXT_ENTITY_TYPE_PHONE = 11;
-  MESSAGE_TEXT_ENTITY_TYPE_EMAIL = 12;
-  MESSAGE_TEXT_ENTITY_TYPE_HASHTAG = 13;
-  MESSAGE_TEXT_ENTITY_TYPE_CASHTAG = 14;
-  MESSAGE_TEXT_ENTITY_TYPE_BOT_COMMAND = 15;
-  MESSAGE_TEXT_ENTITY_TYPE_CUSTOM_EMOJI = 16;
-  MESSAGE_TEXT_ENTITY_TYPE_SPOILER = 17;
-  MESSAGE_TEXT_ENTITY_TYPE_BLOCKQUOTE = 18;
-}
-
 // MessagesFilter filters search results by content type.
 enum MessagesFilter {
   MESSAGES_FILTER_UNSPECIFIED = 0;
@@ -174,6 +152,26 @@ enum MessagesFilter {
   MESSAGES_FILTER_ROUND_VIDEO = 9;
   MESSAGES_FILTER_PINNED = 10;
   MESSAGES_FILTER_MENTIONS = 11;
+}
+
+// SearchSource identifies the backend selected for this search result.
+enum SearchSource {
+  // Source absent or unknown; do not infer a backend.
+  SEARCH_SOURCE_UNSPECIFIED = 0;
+  // Server search over the caller's authorized indexed messages.
+  SEARCH_SOURCE_SERVER = 1;
+  // Local search over messages retained for the authenticated principal.
+  SEARCH_SOURCE_CACHE = 2;
+}
+
+// SearchCoverage identifies the corpus searched, independently of continuation.
+enum SearchCoverage {
+  // Coverage absent or unknown; do not infer completeness.
+  SEARCH_COVERAGE_UNSPECIFIED = 0;
+  // Authorized server index, subject to indexing visibility and freshness.
+  SEARCH_COVERAGE_INDEXED = 1;
+  // Locally cached subset, even when no further cached matches exist.
+  SEARCH_COVERAGE_CACHED_SUBSET = 2;
 }
 
 // TypingAction describes the type of typing indicator.
@@ -219,6 +217,27 @@ enum TargetChangeKind {
   TARGET_CHANGE_KIND_DELETED = 2;
   // The message was removed for every participant (bilateral revocation).
   TARGET_CHANGE_KIND_REVOKED = 3;
+  // Pin state changed; hydrate the authorized current body, not a user edit.
+  TARGET_CHANGE_KIND_PIN = 4;
+  // Reactions changed; hydrate the authorized current body, not a user edit.
+  TARGET_CHANGE_KIND_REACTION = 5;
+  // Poll state/results changed; hydrate the authorized current body, not a user edit.
+  TARGET_CHANGE_KIND_POLL = 6;
+  // Private acknowledgement metadata changed for this viewer only. Disclose the
+  // marker/body only to that viewer, never to other conversation participants.
+  TARGET_CHANGE_KIND_ACK = 7;
+}
+
+// MessageScheduledState distinguishes queued delivery from visible messages.
+enum MessageScheduledState {
+  // Scheduling state was not reported; do not infer delivery.
+  MESSAGE_SCHEDULED_STATE_UNSPECIFIED = 0;
+  // Accepted without scheduling.
+  MESSAGE_SCHEDULED_STATE_NOT_SCHEDULED = 1;
+  // Queued for future delivery; visible only to the sender, not in history/search.
+  MESSAGE_SCHEDULED_STATE_PENDING = 2;
+  // A scheduled message has been delivered to the conversation.
+  MESSAGE_SCHEDULED_STATE_SENT = 3;
 }
 
 // =============================================================================
@@ -240,7 +259,8 @@ message Dialog {
 // DraftMessage represents an unsent draft in a dialog.
 message DraftMessage {
   string message = 1;
-  repeated MessageTextEntity entities = 2;
+  // Rich-text spans in message, using the shared UTF-16 entity rules.
+  repeated Entity entities = 2;
   int64 reply_to_msg_id = 3;
   google.protobuf.Timestamp date = 4;
 }
@@ -253,8 +273,11 @@ message Message {
   google.protobuf.Timestamp date = 4;
   string message = 5;
   Media media = 6;
-  repeated MessageTextEntity entities = 7;
+  // Rich-text spans in message, including media captions.
+  repeated Entity entities = 7;
   MessageReplyHeader reply_to = 8;
+  // Server time of the last user content edit. Pin, reaction, poll and private
+  // acknowledgement changes do not manufacture or advance a user edit timestamp.
   google.protobuf.Timestamp edit_date = 9;
   MessageReactions reactions = 10;
   MessageReplies replies = 11;
@@ -265,11 +288,33 @@ message Message {
   // increasing per conversation, and are the ordering and deduplication token
   // for messages in that conversation; they are not globally comparable across
   // conversations and are not a replay cursor. The token is assigned once on
-  // acceptance and stays stable across later edits of the same message; each
-  // edit or removal is an event at its own position, disclosed under
-  // GetTargetChanges. Absent for messages accepted before the token was
-  // introduced; treat absent as "order with date, never as a dedup vote".
+  // acceptance and stays stable across later body/metadata changes; mutations
+  // have separate event positions disclosed under GetTargetChanges. This token
+  // never ranks body freshness. Absent on pending scheduled messages; an absent token
+  // never supplies an ordering or deduplication vote.
   optional int64 accept_seq = 14;
+  // Positive, opaque album identifier shared by every item of one successful
+  // SendMultiMedia call; scoped to target, stable across edits and delivery.
+  // Absent for a standalone message. Album items are accepted atomically, in
+  // request order; an invalid item rejects the entire album.
+  optional int64 album_id = 15;
+  // Delivery state. Pending messages have no accept_seq; delivery assigns it
+  // once. A send acknowledgement for a pending message is not delivery proof.
+  MessageScheduledState scheduled_state = 16;
+  // Unix seconds of requested delivery, present for PENDING and SENT only.
+  // Editing a pending message may replace this date; omission preserves it.
+  optional int32 schedule_date = 17;
+  // Positive server-assigned version of the complete authorized body, including
+  // metadata. Increases monotonically on body changes, independently of this
+  // message's accept_seq, mutation event positions and user edit_date; never
+  // wraps or reuses a value. Compare only for the same authenticated principal,
+  // target and message_id. When both copies report it, the larger revision is
+  // fresher; equal revisions do not justify replacing a cached body. If either
+  // copy omits it, use edit_date only as a fallback: later wins, and an absent
+  // date never beats a dated one. Equal/absent dates do not order metadata-only
+  // changes; retain the cached copy and reconcile rather than inventing a date.
+  // Absence means unknown, never zero. A revision is not a cursor or receipt.
+  optional int64 body_revision = 18;
 }
 
 // MessageReplyHeader contains reply context for a message.
@@ -278,7 +323,8 @@ message MessageReplyHeader {
   int64 reply_to_peer_id = 2;
   int64 reply_to_top_id = 3;
   string quote_text = 4;
-  repeated MessageTextEntity quote_entities = 5;
+  // Rich-text spans in quote_text, independent of source-message offsets.
+  repeated Entity quote_entities = 5;
 }
 
 // MessageReplies contains thread reply summary for a message.
@@ -343,21 +389,18 @@ message RestrictedUser {
   optional google.protobuf.Timestamp until_date = 3;
 }
 
-// MessageTextEntity represents a rich text formatting span in a message.
-message MessageTextEntity {
-  MessageTextEntityType type = 1;
-  int32 offset = 2;
-  int32 length = 3;
-  string url = 4;
-  int64 user_id = 5;
-  string language = 6;
-  int64 document_id = 7;
-}
-
 // Reaction represents an emoji reaction.
 message Reaction {
+  // Plain-text reaction, or the exact custom-emoji version's canonical nonempty
+  // fallback (at most 64 UTF-8 bytes); validate equality at acceptance and retain it.
   string emoticon = 1;
-  int64 document_id = 2;
+  // Canonical CUSTOM_EMOJI asset ID, not a file ID. Zero selects emoticon.
+  // A custom reaction requires a positive currently usable asset ID.
+  int64 custom_emoji_id = 2;
+  // Required positive exact version when custom_emoji_id is nonzero, absent
+  // otherwise. Never substitute head. A visible message grants reads only while
+  // this exact reaction is retained; unavailable assets render retained emoticon.
+  optional uint64 asset_version = 3;
 }
 
 // MessageReactions contains per-message reaction summary.
@@ -395,8 +438,7 @@ message Media {
 // Photo represents a photo attachment.
 // id is the photo's domain-object identifier and is not a file ID;
 // file_id is the canonical reference to the stored full-size image bytes.
-// access_hash is retained as a legacy compatibility field; FilesService
-// authorization never depends on it.
+// access_hash does not authorize FilesService operations.
 message Photo {
   int64 id = 1;
   int64 access_hash = 2;
@@ -412,9 +454,8 @@ message Photo {
 
 // Document represents a file/document attachment.
 // id is the document's domain-object identifier and is not a file ID;
-// file_id is the canonical reference to the stored bytes. access_hash is
-// retained as a legacy compatibility field; FilesService authorization
-// never depends on it.
+// file_id is the canonical reference to the stored bytes. access_hash does not
+// authorize FilesService operations.
 message Document {
   int64 id = 1;
   int64 access_hash = 2;
@@ -452,6 +493,31 @@ message Poll {
   bool public_voters = 5;
   bool multiple_choice = 6;
   bool quiz = 7;
+  // Current authorized aggregate and caller-relative choices. Correctness is
+  // disclosed only after this caller votes or the poll closes, never in advance.
+  PollResults results = 8;
+}
+
+// PollResults is one consistent aggregate snapshot, not a list of voter IDs.
+message PollResults {
+  // Number of distinct voters; a multiple-choice voter counts once.
+  int32 total_voters = 1;
+  // One entry per Poll.answers option, including options with zero votes.
+  // Order matches Poll.answers; counts and chosen refer to this same snapshot.
+  repeated PollAnswerResult results = 2;
+}
+
+// PollAnswerResult describes one option's count and the caller's selection.
+message PollAnswerResult {
+  // Exact opaque bytes of PollAnswer.option; never a text or numeric index.
+  bytes option = 1;
+  // Nonnegative number of voters choosing this option.
+  int32 voters = 2;
+  // Whether the authenticated caller currently chooses this option.
+  bool chosen = 3;
+  // Quiz correctness, omitted until disclosure is allowed and for non-quizzes.
+  // Explicit false distinguishes a disclosed incorrect option from hidden data.
+  optional bool correct = 4;
 }
 
 // PollAnswer represents a single poll option.
@@ -561,14 +627,26 @@ message VoiceSource {
 }
 
 // StickerSource defines a sticker attachment built from a completed file.
-// Pack ownership stays in the sticker domain.
+// Without asset_id the main and variant files must be uploader-owned. With
+// asset_id, require its exact asset_version to be owned or pinned in a currently
+// published pack, with matching main file/variants/metadata; reject CUSTOM_EMOJI
+// assets here. A message-context read grant alone cannot authorize a new send.
+// Accepted messages retain these exact files independently of pack withdrawal,
+// but message visibility is rechecked on each later read.
 message StickerSource {
   // Canonical file ID of an uploaded, completed sticker image.
   int64 file_id = 1;
-  // Client-asserted sticker metadata.
+  // Client-asserted sticker metadata; required and exactly matching the stored
+  // asset metadata when asset_id is present.
   optional StickerMetadata metadata = 2;
   // Client-supplied thumbnail variant references.
   repeated MediaVariantSource variants = 3;
+  // Positive StickerView.id when sending an authored asset, not a file ID.
+  // Omit only when constructing a sticker directly from caller-owned files.
+  optional int64 asset_id = 4;
+  // Required positive exact version when asset_id is present; absent otherwise.
+  // Never resolve an ID to a different catalog head during acceptance.
+  optional uint64 asset_version = 5;
 }
 
 // GeoPointSource supplies geographic coordinates for sending.
@@ -594,13 +672,25 @@ message PollSource {
   bool quiz = 5;
   optional int32 close_period = 6;
   optional google.protobuf.Timestamp close_date = 7;
+  // Exact option bytes of correct quiz answers. A quiz requires exactly one,
+  // must be single-choice, and it must match a declared answer. Non-quizzes
+  // require an empty list. Answer options must be nonempty and distinct; polls
+  // have 2..10 answers. close_period (positive seconds) and close_date (future
+  // Unix time) are mutually exclusive. Correct answers are not echoed publicly.
+  repeated bytes correct_answers = 8;
 }
 
 // ReplyInput represents reply context for send operations.
 message ReplyInput {
   int64 reply_to_msg_id = 1;
   string quote_text = 2;
-  repeated MessageTextEntity quote_entities = 3;
+  // Rich-text spans in quote_text, using the shared UTF-16 entity rules.
+  repeated Entity quote_entities = 3;
+  // Explicit thread root in the send target. Positive when present; the
+  // reply_to_msg_id must be that root or a reply belonging to it, and both
+  // must be visible to the caller. Omit for an ordinary reply outside a thread.
+  // Never infer a root from a quote or accept a root from another conversation.
+  optional int64 reply_to_top_id = 4;
 }
 
 // ChatPhotoSource selects the photo for chat photo operations: it either
@@ -621,7 +711,8 @@ message ChatPhotoSource {
 message SingleMediaSource {
   MediaSource media = 1;
   string message = 2;
-  repeated MessageTextEntity entities = 3;
+  // Rich-text spans in this item's message caption.
+  repeated Entity entities = 3;
   int64 random_id = 4;
 }
 
@@ -737,10 +828,11 @@ message GetMessagesRequest {
 // information about their past existence or deletion reason. Returned order is
 // unspecified. A body fetch shares the message's accept_seq token, which is
 // stable across edits — the token identifies the message within the
-// conversation; it cannot rank copies. When two bodies for one message ID
-// disagree, keep the fresher by later edit_date; an absent edit_date never
-// beats a dated one. Learn which edits and removals happened through
-// GetTargetChanges, not by diffing fetched bodies.
+// conversation; it cannot rank copies. For the same principal/target/message_id,
+// compare body_revision when both copies report it. Only if either revision is
+// absent, fall back to edit_date as described on Message.body_revision; metadata
+// changes do not create user edit dates. Learn retained body/metadata/removal
+// events through GetTargetChanges, not by diffing fetched bodies.
 message GetMessagesResponse {
   repeated Message messages = 1;
   repeated User users = 2;
@@ -749,8 +841,9 @@ message GetMessagesResponse {
 
 // GetTargetChangesRequest lists retained conversation mutations strictly after
 // one acceptance position. The journal keeps mutations at their original
-// acceptance order; use this to reconcile edits and removals without a durable
-// update feed.
+// acceptance order; use this to reconcile body/metadata changes and removals
+// without a durable update feed. Positions order mutations across messages in
+// this conversation, not versions or identities of an individual message.
 message GetTargetChangesRequest {
   // target identifies the conversation whose changes are listed (required).
   Target target = 1;
@@ -766,24 +859,31 @@ message GetTargetChangesRequest {
 
 // GetTargetChangesResponse carries one page of retained conversation mutations.
 message GetTargetChangesResponse {
-  // changes are ordered ascending by accept_seq, one marker per retained
-  // mutation. Edits are disclosed with the current body; deletions and
-  // revocations disclose identity and kind only, never a deleted body.
-  // Retention windows may drop older positions entirely: a page that starts
-  // higher than the requested bound does not imply the skipped past was
-  // disclosed, and full-history repair stays the responsibility of history
-  // fetches, not of this response alone.
+  // Authorized markers ordered ascending by mutation accept_seq. EDITED, PIN,
+  // REACTION, POLL and viewer-only ACK hydrate the currently visible body;
+  // DELETED/REVOKED never disclose a removed body. Recheck current authorization
+  // for markers and hydration; ACK state is never disclosed to another viewer.
+  // Positions need not be contiguous: authorization filtering, retention and
+  // settled non-change positions can leave gaps. Nothing before the retained
+  // boundary is reconstructed here; gaps/absence prove neither nonexistence nor
+  // complete repair. Use authoritative message/history fetches for reconciliation,
+  // including when the caller's visibility scope changes.
   repeated TargetChange changes = 1;
-  // more_available reports retained changes strictly after last_accept_seq.
-  // Set true confirms a next page exists; request it with after_accept_seq
-  // equal to last_accept_seq. Set false is the server's confirmation that the
-  // caller is caught up to the retained head. Absent means no continuation
-  // report on this page: unknown, never read as caught up.
+  // Reports further settled retained journal positions to examine after
+  // last_accept_seq. True confirms another available page, possibly empty after
+  // authorization filtering; continue with after_accept_seq=last_accept_seq.
+  // False means none are currently available through that horizon, not that
+  // pending mutations are absent or all history was retained. An unsettled earlier
+  // position can hold the horizon; poll again from the returned cursor. Absence
+  // is an unknown continuation state.
   optional bool more_available = 2;
-  // last_accept_seq is the cursor to continue from: the acceptance position of
-  // the last returned change, or the request's after_accept_seq when the page
-  // is empty, so the cursor never moves backward or resets. An empty page
-  // discloses no change and no progress, and must not set more_available true.
+  // Stable processed boundary, never below the request cursor or a returned
+  // marker. May advance beyond the last visible marker, even on an empty page,
+  // through settled filtered/retained positions. Never advance across a pending
+  // earlier mutation that could later become visible behind this boundary.
+  // If no progress is possible, echo after_accept_seq unchanged. Continue only
+  // from this value, not the largest message ID, body revision, returned marker,
+  // or unprocessed allocated head. It is not proof of gapless retained history.
   int64 last_accept_seq = 3;
 }
 
@@ -791,20 +891,64 @@ message GetTargetChangesResponse {
 message TargetChange {
   // message_id identifies the message the change applies to.
   int64 message_id = 1;
-  // kind distinguishes an edit, a one-sided deletion, and a bilateral revocation.
+  // Body/metadata change or removal; ACK is disclosed only to its own viewer.
   TargetChangeKind kind = 2;
-  // message is the authorized hydrated current body; set only for
-  // TARGET_CHANGE_KIND_EDITED and never for deleted or revoked messages. Its
-  // accept_seq stays the message's own token, not this mutation's position.
+  // Authorized hydrated current body for EDITED, PIN, REACTION, POLL or ACK;
+  // never a body for DELETED/REVOKED. Recheck current visibility before hydration.
+  // Its body_revision may be newer than this marker's message_revision; do not
+  // replace it with the event revision. Its accept_seq stays the message's own
+  // acceptance token, not this mutation's position. No synthetic edit_date.
   Message message = 3;
   // accept_seq is the acceptance position of this mutation within the
-  // conversation: positive, conversation-local, and gapless only within
-  // retained history. Mutations are never coalesced — every retained
-  // occurrence keeps its own marker and position, so a message edited more
-  // than once yields successive markers at successive positions. This is the
-  // mutation's position, not the message's: the hydrated body keeps
-  // message.accept_seq as its acceptance token.
+  // conversation: positive and ordered across message mutations, not an identity
+  // or per-message revision. Filtering, retention and the pending-position horizon
+  // preclude inferring continuity from numeric gaps. Resume using the response's
+  // stable last_accept_seq, not this marker alone.
   int64 accept_seq = 4;
+  // Positive exact per-message revision produced by this event, when reported;
+  // absence is unknown, not zero. Distinct from its journal position. Hydration
+  // is current, not an event-time snapshot: a reported message.body_revision may
+  // be equal or newer, never older. Removal markers can report a revision without
+  // disclosing a body. Do not label a hydrated newer body with this event revision.
+  optional int64 message_revision = 5;
+}
+
+// MessageChanged is a typed notification payload, not a transport envelope,
+// journal cursor, delivery receipt or authoritative body/removal record. Runtime
+// bindings own routing and delivery. Hints may duplicate, coalesce, arrive late or
+// be missed; reconcile through authorized fetches/GetTargetChanges, including on
+// reconnect without a hint. Recheck recipient visibility at delivery. ACK hints
+// are private to the viewer whose acknowledgement metadata changed, never fanout
+// to other conversation participants. A hint grants no access or proof of receipt.
+message MessageChanged {
+  // Required conversation whose visibility must be checked for this recipient.
+  Target target = 1;
+  // Positive message ID within target, not a globally comparable position.
+  int64 message_id = 2;
+  // Positive revision associated with the hinted change; a fetch may be newer.
+  // Compare only within the same principal/target/message_id, never as a cursor.
+  int64 body_revision = 3;
+  // Disclosed body/metadata/removal kind; never UNSPECIFIED for a valid hint.
+  TargetChangeKind change_kind = 4;
+}
+
+// TypingChanged is an ephemeral typed notification payload, independent of its
+// envelope or delivery transport. It is not presence, a durable event or a
+// receipt. Deliver only to currently authorized recipients in target/thread;
+// recheck membership/visibility and applicable privacy. Discard expired hints,
+// do not replay them after reconnect, and never extend expiry from arrival time.
+message TypingChanged {
+  // Required conversation currently visible to the recipient.
+  Target target = 1;
+  // Positive actor user ID derived from the actor's trusted session, not a claim.
+  int64 actor_id = 2;
+  // Typing/media activity; CANCEL clears this actor's target/thread immediately.
+  TypingAction action = 3;
+  // Required finite absolute server expiry; clients clear the indicator by this
+  // deadline without needing a cancellation hint. CANCEL clears it immediately.
+  google.protobuf.Timestamp expires_at = 4;
+  // Positive thread root when activity is thread-scoped; omit for conversation scope.
+  optional int64 top_msg_id = 5;
 }
 
 // ReadHistoryRequest marks messages as read in a conversation.
@@ -1022,7 +1166,9 @@ message SendMessageRequest {
   optional bool silent = 5;
   optional bool no_forward = 6;
   optional bool clear_draft = 7;
-  repeated MessageTextEntity entities = 8;
+  // Rich-text spans in message, using the shared UTF-16 entity rules.
+  repeated Entity entities = 8;
+  // Future Unix seconds to queue delivery; omit for immediate acceptance.
   optional int32 schedule_date = 9;
 }
 
@@ -1043,7 +1189,9 @@ message SendMediaRequest {
   optional bool silent = 6;
   optional bool no_forward = 7;
   optional bool clear_draft = 8;
-  repeated MessageTextEntity entities = 9;
+  // Rich-text spans in message, used as the media caption.
+  repeated Entity entities = 9;
+  // Future Unix seconds to queue delivery; omit for immediate acceptance.
   optional int32 schedule_date = 10;
 }
 
@@ -1054,7 +1202,11 @@ message SendMediaResponse {
   repeated Chat chats = 3;
 }
 
-// SendMultiMediaRequest sends an album of multiple media items.
+// SendMultiMediaRequest sends 2..10 photo/video/document items as one album.
+// Every random_id must be nonzero and distinct; retries of the exact same
+// principal/target/random_id tuple return the original items, not another album.
+// Conflicting content for a retained random_id is rejected. Polls, contacts,
+// geo points, voice messages, and stickers are not album items.
 message SendMultiMediaRequest {
   Target target = 1;
   repeated SingleMediaSource multi_media = 2;
@@ -1062,6 +1214,7 @@ message SendMultiMediaRequest {
   optional bool silent = 4;
   optional bool no_forward = 5;
   optional bool clear_draft = 6;
+  // Future Unix seconds shared by every item; omit for immediate acceptance.
   optional int32 schedule_date = 7;
 }
 
@@ -1078,8 +1231,11 @@ message EditMessageRequest {
   int64 message_id = 2;
   optional string message = 3;
   optional MediaSource media = 4;
-  repeated MessageTextEntity entities = 5;
+  // Rich-text spans in message, including a replacement media caption.
+  repeated Entity entities = 5;
   optional bool no_webpage = 6;
+  // Future Unix seconds replacing a pending message's delivery date. Omission
+  // preserves it; setting this on a delivered message is rejected.
   optional int32 schedule_date = 7;
 }
 
@@ -1123,7 +1279,16 @@ message SendStartBotResponse {
 
 // SearchRequest is the request for Search.
 message SearchRequest {
+  // Omit to search all conversations currently visible to the caller. A present
+  // empty Target is invalid, never global. top_msg_id, min_id, max_id,
+  // offset_message_id and nonzero offset_id/add_offset require a target;
+  // global pagination uses cursor only.
   Target target = 1;
+  // Literal case-insensitive substring of message text or caption, at most 1024
+  // UTF-8 bytes. No query operators, tokenization, regex or wildcard syntax:
+  // punctuation, percent and underscore are literal. Empty selects by filters
+  // alone. Unicode case handling can differ by backend; matching parity between
+  // server index and local cache is not guaranteed.
   string query = 2;
   optional Target from_target = 3;
   optional int64 top_msg_id = 4;
@@ -1132,18 +1297,55 @@ message SearchRequest {
   int32 max_date = 7;
   int32 offset_id = 8;
   int32 add_offset = 9;
+  // Page size 1..100; zero selects the default 50. Other values are invalid.
   int32 limit = 10;
   optional int64 max_id = 11;
   optional int64 min_id = 12;
+  // Opaque continuation from next_cursor, passed unchanged. Empty/absent starts
+  // a search; a nonempty cursor excludes offset_message_id and nonzero
+  // offset_id/add_offset. Cursors
+  // bind the caller, exact target presence/value, query, sender, thread, filter,
+  // date and ID bounds. Changing scope or using an expired/foreign cursor is
+  // rejected; restart without a cursor. Page size may change per page.
+  // A continuation belongs to the selected backend, never a different source.
+  // Global message IDs are not comparable: continue only with this cursor.
+  optional string cursor = 13;
+  // Full-width conversation-local offset. Positive when present; mutually
+  // exclusive with nonzero offset_id and with a nonempty cursor. Applies the
+  // same add_offset/window semantics as offset_id, without int32 truncation.
+  // Clients may instead use opaque cursor pagination for all search scopes.
+  optional int64 offset_message_id = 14;
 }
 
-// SearchResponse is the response for Search.
+// SearchResponse is shared by server and local-cache search, with full Message
+// bodies rather than a separate hit projection. Within a target/source results
+// follow stable descending source acceptance order, not edit time or relevance.
+// Global results use a source-defined deterministic order across targets, with
+// stable target/message identity tie-breakers; target-local acceptance positions
+// are never globally comparable. An absent accept_seq supplies no ordering vote.
+// Continue using the selected source's cursor, not a client-invented global offset.
+// Source and coverage qualify every page; neither implies matching parity.
 message SearchResponse {
+  // Full authorized messages, preserving entities, media and body revisions.
   repeated Message messages = 1;
   repeated User users = 2;
   repeated Chat chats = 3;
   int32 count = 4;
   optional int32 next_rate = 5;
+  // Opaque continuation for the same search, set iff more_available is true.
+  // Privacy filtering can yield an empty page with continuation. Results are
+  // live, not a snapshot; clients deduplicate by (target, message_id).
+  optional string next_cursor = 6;
+  // Continuation in the selected backend: false means that backend is exhausted,
+  // absent means unknown. Cache exhaustion still has CACHED_SUBSET coverage, never
+  // proves server exhaustion. Conforming responses always set this field.
+  // count/next_rate are informational, not evidence of another cursor page.
+  optional bool more_available = 7;
+  // Selected backend; UNSPECIFIED (including absence) means unknown.
+  SearchSource source = 8;
+  // Searched corpus; UNSPECIFIED (including absence) means unknown. INDEXED is not
+  // a snapshot or a guarantee that every authorized message is already indexed.
+  SearchCoverage coverage = 9;
 }
 
 // =============================================================================
@@ -1258,7 +1460,10 @@ message ReadReactionsResponse {
 // Polls & Votes RPC messages
 // =============================================================================
 
-// SendVoteRequest records or retracts a vote on a poll.
+// SendVoteRequest replaces the caller's selection; an empty list retracts it.
+// Options must be distinct exact PollAnswer.option values; a single-choice
+// poll accepts at most one. Closed polls reject changes. Quiz votes are final
+// and cannot be changed or retracted after correctness has been disclosed.
 message SendVoteRequest {
   Target target = 1;
   int64 message_id = 2;
@@ -1273,6 +1478,8 @@ message SendVoteResponse {
 }
 
 // GetPollVotesRequest requests per-option voter lists with pagination.
+// Voter identities are disclosed only when Poll.public_voters is true; anonymous
+// polls return no per-user records. GetPollResults still returns aggregates.
 message GetPollVotesRequest {
   Target target = 1;
   int64 message_id = 2;
@@ -1295,7 +1502,8 @@ message GetPollResultsRequest {
   int64 message_id = 2;
 }
 
-// GetPollResultsResponse is the response for GetPollResults.
+// GetPollResultsResponse carries current aggregates in message.media.poll.results.
+// SendVoteResponse and message fetches use the same caller-relative projection.
 message GetPollResultsResponse {
   Message message = 1;
   repeated User users = 2;

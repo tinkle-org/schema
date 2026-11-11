@@ -119,6 +119,8 @@ message UserPhoto {
   int64 file_id = 1;
   // Stored variants (thumbnails/previews) of the photo.
   repeated MediaVariant variants = 2;
+  // Positive gallery-entry identifier for ProfilePhotoReference; not a file ID.
+  int64 photo_id = 3;
 }
 
 // User represents a user with either minimal (Empty) or full (UserData) info.

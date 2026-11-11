@@ -221,7 +221,8 @@ step — code generation happens on the BSR, and docs generation happens in
 
 Public contracts live under [`tinkle/v1/`](tinkle/v1/): authentication, accounts,
 users, contacts, messaging, channels, bots, stickers, and help APIs. Shared types
-are in [`common.proto`](tinkle/v1/common.proto); the shared media vocabulary
+are in [`common.proto`](tinkle/v1/common.proto); shared rich-text spans are in
+[`entities.proto`](tinkle/v1/entities.proto), and the shared media vocabulary
 (metadata, attributes, file variants) is in [`media.proto`](tinkle/v1/media.proto).
 
 [`auth.proto`](tinkle/v1/auth.proto) defines recoverable device-key enrollment:
@@ -253,8 +254,30 @@ sessions (`BeginUpload`, `UploadPart`), authoritative snapshot-based status
 (`GetUploadStatus`), atomic completion (`CompleteUpload`), best-effort
 cancellation (`AbortUpload`), storage metadata (`GetFileInfo`), and byte-range
 downloads (`DownloadPart`). Completed files are immutable and referenced by
-canonical `file_id` across services; see the file-transfer guide in
+canonical `file_id` across services. Non-uploaders supply `FileAccessContext`
+on both file-read methods, selecting a visible message, retained profile-gallery
+entry, or usable sticker asset; authorization and exact file membership are
+rechecked on every call. Profile-photo owners may reference unselected retained
+entries; nonowners may reference only the selected photo when privacy permits it.
+See the file-transfer guide in
 `website/content/file-transfers.mdx`.
+
+[`stickers.proto`](tinkle/v1/stickers.proto) unifies user-owned stickers and
+custom emoji in `StickersService`: asset creation/update/deletion, batched ID
+resolution with fallback text, and same-kind pack authoring, membership/order,
+publication, installation, and discovery. Packs hold at most 100 assets, pinning
+exact immutable `asset_version` values; `pack_revision` and expected-token CAS
+protect authoring from lost updates. ID-only asset resolution discovers usable
+heads; `AssetReference` resolves exact versions, including withdrawn versions
+scoped to a currently visible message. `StickerKind` and `PackKind` distinguish
+usage; format does not determine animation. [`account.proto`](tinkle/v1/account.proto)
+owns profile-photo set/list/select/delete with a complete, at-most-10-entry
+owner gallery, a private `gallery_revision`, and CAS mutations. Repeated sets of
+the same retained file/source reuse its photo ID. Asset and profile-photo sources
+reference completed files only
+and require the explicit `STRICT_LOSSLESS` validation profile, version 1.
+Its accepted formats and bounded validation rules are defined in
+[`media.proto`](tinkle/v1/media.proto) and the source-message comments.
 
 [`updates.proto`](tinkle/v1/updates.proto) defines `UpdatesService`,
 streaming only ephemeral privacy-filtered per-user `ConnectivityChanged`
@@ -270,11 +293,51 @@ replay, watch, and presence capabilities exist; runtime bindings are documented
 in their implementation repositories.
 
 To support clients reconciling without a durable feed,
-[`messages.proto`](tinkle/v1/messages.proto) adds `GetMessages` batch fetch by
+[`messages.proto`](tinkle/v1/messages.proto) defines `GetMessages` batch fetch by
 message ID, a per-conversation ordering and dedup token on
-`Message.accept_seq`, `GetTargetChanges` listing retained edits, deletions, and
-revocations strictly after an acceptance position, and a server-confirmed
+`Message.accept_seq`, `GetTargetChanges` listing authorized retained body,
+metadata and removal changes after a mutation acceptance position, and a server-confirmed
 `more_available` on `GetHistoryResponse`.
+`Message.body_revision` orders complete bodies for the same principal and message;
+`edit_date` is only a fallback when a revision is absent. Pin/reaction/poll/private
+acknowledgement changes do not manufacture user edit dates. Journal markers carry
+their exact `message_revision`, while authorized current-body hydration can be
+newer. Resume from the response's stable `last_accept_seq`, not a marker or body
+revision: filtering, retention and pending positions prevent assuming continuity.
+`MessageChanged` and `TypingChanged` are transport-neutral notification payloads,
+not RPCs, replay cursors or receipts; ACK markers/hints are private to their viewer.
+They do not extend the connectivity-only `UpdatesService` or define a transport.
+The 39-method `MessagesService` also carries explicit thread roots in `ReplyInput`,
+album identity and scheduling state on returned messages, quiz answer definitions
+and caller-relative poll aggregates, and opaque search continuation with an
+explicit `more_available` report. An omitted search target means global search
+over currently visible conversations; an empty present target is invalid.
+Conversation search also supports full-width `offset_message_id`; opaque cursors
+remain usable for every search scope. Poll options and quiz answers retain their
+opaque byte identifiers, not option indexes.
+
+`Entity` and `EntityType` are shared by help text, message bodies, media captions,
+drafts and quotes. Spans count UTF-16 code units and must start and end on Unicode
+scalar boundaries. The shared contract defines allowed nesting, rejects crossing
+spans, and isolates code/preformatted spans from overlap. Type-specific fields
+are meaningful only for their declared type. Custom emoji use `custom_emoji_id`,
+an exact positive `asset_version`, and the version's canonical `fallback_text`;
+the selected text span must match that fallback exactly. Reactions use the same
+asset ID/version with canonical fallback in `emoticon`. Exact asset resolution
+uses `GetStickerAssets`; unavailable assets render the retained fallback.
+
+`SearchResponse` is the full-message result shared by server and cache search.
+`source` identifies `SERVER` or `CACHE`; `coverage` identifies `INDEXED` or
+`CACHED_SUBSET`. Unspecified or absent metadata is unknown. `more_available`
+reports continuation only in the selected backend: exhausting a cache never
+upgrades its coverage to the server index. Queries are literal case-insensitive
+substrings of message text/captions, not regex, wildcard or token expressions;
+backend Unicode case handling and available corpora can yield different matches.
+Queries are at most 1024 UTF-8 bytes; page size is 1..100, with zero selecting 50.
+Within a target/source results follow stable descending source acceptance order,
+not edit time or relevance. Global ordering is source-defined and deterministic,
+with target/message identity tie-breakers; per-target acceptance positions are
+not globally comparable. Use the selected backend's continuation unchanged.
 
 ## BSR resource
 

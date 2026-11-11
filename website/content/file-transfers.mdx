@@ -258,6 +258,63 @@ thumbnails and previews: a `MediaVariantSource` or `MediaVariant` file
 reference is access-checked like any other file. Runtime enforcement lives
 in the server implementation, not in this contract.
 
+`GetFileInfoRequest.file_access_context` and
+`DownloadPartRequest.file_access_context` carry the reference for these checks.
+Select exactly one of `MessageFileReference` (conversation and message ID),
+`ProfilePhotoReference` (user and gallery-entry ID), or `StickerAssetReference`
+(unified asset ID and exact version). The requested `file_id` must be the
+referenced version's main file or a stored variant. With no context, only the
+uploader can read their own
+completed file. A supplied context is checked even for the uploader; it cannot
+authorize an unrelated file. A metadata response does not grant future downloads:
+each range call checks visibility again, including deletion/revocation, photo
+selection/privacy, and pack unpublication. Unknown and inaccessible references
+and mismatched file membership have the same not-found outcome.
+
+## Authored assets and profile photos
+
+`StickersService` owns both sticker and custom-emoji assets and their same-kind,
+user-owned packs; there is no separate emoji service. `GetStickerAssets` batches
+asset IDs, including custom-emoji IDs from message entities and reactions.
+ID-only lookup resolves the current usable head; exact `AssetReference` pairs
+never substitute another version. Packs pin at most 100 exact asset versions,
+and publication never advances those pins to head. Owner mutations compare
+`expected_version` or `expected_revision` atomically; conflicts have no effect.
+Withdrawal removes new catalog grants, not exact files already captured by a
+message. Exact lookup with `message_reference`, and file reads with that message
+context, require current message visibility. They never confer new-send access,
+access to a different version, or a permanent grant. Installation alone is not
+authorization. Unavailable emoji render as retained plain-text fallback.
+`AccountService`
+sets, lists, selects, and deletes profile photos. The owner gallery is bounded
+at 10 entries and rejects insertion when full; nonowners see only the selected
+photo when privacy permits it. Deleting a gallery entry does not delete files
+used elsewhere.
+
+The owner's gallery listing includes a consistent `gallery_revision`; mutations
+require its positive value as `expected_revision`. Nonowner listings omit the
+revision to avoid disclosing hidden gallery changes. Matching no-ops preserve
+the revision, changes increment it once, and stale attempts fail without effect.
+Repeated sets of an identical retained file/source reuse the gallery-entry ID;
+they do not append duplicates. After a timeout, refetch and reconcile the source
+and selection rather than retrying with a fresh token. No operation-ID replay
+or deduplication across deletion is promised.
+
+`StickerAssetSource` and `ProfilePhotoSource` require `MediaValidation` with
+`MEDIA_VALIDATION_PROFILE_STRICT_LOSSLESS`, version `1`. Raw upload completion
+does not validate application media. Authoring verifies the complete source and
+all supplied variants before making the object visible. This profile accepts
+static PNG and lossless WebP, not TGS, WebM, APNG, lossy WebP, or encrypted media.
+WebP can animate: format and animation metadata are independent. GIF input must
+be normalized by the client to supported lossless bytes; do not silently flatten
+animation or use lossy encoding. Profile photos must be static. Version 1 permits
+at most one static `THUMBNAIL` variant per authored asset/photo; unsupported roles
+or extra variants are rejected, never silently discarded. The repeated field is
+not permission to submit multiple representations. Exact size/dimension/frame
+limits live in the source-message
+comments in the generated reference. No implicit transcoding or thumbnail
+generation is promised.
+
 The contract also exposes no global existence oracle for content digests.
 An implementation may address storage by content hash internally, but no
 method reports "these bytes exist somewhere" for an arbitrary digest —

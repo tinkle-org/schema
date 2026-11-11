@@ -3,13 +3,40 @@ syntax = "proto3";
 package tinkle.v1;
 
 import "google/protobuf/timestamp.proto";
+import "tinkle/v1/files.proto";
 import "tinkle/v1/media.proto";
 
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
-// StickersService provides public-facing sticker management operations.
+// StickersService manages user-owned sticker and custom-emoji assets and packs.
 // All RPCs require an active device-key-authenticated session.
 // The authenticated user's identity comes from trusted session context.
+// Authoring is owner-only; unknown and foreign objects report NOT_FOUND alike.
+// Pack membership never transfers asset ownership. A pack contains only assets
+// of its kind and owner, at most 100, with no duplicates. Each member pins an
+// immutable asset version; updating an asset head never changes that membership.
+// Published packs are readable by authenticated users; drafts are owner-only.
+// Unpublish before editing a pack; such edits otherwise fail precondition.
+// Publish validates the whole nonempty pack atomically; unpublish immediately
+// removes discovery/install and nonowner asset-file grants from that pack, even
+// when installed. Another published pack can still authorize a shared asset.
+// Already-accepted messages keep their exact-version references and files, but
+// only while the message remains visible to the reader. A message context can
+// resolve those exact versions even after withdrawal or asset deletion; it never
+// grants access to other versions, a catalog head, or new sends. Publication,
+// discovery, installation and recent/favorite membership confer no forever grant.
+// Every list/detail/recent/favorite response rechecks visibility and omits
+// private packs/assets for nonowners; cached collection membership is no grant.
+// Unknown enum values are invalid, never treated as unspecified filters/kinds.
+// Asset versions and pack revisions start at 1, increase on actual changes and
+// never wrap or reuse values. Authoring mutations of existing objects require
+// positive expected_version/expected_revision. Check ownership, then compare
+// the token atomically with the write, before no-op detection. Mismatch is
+// ABORTED with no effect; no-op at a matching token succeeds without increment.
+// After timeout, refetch and reconcile; a stale retry never overwrites newer
+// work. Do not blindly retry with a fresh token. CreatePack's unique short name
+// permits lookup after an ambiguous creation; CreateStickerAsset has no operation
+// deduplication guarantee, so an ambiguous create must not be blindly repeated.
 service StickersService {
   // ============================================================================
   // Installed Pack Management
@@ -78,6 +105,43 @@ service StickersService {
   // ToggleFavoriteSticker adds or removes a sticker from the user's favorites.
   // Set unfave=true to remove. Hard cap of 100 favorites (RESOURCE_EXHAUSTED if exceeded).
   rpc ToggleFavoriteSticker(ToggleFavoriteStickerRequest) returns (ToggleFavoriteStickerResponse);
+
+  // CreateStickerAsset validates completed files and creates an owned asset.
+  rpc CreateStickerAsset(CreateStickerAssetRequest) returns (CreateStickerAssetResponse);
+  // UpdateStickerAsset creates a new head version; pinned versions are unchanged.
+  rpc UpdateStickerAsset(UpdateStickerAssetRequest) returns (UpdateStickerAssetResponse);
+  // DeleteStickerAsset deletes an owned asset not present in any pack.
+  rpc DeleteStickerAsset(DeleteStickerAssetRequest) returns (DeleteStickerAssetResponse);
+  // GetStickerAssets resolves up to 100 sticker/custom-emoji IDs in one call.
+  rpc GetStickerAssets(GetStickerAssetsRequest) returns (GetStickerAssetsResponse);
+  // GetOwnedPacks lists the caller's draft and published packs.
+  rpc GetOwnedPacks(GetOwnedPacksRequest) returns (GetOwnedPacksResponse);
+  // CreatePack creates an empty, unpublished pack owned by the caller.
+  rpc CreatePack(CreatePackRequest) returns (CreatePackResponse);
+  // UpdatePack edits an owned unpublished pack's display metadata.
+  rpc UpdatePack(UpdatePackRequest) returns (UpdatePackResponse);
+  // DeletePack removes an owned unpublished pack and membership, not its assets.
+  rpc DeletePack(DeletePackRequest) returns (DeletePackResponse);
+  // AddPackAsset appends an owned same-kind asset; existing membership is a no-op.
+  rpc AddPackAsset(AddPackAssetRequest) returns (AddPackAssetResponse);
+  // RemovePackAsset removes membership only; absent membership is a no-op.
+  rpc RemovePackAsset(RemovePackAssetRequest) returns (RemovePackAssetResponse);
+  // ReorderPackAssets atomically replaces display order with the exact member set.
+  rpc ReorderPackAssets(ReorderPackAssetsRequest) returns (ReorderPackAssetsResponse);
+  // PublishPack publishes exactly the pinned versions at the expected revision.
+  rpc PublishPack(PublishPackRequest) returns (PublishPackResponse);
+  // UnpublishPack withdraws new catalog grants without deleting message references.
+  rpc UnpublishPack(UnpublishPackRequest) returns (UnpublishPackResponse);
+}
+
+// PackKind fixes the kind of every member; mixed-kind packs are rejected.
+enum PackKind {
+  // No filter on list/search requests; invalid when creating a pack.
+  PACK_KIND_UNSPECIFIED = 0;
+  // Members must have STICKER_KIND_STICKER.
+  PACK_KIND_STICKER = 1;
+  // Members must have STICKER_KIND_CUSTOM_EMOJI.
+  PACK_KIND_CUSTOM_EMOJI = 2;
 }
 
 // ============================================================================
@@ -91,18 +155,28 @@ service StickersService {
 message StickerView {
   // Unique sticker identifier.
   int64 id = 1;
-  // Canonical file ID of the main sticker image. The tag is retained from
-  // the earlier storage-reference semantics, which are superseded: bytes
-  // are resolved through FilesService, not through storage URLs.
+  // Canonical completed-file ID of the main asset; never a URL or inline bytes.
   int64 file_id = 2;
-  // Canonical file ID of the thumbnail image; resolved like file_id. The
-  // tag is retained from the earlier storage-reference semantics.
+  // Canonical thumbnail file ID, or zero if none. When present it equals the
+  // THUMBNAIL variant's file_id; there cannot be two different thumbnails.
   int64 thumb_file_id = 3;
   // Whether this sticker requires a premium subscription.
   bool is_premium = 4;
   // Server-published typed sticker metadata, when available. Pack
   // ownership and mask positions stay in the sticker domain.
   optional StickerMetadata metadata = 5;
+  // Asset use, independent of metadata.format and metadata.animated.
+  StickerKind kind = 6;
+  // Owning user ID, not a caller-supplied authorization assertion.
+  int64 owner_id = 7;
+  // Nonempty plain UTF-8 text, at most 64 bytes, for CUSTOM_EMOJI. Used when
+  // the asset is unavailable or a renderer cannot display it; empty for stickers.
+  string fallback_text = 8;
+  // Validated stored thumbnail, at most one; all bytes use FilesService.
+  repeated MediaVariant variants = 9;
+  // Exact immutable version represented by every field of this projection.
+  // Positive even on head-resolution results; never implicitly rebind to head.
+  uint64 asset_version = 10;
 }
 
 // StickerPackPreview is a compact pack representation for list views.
@@ -118,6 +192,14 @@ message StickerPackPreview {
   int32 sticker_count = 4;
   // Up to 5 cover stickers for preview display.
   repeated StickerView covers = 5;
+  // Immutable kind of this pack.
+  PackKind kind = 6;
+  // Owning user ID.
+  int64 owner_id = 7;
+  // Whether this pack is publicly discoverable to authenticated users.
+  bool published = 8;
+  // Positive pack-wide CAS revision, including metadata, membership and publication.
+  uint64 pack_revision = 9;
 }
 
 // StickerPackDetail is a full pack representation with all stickers.
@@ -130,10 +212,19 @@ message StickerPackDetail {
   string short_name = 3;
   // Total number of stickers in the pack.
   int32 sticker_count = 4;
-  // All stickers in display order.
+  // All pinned asset versions in display order, read at pack_revision. Each
+  // StickerView.asset_version is exact, not the asset's possibly newer head.
   repeated StickerView stickers = 5;
   // Whether the requesting user has this pack installed.
   bool is_installed = 6;
+  // Immutable kind of this pack.
+  PackKind kind = 7;
+  // Owning user ID.
+  int64 owner_id = 8;
+  // Whether this pack is published; drafts are returned only to their owner.
+  bool published = 9;
+  // Positive pack-wide CAS revision from the same snapshot as every field.
+  uint64 pack_revision = 10;
 }
 
 // ============================================================================
@@ -141,7 +232,10 @@ message StickerPackDetail {
 // ============================================================================
 
 // GetInstalledPacksRequest retrieves the authenticated user's installed packs.
-message GetInstalledPacksRequest {}
+message GetInstalledPacksRequest {
+  // Typed kind filter; unspecified returns both kinds in their shared order.
+  PackKind kind = 1;
+}
 
 // GetInstalledPacksResponse contains the user's installed packs in display order.
 message GetInstalledPacksResponse {
@@ -211,7 +305,7 @@ message GetPackResponse {
 
 // GetPackByShortNameRequest retrieves a pack by its URL-friendly short name.
 message GetPackByShortNameRequest {
-  // Short name of the pack (e.g., "cute-cats"). Must be non-empty.
+  // Short name of the pack (e.g., "cute_cats"). Must be non-empty.
   string short_name = 1;
 }
 
@@ -229,6 +323,8 @@ message SearchPacksRequest {
   int32 offset = 2;
   // Maximum number of results to return. Range: 1-50. Default: 20.
   int32 limit = 3;
+  // Typed kind filter; unspecified searches both kinds.
+  PackKind kind = 4;
 }
 
 // SearchPacksResponse contains paginated search results.
@@ -249,6 +345,8 @@ message GetArchivedPacksRequest {
   int64 offset_id = 1;
   // Maximum number of results to return. Range: 1-50. Default: 20.
   int32 limit = 2;
+  // Typed kind filter; unspecified returns both kinds.
+  PackKind kind = 3;
 }
 
 // GetArchivedPacksResponse contains paginated archived packs.
@@ -332,4 +430,253 @@ message ToggleFavoriteStickerResponse {
   bool success = 1;
   // Whether the sticker is now favorited (true) or unfavorited (false).
   bool is_favorited = 2;
+}
+
+// StickerAssetSource defines an owned asset using completed uploader-owned files.
+// Metadata and STRICT_LOSSLESS version 1 are required. All dimensions are positive;
+// sticker mains are at most 512x512, custom emoji at most 128x128. Static mains
+// are at most 1 MiB; animated lossless WebP mains at most 4 MiB, 3000 ms, 180
+// frames. PNG must be static. Enforce decoded dimensions and aggregate decoded
+// pixels (width * height * frame_count), not just a container header. A source
+// has at most one static thumbnail, at most 128x128 and 256 KiB, with both
+// dimensions supplied. Validate it under the same profile. No implicit thumbnail
+// generation or lossy transcoding is promised; unsupported bytes are rejected.
+message StickerAssetSource {
+  // Positive canonical file ID; no upload ID, URL, local path, or inline bytes.
+  int64 file_id = 1;
+  // Required complete format, dimensions, animation and validation declaration.
+  StickerMetadata metadata = 2;
+  // Optional THUMBNAIL only; its file must also be completed and caller-owned.
+  repeated MediaVariantSource variants = 3;
+}
+
+// CreateStickerAssetRequest creates a draft asset for the authenticated owner.
+message CreateStickerAssetRequest {
+  // Required nonzero asset kind; immutable after creation.
+  StickerKind kind = 1;
+  // Required source, verified before any asset becomes visible.
+  StickerAssetSource source = 2;
+  // Required nonempty plain text for CUSTOM_EMOJI (1..64 UTF-8 bytes);
+  // must be empty for STICKER. Clients copy it into custom-emoji entities.
+  string fallback_text = 3;
+}
+
+// CreateStickerAssetResponse returns the validated owned asset.
+message CreateStickerAssetResponse {
+  // Complete asset, including validated metadata and canonical file references.
+  StickerView asset = 1;
+}
+
+// UpdateStickerAssetRequest creates a new immutable version and advances head
+// atomically. Published packs and accepted messages retain their pinned versions.
+message UpdateStickerAssetRequest {
+  // Positive owned asset ID; kind and ownership cannot change.
+  int64 asset_id = 1;
+  // Present to replace the complete source; omitted preserves current files.
+  StickerAssetSource source = 2;
+  // Present to replace fallback; same kind-dependent constraints as create.
+  optional string fallback_text = 3;
+  // Required positive current head version; mismatch is ABORTED with no effect.
+  uint64 expected_version = 4;
+}
+
+// UpdateStickerAssetResponse returns the current validated asset.
+message UpdateStickerAssetResponse {
+  // Updated asset, with unchanged identity and kind.
+  StickerView asset = 1;
+}
+
+// DeleteStickerAssetRequest removes an owned asset; pack membership must be empty.
+message DeleteStickerAssetRequest {
+  // Positive owned asset ID.
+  int64 asset_id = 1;
+  // Required positive current head version, compared atomically before deletion.
+  uint64 expected_version = 2;
+}
+
+// DeleteStickerAssetResponse confirms catalog removal, not deletion of versions
+// and files still referenced by visible messages. Those remain context-bound.
+message DeleteStickerAssetResponse {
+  // True once the asset was deleted.
+  bool deleted = 1;
+}
+
+// GetStickerAssetsRequest batches asset IDs or exact versions, including emoji IDs
+// in Entity.custom_emoji_id and Reaction.custom_emoji_id. All use the same asset
+// namespace and exact-version resolution.
+message GetStickerAssetsRequest {
+  // Head discovery: 1..100 positive distinct IDs, resolving each current usable
+  // head once. Mutually exclusive with references. A head not currently usable
+  // is omitted; do not replace it with an arbitrary published older version.
+  repeated int64 asset_ids = 1;
+  // Optional kind filter; unspecified accepts either kind.
+  StickerKind kind = 2;
+  // Exact lookup: 1..100 distinct (asset_id, asset_version) pairs. Choose exactly
+  // one nonempty list. Missing/inaccessible versions are omitted, never replaced
+  // with head. Owners can fetch retained versions; nonowners need a current pack
+  // pin for that exact version or the scoped message reference below.
+  repeated AssetReference references = 3;
+  // Optional currently visible message authorizing only exact references actually
+  // captured in that message, including custom emoji/reactions. Requires references
+  // and excludes asset_ids. Recheck visibility per call; omissions are bounded by
+  // the request. This permits rendering withdrawn assets without a global grant.
+  MessageFileReference message_reference = 4;
+}
+
+// GetStickerAssetsResponse returns usable projections, not an existence oracle.
+message GetStickerAssetsResponse {
+  // Requested ID/pair order, at most 100; omit unknown, wrong-kind or inaccessible
+  // entries identically. Every result reports its exact asset_version. No result
+  // may substitute another version for a requested pair. A message-scoped result
+  // does not authorize catalog sends, installation or bare asset-context reads.
+  // For omissions clients render their retained entity/reaction fallback text.
+  repeated StickerView assets = 1;
+}
+
+// GetOwnedPacksRequest lists only the authenticated owner's packs.
+message GetOwnedPacksRequest {
+  // Typed kind filter; unspecified returns both kinds.
+  PackKind kind = 1;
+  // Opaque continuation, bound to caller and kind; invalid tokens are rejected.
+  optional string cursor = 2;
+  // Page size 1..50; zero selects 20.
+  int32 limit = 3;
+}
+
+// GetOwnedPacksResponse lists previews ordered by descending pack ID.
+message GetOwnedPacksResponse {
+  // One page of owned draft and published packs.
+  repeated StickerPackPreview packs = 1;
+  // Opaque continuation; absent/empty means exhausted. Lists are live, not snapshots.
+  optional string next_cursor = 2;
+}
+
+// CreatePackRequest creates an empty unpublished pack for the authenticated owner.
+message CreatePackRequest {
+  // Display name, 1..100 Unicode scalar values.
+  string name = 1;
+  // Globally unique short name, 5..32 ASCII letters, digits or underscores;
+  // starts with a letter, compared case-insensitively. Conflicts are rejected.
+  string short_name = 2;
+  // Required nonzero kind; immutable after creation.
+  PackKind kind = 3;
+}
+
+// CreatePackResponse returns the new owned draft.
+message CreatePackResponse {
+  // Complete empty pack with published=false.
+  StickerPackDetail pack = 1;
+}
+
+// UpdatePackRequest edits display metadata without altering members or kind.
+message UpdatePackRequest {
+  // Positive owned unpublished pack ID.
+  int64 pack_id = 1;
+  // Present to replace display name; create constraints apply.
+  optional string name = 2;
+  // Present to replace globally unique short name; create constraints apply.
+  optional string short_name = 3;
+  // Required positive current pack_revision; compare atomically before edits.
+  uint64 expected_revision = 4;
+}
+
+// UpdatePackResponse returns the edited owned pack.
+message UpdatePackResponse {
+  // Complete current pack.
+  StickerPackDetail pack = 1;
+}
+
+// DeletePackRequest deletes an owned unpublished pack, not the member assets.
+message DeletePackRequest {
+  // Positive owned unpublished pack ID.
+  int64 pack_id = 1;
+  // Required positive current pack_revision; compare atomically before deletion.
+  uint64 expected_revision = 2;
+}
+
+// DeletePackResponse confirms pack removal.
+message DeletePackResponse {
+  // True once removed, including collection entries referring to this pack.
+  bool deleted = 1;
+}
+
+// AddPackAssetRequest appends an owned asset of the pack's kind.
+message AddPackAssetRequest {
+  // Positive owned unpublished pack ID.
+  int64 pack_id = 1;
+  // Positive owned same-kind asset ID. The exact same pair already in the pack
+  // is a no-op; another version of this ID is rejected, never silently replaced.
+  int64 asset_id = 2;
+  // Required positive immutable version to pin; never resolve head during add.
+  uint64 asset_version = 3;
+  // Required positive current pack_revision, checked with membership/capacity.
+  uint64 expected_revision = 4;
+}
+
+// AddPackAssetResponse returns the complete current ordered pack.
+message AddPackAssetResponse {
+  // Pack after membership update.
+  StickerPackDetail pack = 1;
+}
+
+// RemovePackAssetRequest removes membership without deleting an asset.
+message RemovePackAssetRequest {
+  // Positive owned unpublished pack ID.
+  int64 pack_id = 1;
+  // Positive owned same-kind asset ID; absent membership is a no-op.
+  int64 asset_id = 2;
+  // Required positive current pack_revision; removes only its pinned membership.
+  uint64 expected_revision = 3;
+}
+
+// RemovePackAssetResponse returns the complete current ordered pack.
+message RemovePackAssetResponse {
+  // Pack after membership update.
+  StickerPackDetail pack = 1;
+}
+
+// ReorderPackAssetsRequest replaces only order, atomically with exact-set checks.
+message ReorderPackAssetsRequest {
+  // Positive owned unpublished pack ID.
+  int64 pack_id = 1;
+  // Every current member exactly once; omissions, additions and duplicates fail.
+  repeated int64 asset_ids = 2;
+  // Required positive current pack_revision. Reordering preserves each exact
+  // pinned version; reject a stale member set instead of doing a read-modify-write.
+  uint64 expected_revision = 3;
+}
+
+// ReorderPackAssetsResponse returns the reordered pack.
+message ReorderPackAssetsResponse {
+  // Complete pack in requested order.
+  StickerPackDetail pack = 1;
+}
+
+// PublishPackRequest validates all current members before atomic publication.
+message PublishPackRequest {
+  // Positive owned pack ID. Empty packs fail; publishing never advances asset
+  // references to head. Already-published is a no-op only at a matching revision.
+  int64 pack_id = 1;
+  // Required positive pack_revision; validate and publish those exact pins atomically.
+  uint64 expected_revision = 2;
+}
+
+// PublishPackResponse returns the published pack.
+message PublishPackResponse {
+  // Complete pack with published=true.
+  StickerPackDetail pack = 1;
+}
+
+// UnpublishPackRequest withdraws new catalog grants, not visible message grants.
+message UnpublishPackRequest {
+  // Positive owned pack ID; already-unpublished is a no-op at a matching revision.
+  int64 pack_id = 1;
+  // Required positive current pack_revision; withdrawal is atomic with its increment.
+  uint64 expected_revision = 2;
+}
+
+// UnpublishPackResponse returns the private owned pack.
+message UnpublishPackResponse {
+  // Complete pack with published=false.
+  StickerPackDetail pack = 1;
 }

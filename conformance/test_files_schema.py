@@ -38,8 +38,8 @@ def run_buf(*arguments, input_bytes=None, check=True):
     return result
 
 
-class FilesSchemaTests(unittest.TestCase):
-    """Pin the files/media surface, additive preservation, and codec behavior."""
+class BufSchemaTestCase(unittest.TestCase):
+    """Shared descriptor and real-codec harness, with no test scenarios."""
 
     @classmethod
     def setUpClass(cls):
@@ -136,9 +136,9 @@ class FilesSchemaTests(unittest.TestCase):
         values = self.declarations["enum"]["tinkle.v1." + name][1]["value"]
         self.assertEqual(expected, [v["name"] for v in values], name)
 
-    # ------------------------------------------------------------------
-    # FilesService surface
-    # ------------------------------------------------------------------
+
+class FilesSchemaTests(BufSchemaTestCase):
+    """Pin the files/media surface, additive preservation, and codec behavior."""
 
     def test_files_service_methods(self):
         service = self.declarations["service"]["tinkle.v1.FilesService"]
@@ -171,6 +171,8 @@ class FilesSchemaTests(unittest.TestCase):
             "AbortUploadRequest", "AbortUploadResponse",
             "FileInfo", "GetFileInfoRequest", "GetFileInfoResponse",
             "DownloadPartRequest", "DownloadPartResponse",
+            "FileAccessContext", "MessageFileReference", "ProfilePhotoReference",
+            "StickerAssetReference",
         }, names)
 
     def test_upload_status_enum(self):
@@ -272,6 +274,7 @@ class FilesSchemaTests(unittest.TestCase):
         ], FILES_FILE)
         self.assert_fields("GetFileInfoRequest", [
             ("file_id", 1, "INT64", "", False, False),
+            ("file_access_context", 2, "MESSAGE", "FileAccessContext", False, False),
         ], FILES_FILE)
         self.assert_fields("GetFileInfoResponse", [
             ("file", 1, "MESSAGE", "FileInfo", False, False),
@@ -284,6 +287,7 @@ class FilesSchemaTests(unittest.TestCase):
             ("file_id", 1, "INT64", "", False, False),
             ("offset", 2, "INT64", "", False, False),
             ("limit", 3, "INT32", "", False, False),
+            ("file_access_context", 4, "MESSAGE", "FileAccessContext", False, False),
         ], FILES_FILE)
         self.assert_fields("DownloadPartResponse", [
             ("data", 1, "BYTES", "", False, False),
@@ -305,6 +309,8 @@ class FilesSchemaTests(unittest.TestCase):
             "ImageMetadata", "VideoMetadata", "AudioMetadata",
             "StickerMetadata", "MediaAttribute",
             "MediaVariant", "MediaVariantSource",
+            "MediaValidation",
+            "AssetReference",
         }, names)
 
     def test_media_enums(self):
@@ -319,6 +325,7 @@ class FilesSchemaTests(unittest.TestCase):
             "STICKER_FORMAT_WEBP",
             "STICKER_FORMAT_TGS",
             "STICKER_FORMAT_WEBM",
+            "STICKER_FORMAT_PNG",
         ], MEDIA_FILE)
 
     def test_metadata_shapes(self):
@@ -326,6 +333,8 @@ class FilesSchemaTests(unittest.TestCase):
             ("width", 1, "UINT32", "", False, False),
             ("height", 2, "UINT32", "", False, False),
             ("animated", 3, "BOOL", "", False, False),
+            ("format", 4, "ENUM", "ImageFormat", False, False),
+            ("validation", 5, "MESSAGE", "MediaValidation", False, False),
         ], MEDIA_FILE)
         self.assert_fields("VideoMetadata", [
             ("width", 1, "UINT32", "", False, False),
@@ -347,6 +356,10 @@ class FilesSchemaTests(unittest.TestCase):
             ("width", 2, "UINT32", "", False, False),
             ("height", 3, "UINT32", "", False, False),
             ("format", 4, "ENUM", "StickerFormat", False, False),
+            ("animated", 5, "BOOL", "", False, False),
+            ("duration_ms", 6, "UINT64", "", False, True),
+            ("frame_count", 7, "UINT32", "", False, True),
+            ("validation", 8, "MESSAGE", "MediaValidation", False, False),
         ], MEDIA_FILE)
 
     def test_attribute_and_variant_shapes(self):
@@ -422,6 +435,8 @@ class FilesSchemaTests(unittest.TestCase):
             ("file_id", 1, "INT64", "", False, False),
             ("metadata", 2, "MESSAGE", "StickerMetadata", False, True),
             ("variants", 3, "MESSAGE", "MediaVariantSource", True, False),
+            ("asset_id", 4, "INT64", "", False, True),
+            ("asset_version", 5, "UINT64", "", False, True),
         ], "tinkle/v1/messages.proto")
         self.assert_fields("GeoPointSource", [
             ("lat", 1, "DOUBLE", "", False, False),
@@ -471,6 +486,7 @@ class FilesSchemaTests(unittest.TestCase):
         self.assert_fields("UserPhoto", [
             ("file_id", 1, "INT64", "", False, False),
             ("variants", 2, "MESSAGE", "MediaVariant", True, False),
+            ("photo_id", 3, "INT64", "", False, False),
         ], "tinkle/v1/common.proto")
         self.assert_fields("StickerView", [
             ("id", 1, "INT64", "", False, False),
@@ -478,6 +494,11 @@ class FilesSchemaTests(unittest.TestCase):
             ("thumb_file_id", 3, "INT64", "", False, False),
             ("is_premium", 4, "BOOL", "", False, False),
             ("metadata", 5, "MESSAGE", "StickerMetadata", False, True),
+            ("kind", 6, "ENUM", "StickerKind", False, False),
+            ("owner_id", 7, "INT64", "", False, False),
+            ("fallback_text", 8, "STRING", "", False, False),
+            ("variants", 9, "MESSAGE", "MediaVariant", True, False),
+            ("asset_version", 10, "UINT64", "", False, False),
         ], "tinkle/v1/stickers.proto")
 
     def test_send_requests_use_source_types(self):

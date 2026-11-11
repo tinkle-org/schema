@@ -126,12 +126,82 @@ CHANGED_DECLARATIONS = {
     "tinkle.v1.SendVoiceRequest",
     "tinkle.v1.SendStickerRequest",
     "tinkle.v1.EditMessageMediaRequest",
+    # Additive messaging/media-authoring contract, pinned by
+    # test_messaging_media_schema.py and test_files_schema.py.
+    "tinkle.v1.MessageScheduledState",
+    "tinkle.v1.MessageChanged",
+    "tinkle.v1.TypingChanged",
+    "tinkle.v1.ReplyInput",
+    "tinkle.v1.MessageTextEntity",
+    # Shared rich text and search metadata are pinned by test_entities_search_schema.py.
+    "tinkle.v1.MessageTextEntityType",
+    "tinkle.v1.MessageEntity",
+    "tinkle.v1.MessageEntityType",
+    "tinkle.v1.Entity",
+    "tinkle.v1.EntityType",
+    "tinkle.v1.DraftMessage",
+    "tinkle.v1.MessageReplyHeader",
+    "tinkle.v1.EditUserInfoRequest",
+    "tinkle.v1.WorkforceUserInfo",
+    "tinkle.v1.SearchSource",
+    "tinkle.v1.SearchCoverage",
+    "tinkle.v1.Reaction",
+    "tinkle.v1.Poll",
+    "tinkle.v1.PollResults",
+    "tinkle.v1.PollAnswerResult",
+    "tinkle.v1.SearchResponse",
+    "tinkle.v1.PackKind",
+    "tinkle.v1.StickersService",
+    "tinkle.v1.StickerPackPreview",
+    "tinkle.v1.StickerPackDetail",
+    "tinkle.v1.GetInstalledPacksRequest",
+    "tinkle.v1.SearchPacksRequest",
+    "tinkle.v1.GetArchivedPacksRequest",
+    "tinkle.v1.StickerAssetSource",
+    "tinkle.v1.CreateStickerAssetRequest",
+    "tinkle.v1.CreateStickerAssetResponse",
+    "tinkle.v1.UpdateStickerAssetRequest",
+    "tinkle.v1.UpdateStickerAssetResponse",
+    "tinkle.v1.DeleteStickerAssetRequest",
+    "tinkle.v1.DeleteStickerAssetResponse",
+    "tinkle.v1.GetStickerAssetsRequest",
+    "tinkle.v1.GetStickerAssetsResponse",
+    "tinkle.v1.GetOwnedPacksRequest",
+    "tinkle.v1.GetOwnedPacksResponse",
+    "tinkle.v1.CreatePackRequest",
+    "tinkle.v1.CreatePackResponse",
+    "tinkle.v1.UpdatePackRequest",
+    "tinkle.v1.UpdatePackResponse",
+    "tinkle.v1.DeletePackRequest",
+    "tinkle.v1.DeletePackResponse",
+    "tinkle.v1.AddPackAssetRequest",
+    "tinkle.v1.AddPackAssetResponse",
+    "tinkle.v1.RemovePackAssetRequest",
+    "tinkle.v1.RemovePackAssetResponse",
+    "tinkle.v1.ReorderPackAssetsRequest",
+    "tinkle.v1.ReorderPackAssetsResponse",
+    "tinkle.v1.PublishPackRequest",
+    "tinkle.v1.PublishPackResponse",
+    "tinkle.v1.UnpublishPackRequest",
+    "tinkle.v1.UnpublishPackResponse",
+    "tinkle.v1.ProfilePhotoSource",
+    "tinkle.v1.ProfilePhoto",
+    "tinkle.v1.SetProfilePhotoRequest",
+    "tinkle.v1.SetProfilePhotoResponse",
+    "tinkle.v1.GetProfilePhotosRequest",
+    "tinkle.v1.GetProfilePhotosResponse",
+    "tinkle.v1.SelectProfilePhotoRequest",
+    "tinkle.v1.SelectProfilePhotoResponse",
+    "tinkle.v1.DeleteProfilePhotoRequest",
+    "tinkle.v1.DeleteProfilePhotoResponse",
 }
 
 # Message type names rebinded by the *Source renames; a baseline field's
 # typeName is mapped through this table before comparison so renames do not
 # mask field-level drift.
 RENAMED_TYPE_NAMES = {
+    ".tinkle.v1.MessageTextEntity": ".tinkle.v1.Entity",
+    ".tinkle.v1.MessageEntity": ".tinkle.v1.Entity",
     ".tinkle.v1.MediaInput": ".tinkle.v1.MediaSource",
     ".tinkle.v1.InputPhoto": ".tinkle.v1.PhotoSource",
     ".tinkle.v1.InputDocument": ".tinkle.v1.DocumentSource",
@@ -265,6 +335,9 @@ class ConnectivitySchemaTests(unittest.TestCase):
             }
             for field in self.baseline["message"][name][1].get("field", []):
                 field_name = field["name"]
+                # The custom-emoji rename preserves Reaction's tag and wire type.
+                if name == "tinkle.v1.Reaction" and field_name == "document_id":
+                    field_name = "custom_emoji_id"
                 if field_name not in current_fields:
                     self.fail(name + "." + field_name + " field was removed")
                 current = current_fields[field_name]

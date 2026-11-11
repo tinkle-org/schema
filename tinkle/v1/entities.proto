@@ -1,0 +1,91 @@
+// Shared rich-text spans for message bodies, captions, drafts, quotes and help text.
+syntax = "proto3";
+
+package tinkle.v1;
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// EntityType identifies formatting or semantic content in the associated text.
+enum EntityType {
+  // Unspecified; not valid when authoring an entity.
+  ENTITY_TYPE_UNSPECIFIED = 0;
+  // Bold formatting.
+  ENTITY_TYPE_BOLD = 1;
+  // Italic formatting.
+  ENTITY_TYPE_ITALIC = 2;
+  // Underlined formatting.
+  ENTITY_TYPE_UNDERLINE = 3;
+  // Struck-through formatting.
+  ENTITY_TYPE_STRIKETHROUGH = 4;
+  // Inline monospace code; cannot overlap another entity.
+  ENTITY_TYPE_CODE = 5;
+  // Preformatted code block, optionally qualified by language; cannot overlap.
+  ENTITY_TYPE_PRE = 6;
+  // URL expressed by the text itself.
+  ENTITY_TYPE_URL = 7;
+  // Display text linked to the explicit url field.
+  ENTITY_TYPE_TEXT_URL = 8;
+  // Username mention expressed by the text itself.
+  ENTITY_TYPE_MENTION = 9;
+  // Display text mentioning the explicit user_id.
+  ENTITY_TYPE_MENTION_NAME = 10;
+  // Phone number expressed by the text itself.
+  ENTITY_TYPE_PHONE = 11;
+  // Email address expressed by the text itself.
+  ENTITY_TYPE_EMAIL = 12;
+  // Hashtag expressed by the text itself.
+  ENTITY_TYPE_HASHTAG = 13;
+  // Cashtag expressed by the text itself.
+  ENTITY_TYPE_CASHTAG = 14;
+  // Bot command expressed by the text itself.
+  ENTITY_TYPE_BOT_COMMAND = 15;
+  // Exact custom-emoji asset rendered in place of its canonical fallback span.
+  ENTITY_TYPE_CUSTOM_EMOJI = 16;
+  // Concealed text formatting.
+  ENTITY_TYPE_SPOILER = 17;
+  // Block quotation formatting.
+  ENTITY_TYPE_BLOCKQUOTE = 18;
+}
+
+// Entity is a span in its containing field's unmodified text, not in rendered text.
+// Offsets and lengths count UTF-16 code units, not UTF-8 bytes or graphemes.
+// Both endpoints must be Unicode scalar boundaries: never split a surrogate pair.
+// Require offset >= 0, length > 0 and offset + length within the text, checking
+// addition without overflow. Quote entities index quote_text, not the source body.
+//
+// Spans may be disjoint or fully nested, never partially overlapping/crossing.
+// Only BOLD, ITALIC, UNDERLINE, STRIKETHROUGH, SPOILER and BLOCKQUOTE may contain
+// other spans. Equal spans may combine different types when at least one is such
+// formatting; duplicate same-type spans are invalid. CODE and PRE cannot overlap
+// any other entity, including formatting. Entity list order has no rendering meaning.
+//
+// Only TEXT_URL uses url, only MENTION_NAME uses user_id, and only PRE uses
+// language. Other types require those fields to be empty/zero. Only CUSTOM_EMOJI
+// uses custom_emoji_id, fallback_text and asset_version; for other types require
+// custom_emoji_id zero and both optional fields absent. Reject unsupported types
+// on authoring; protobuf encoding alone does not enforce these rules.
+message Entity {
+  // Formatting or semantic type; must be specified when authoring.
+  EntityType type = 1;
+  // Zero-based UTF-16 code-unit offset at a Unicode scalar boundary.
+  int32 offset = 2;
+  // Positive UTF-16 code-unit length ending at a Unicode scalar boundary.
+  int32 length = 3;
+  // Nonempty destination for TEXT_URL, empty for every other type.
+  string url = 4;
+  // Positive user identifier for MENTION_NAME, zero for every other type.
+  int64 user_id = 5;
+  // Optional language label for PRE; empty for every other type.
+  string language = 6;
+  // Positive canonical StickerView.id of a CUSTOM_EMOJI asset, not a file ID.
+  // Resolve exact versions in batches through GetStickerAssets.
+  int64 custom_emoji_id = 7;
+  // Required nonempty canonical fallback of the exact custom-emoji asset version,
+  // at most 64 UTF-8 bytes. The selected text span must equal this value exactly,
+  // without normalization. Render this retained text if the asset is unavailable.
+  optional string fallback_text = 8;
+  // Required positive exact custom-emoji version. Validate current usability and
+  // canonical fallback at acceptance, retaining exact files/fallback for subsequent
+  // authorized reads. Never substitute the catalog head or another version.
+  optional uint64 asset_version = 9;
+}

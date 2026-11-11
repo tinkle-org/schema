@@ -9,6 +9,7 @@ package tinkle.v1;
 
 import "google/protobuf/timestamp.proto";
 import "tinkle/v1/common.proto";
+import "tinkle/v1/media.proto";
 
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
@@ -110,6 +111,19 @@ service AccountService {
   // for an unconfirmed caller or the current session, and NOT_FOUND for unknown,
   // foreign, or inactive targets without distinguishing those cases.
   rpc ConfirmSession(ConfirmSessionRequest) returns (ConfirmSessionResponse);
+
+  // SetProfilePhoto validates a completed-file source, appends it to the caller's
+  // gallery, and selects it atomically. The gallery holds at most 10 photos;
+  // a full gallery rejects insertion rather than silently evicting photos.
+  rpc SetProfilePhoto(SetProfilePhotoRequest) returns (SetProfilePhotoResponse);
+  // GetProfilePhotos returns the complete bounded gallery for self; for another
+  // user it returns only the selected photo if current photo privacy permits it.
+  rpc GetProfilePhotos(GetProfilePhotosRequest) returns (GetProfilePhotosResponse);
+  // SelectProfilePhoto selects an existing caller-owned gallery entry.
+  rpc SelectProfilePhoto(SelectProfilePhotoRequest) returns (SelectProfilePhotoResponse);
+  // DeleteProfilePhoto removes a caller-owned gallery entry, not its stored file.
+  // Deleting the selected entry clears selection; no older photo is auto-selected.
+  rpc DeleteProfilePhoto(DeleteProfilePhotoRequest) returns (DeleteProfilePhotoResponse);
 }
 
 // PushDevice represents a registered push notification device.
@@ -523,4 +537,124 @@ message SessionChanged {
   // current activity. It may no longer appear in GetSessions after revocation
   // or expiry. A hint about one's own session does not replace authorization.
   string session_id = 1;
+}
+
+// ProfilePhotoSource defines a photo from completed uploader-owned files.
+// Required metadata declares STRICT_LOSSLESS version 1, PNG or static lossless
+// WebP, and matching positive dimensions at most 4096x4096. Main bytes are at
+// most 20 MiB; animation and encrypted files are rejected. Supply at most one
+// static THUMBNAIL (at most 160x160, 256 KiB), with both dimensions required.
+// Validate its bytes under the same profile. PREVIEW, FULL, extra variants and
+// unknown roles are rejected, never silently discarded. file_id names the main
+// image. No generated variants or transcoding are promised.
+message ProfilePhotoSource {
+  // Positive canonical completed-file ID; never an upload ID, URL or inline bytes.
+  int64 file_id = 1;
+  // Required dimensions, format, static-animation flag and validation declaration.
+  ImageMetadata metadata = 2;
+  // Optional completed, caller-owned THUMBNAIL only; at most one, not the main file.
+  repeated MediaVariantSource variants = 3;
+}
+
+// ProfilePhoto is a retained gallery entry with canonical immutable-file references.
+// Metadata and variants are validated at creation and cannot be edited in place.
+message ProfilePhoto {
+  // Positive stable gallery-entry ID; not a file ID and never reassigned.
+  int64 photo_id = 1;
+  // Owning account ID, derived from trusted session context at creation.
+  int64 user_id = 2;
+  // Canonical file ID of the validated main photo.
+  int64 file_id = 3;
+  // Validated format, dimensions and validation profile/version.
+  ImageMetadata metadata = 4;
+  // Validated stored variants; access-checked with the gallery entry.
+  repeated MediaVariant variants = 5;
+  // Server time of gallery insertion; selection does not change ordering.
+  google.protobuf.Timestamp created_at = 6;
+}
+
+// SetProfilePhotoRequest inserts or selects a photo for the current account.
+// Gallery revisions start at 1 even when empty, increase once per actual gallery
+// or selection change, and never wrap or reuse values. All gallery mutations
+// require positive expected_revision; compare atomically before no-op detection.
+// A mismatch is ABORTED without effect; refetch and reconcile, never blindly
+// retry against a fresh revision. A timeout/cancellation does not prove rollback.
+// While an entry is retained, repeating its exact main file/source reuses its
+// photo_id rather than consuming another slot. A changed source for the same
+// main file is rejected, not silently substituted. At a matching revision,
+// selecting that already-selected entry is a no-op; selecting it from elsewhere
+// changes selection/revision, not identity or gallery order. After an ambiguous
+// call, find its file/source in GetProfilePhotos and reconcile selection before
+// acting again. No operation-ID replay or deduplication across deletion is promised.
+message SetProfilePhotoRequest {
+  // Required complete source; validate all files before changing gallery/selection.
+  ProfilePhotoSource source = 1;
+  // Required positive owner gallery_revision; zero/absence is invalid.
+  uint64 expected_revision = 2;
+}
+
+// SetProfilePhotoResponse returns the newly selected gallery entry.
+message SetProfilePhotoResponse {
+  // Complete validated selected photo.
+  ProfilePhoto photo = 1;
+  // Owner gallery revision atomically resulting from this insertion/selection.
+  uint64 gallery_revision = 2;
+}
+
+// GetProfilePhotosRequest chooses self or another user's privacy-filtered view.
+message GetProfilePhotosRequest {
+  // Omit for self; when present must be positive. Does not assert caller identity.
+  optional int64 user_id = 1;
+}
+
+// GetProfilePhotosResponse is one consistent gallery/selection snapshot.
+message GetProfilePhotosResponse {
+  // At most 10 entries, newest insertion first (descending photo_id for ties).
+  // Nonowners receive at most the selected entry. Unknown/inaccessible accounts
+  // return the same empty projection, without disclosing gallery membership.
+  repeated ProfilePhoto photos = 1;
+  // Present for self (zero means no selection), or when a selected photo is
+  // disclosed to a nonowner; absent otherwise. A positive value names an entry
+  // in photos. Never infer selection from list position.
+  optional int64 selected_photo_id = 2;
+  // Required positive revision for self, from the same snapshot as selection
+  // and photos. Omitted for nonowners, including privacy-visible selected photos,
+  // so hidden owner-gallery changes do not leak through a revision counter.
+  optional uint64 gallery_revision = 3;
+}
+
+// SelectProfilePhotoRequest selects an existing photo owned by the current account.
+message SelectProfilePhotoRequest {
+  // Positive gallery-entry ID; unknown/foreign IDs report NOT_FOUND alike.
+  int64 photo_id = 1;
+  // Required positive current owner gallery_revision, checked before any no-op.
+  uint64 expected_revision = 2;
+}
+
+// SelectProfilePhotoResponse returns the selected entry without reordering it.
+message SelectProfilePhotoResponse {
+  // Complete current selected photo.
+  ProfilePhoto photo = 1;
+  // Owner gallery revision from the same atomic selection result.
+  uint64 gallery_revision = 2;
+}
+
+// DeleteProfilePhotoRequest removes a gallery entry owned by the current account.
+message DeleteProfilePhotoRequest {
+  // Positive gallery-entry ID; unknown/foreign IDs report NOT_FOUND alike.
+  int64 photo_id = 1;
+  // Required positive current owner gallery_revision; stale removal is ABORTED.
+  uint64 expected_revision = 2;
+}
+
+// DeleteProfilePhotoResponse reports gallery removal and its resulting selection.
+// Selection/removal and file-reference grants change atomically. A deletion does
+// not erase files referenced elsewhere, or revoke the uploader's own file access.
+message DeleteProfilePhotoResponse {
+  // True after the entry was removed.
+  bool deleted = 1;
+  // Current selection, zero when none. No implicit fallback selection occurs.
+  int64 selected_photo_id = 2;
+  // Owner gallery revision atomically resulting from removal/selection clearing.
+  uint64 gallery_revision = 3;
 }

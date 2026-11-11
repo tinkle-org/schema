@@ -32,6 +32,14 @@ reference and `website/content/` for schema overview pages.
 
 The package defines authentication, accounts, users, contacts, messaging,
 channels, bots, stickers, and help APIs, with shared types in `common.proto`.
+`entities.proto` defines the single `Entity`/`EntityType` vocabulary for help text,
+message bodies, captions, drafts and quotes. Spans use UTF-16 code units with
+Unicode scalar boundaries, explicit nesting/overlap rules, and type-specific
+fields. Custom emoji pin `custom_emoji_id` plus an exact `asset_version`; their
+canonical `fallback_text` must exactly match the selected text span. Reactions
+pin the same asset identity/version with canonical fallback in `emoticon`.
+`GetStickerAssets` resolves exact versions in batches; retained fallback text
+remains renderable when an asset is unavailable.
 
 [`auth.proto`](https://github.com/tinkle-org/schema/blob/main/tinkle/v1/auth.proto)
 defines phone verification and recoverable device-key enrollment. See
@@ -62,9 +70,30 @@ durable replay and watch (the former `ReadUpdates` and `FollowUpdates`) have
 been retired from the public contract and remain implementation-internal.
 `messages.proto` carries reconciliation primitives for clients without a
 durable feed: `GetMessages` batch-fetches messages by ID, `Message.accept_seq`
-orders and dedups per conversation, `GetTargetChanges` lists retained edits
-and removals strictly after an acceptance position, and
+orders and dedups per conversation, `GetTargetChanges` lists authorized retained
+body/metadata changes and removals after a mutation acceptance position, and
 `GetHistoryResponse.more_available` provides server-confirmed pagination.
+Complete-body freshness uses `Message.body_revision` for the same authenticated
+principal and message, not the original acceptance position. User `edit_date`
+is only a fallback when a revision is absent; metadata changes do not create edit
+dates. A marker's `message_revision` records its exact event revision, while its
+authorized hydrated body can be newer. Journal pagination uses the returned stable
+`last_accept_seq`, with no continuity guarantee across filtering, retention or
+pending positions. `MessageChanged` and `TypingChanged` are typed notification
+payloads, not additional RPCs, durable cursors, receipts or transport bindings.
+Private ACK markers/hints are disclosed only to their own viewer.
+
+Search returns full `Message` bodies in a shared `SearchResponse`. Its `source`
+is `SERVER` or `CACHE`, and `coverage` is `INDEXED` or `CACHED_SUBSET`; unspecified
+or absent metadata means unknown. `more_available` reports only the selected
+backend's continuation, so an exhausted cache still covers only a cached subset.
+Queries are literal case-insensitive substrings of message text/captions, without
+regex, wildcard or token syntax, bounded to 1024 UTF-8 bytes. Page size is 1..100,
+with zero selecting 50. Unicode case handling and searched corpora can differ by
+backend; identical matching is not guaranteed. Results use stable descending
+source acceptance order within a target/source and a source-defined deterministic
+global order with target/message identity tie-breakers. Acceptance positions from
+different targets are not comparable. Continue with the selected source's cursor.
 See the [reference](/schema/reference) for the contract details.
 
 This repository documents the transport-independent schema. Runtime transport
