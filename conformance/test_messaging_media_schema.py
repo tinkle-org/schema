@@ -158,11 +158,12 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
     def test_file_context_oneof_and_request_tags(self):
         """Pin a single typed authorization context on both file read calls."""
         self.assert_oneof("FileAccessContext", "reference",
-                          ["message", "profile_photo", "sticker_asset"])
+                          ["message", "profile_photo", "sticker_asset", "chat_photo"])
         self.assert_fields("FileAccessContext", [
             ("message", 1, "MESSAGE", "MessageFileReference", False, False),
             ("profile_photo", 2, "MESSAGE", "ProfilePhotoReference", False, False),
             ("sticker_asset", 3, "MESSAGE", "StickerAssetReference", False, False),
+            ("chat_photo", 4, "MESSAGE", "ChatPhotoReference", False, False),
         ])
         for name, tag in (("GetFileInfoRequest", 2), ("DownloadPartRequest", 4)):
             field = self.descriptor(name)["field"][-1]
@@ -180,6 +181,10 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
             ("asset_id", 1, "INT64", "", False, False),
             ("asset_version", 2, "UINT64", "", False, False),
         ])
+        self.assert_fields("ChatPhotoReference", [
+            ("chat_id", 1, "INT64", "", False, False),
+            ("photo_id", 2, "INT64", "", False, False),
+        ], files.FILES_FILE)
 
     def test_authoring_service_methods_and_no_emoji_service(self):
         """Expose unified assets/packs and profile-photo lifecycle operations."""
@@ -245,13 +250,15 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
         """Preserve each context and reject JSON with conflicting oneof arms."""
         contexts = [{"message": {"target": {"chatId": "4"}, "messageId": "9007199254740993"}},
                     {"profilePhoto": {"userId": "2", "photoId": "3"}},
-                    {"stickerAsset": {"assetId": "5", "assetVersion": "2"}}]
-        for context in contexts:
+                    {"stickerAsset": {"assetId": "5", "assetVersion": "2"}},
+                    {"chatPhoto": {"chatId": "9007199254740993", "photoId": "9007199254740995"}}]
+        for index, context in enumerate(contexts):
             for name in ("GetFileInfoRequest", "DownloadPartRequest"):
                 fixture = {"fileId": "9007199254740995", "fileAccessContext": context}
                 self.assertEqual(fixture, self.round_trip(fixture, name))
-        conflict = dict(contexts[0], **contexts[1])
-        self.assertNotEqual(0, self.convert(conflict, "FileAccessContext", check=False).returncode)
+            for other in contexts[index + 1:]:
+                conflict = dict(context, **other)
+                self.assertNotEqual(0, self.convert(conflict, "FileAccessContext", check=False).returncode)
 
     def test_asset_and_profile_round_trips(self):
         """Preserve animated WebP metadata, lossless policy, variants, and fallback."""

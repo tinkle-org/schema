@@ -448,6 +448,8 @@ message FileAccessContext {
     ProfilePhotoReference profile_photo = 2;
     // An owned asset, or an asset currently in a published pack.
     StickerAssetReference sticker_asset = 3;
+    // A currently visible chat's current photo or one of its stored variants.
+    ChatPhotoReference chat_photo = 4;
   }
 }
 
@@ -480,6 +482,19 @@ message StickerAssetReference {
   int64 asset_id = 1;
   // Required positive exact version; zero/absence is invalid, never catalog head.
   uint64 asset_version = 2;
+}
+
+// ChatPhotoReference locates the current photo of a group or channel.
+// On every GetFileInfo and DownloadPart call, recheck current chat visibility
+// and require file_id to be this photo's main file or a stored variant in this
+// chat. Replacement/removal or lost visibility invalidates the context on the
+// next call. Enforce these checks even for the uploader; never fall back to
+// uploader identity or an unrelated object when this context does not match.
+message ChatPhotoReference {
+  // Positive Chat.chat_id whose current photo is referenced.
+  int64 chat_id = 1;
+  // Positive current ChatPhoto.photo_id in that chat; not a file ID.
+  int64 photo_id = 2;
 }
 
 // GetFileInfoRequest requests storage information for one completed file.

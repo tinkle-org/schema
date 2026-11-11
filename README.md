@@ -256,9 +256,13 @@ cancellation (`AbortUpload`), storage metadata (`GetFileInfo`), and byte-range
 downloads (`DownloadPart`). Completed files are immutable and referenced by
 canonical `file_id` across services. Non-uploaders supply `FileAccessContext`
 on both file-read methods, selecting a visible message, retained profile-gallery
-entry, or usable sticker asset; authorization and exact file membership are
-rechecked on every call. Profile-photo owners may reference unselected retained
-entries; nonowners may reference only the selected photo when privacy permits it.
+entry, usable sticker asset, or current chat photo; authorization and exact file
+membership are rechecked on every call. Profile-photo owners may reference
+unselected retained entries; nonowners may reference only the selected photo when
+privacy permits it.
+Chat-photo contexts identify the chat and its current `ChatPhoto.photo_id`;
+each read requires current visibility and exact photo-file membership, even for
+the uploader. Replacement/removal or lost visibility invalidates the context.
 See the file-transfer guide in
 `website/content/file-transfers.mdx`.
 

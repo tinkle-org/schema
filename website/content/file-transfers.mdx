@@ -40,7 +40,7 @@ built in three steps, and the contract keeps them separate on purpose:
    semantics belong to the `*Source` types, and `FileInfo` stays limited
    to immutable storage facts.
 3. **Send or edit the application object** — the message, profile photo,
-   or sticker that carries the attachment.
+   chat photo, or sticker that carries the attachment.
 
 Client-declared MIME types, dimensions, durations, codecs, and encryption
 flags are non-authoritative claims: the server verifies them where it can
@@ -247,7 +247,7 @@ access-checked like any other file reference.
 ## Authorization
 
 File access flows from the application objects that reference a file —
-messages, profile photos, sticker packs — and from the uploader's own
+messages, profile photos, chat photos, sticker packs — and from the uploader's own
 authorization. A `file_id` grants no access by itself: resolution requires
 an authorized application object or uploader authorization, so a bare
 `file_id` obtained from any other source — for example an export or a
@@ -261,15 +261,25 @@ in the server implementation, not in this contract.
 `GetFileInfoRequest.file_access_context` and
 `DownloadPartRequest.file_access_context` carry the reference for these checks.
 Select exactly one of `MessageFileReference` (conversation and message ID),
-`ProfilePhotoReference` (user and gallery-entry ID), or `StickerAssetReference`
-(unified asset ID and exact version). The requested `file_id` must be the
-referenced version's main file or a stored variant. With no context, only the
+`ProfilePhotoReference` (user and gallery-entry ID), `StickerAssetReference`
+(unified asset ID and exact version), or `ChatPhotoReference` (chat and current
+photo ID). The requested `file_id` must be the referenced version's main file or
+a stored variant. With no context, only the
 uploader can read their own
 completed file. A supplied context is checked even for the uploader; it cannot
-authorize an unrelated file. A metadata response does not grant future downloads:
+authorize an unrelated file or fall back to uploader identity or another object.
+A metadata response does not grant future downloads:
 each range call checks visibility again, including deletion/revocation, photo
 selection/privacy, and pack unpublication. Unknown and inaccessible references
 and mismatched file membership have the same not-found outcome.
+
+`FileAccessContext.chat_photo` in `tinkle/v1/files.proto` references a positive
+chat/group/channel `chat_id` and the current `ChatPhoto.photo_id` from
+`tinkle/v1/messages.proto`, not a file ID. The contract requires every
+`GetFileInfo` and `DownloadPart` call to check current chat visibility and that
+the requested file is that current photo's main file or a stored variant in that
+chat. Replacement, removal, or lost visibility invalidates the context on the
+next call; no historical chat-photo gallery is promised.
 
 ## Authored assets and profile photos
 

@@ -172,7 +172,7 @@ class FilesSchemaTests(BufSchemaTestCase):
             "FileInfo", "GetFileInfoRequest", "GetFileInfoResponse",
             "DownloadPartRequest", "DownloadPartResponse",
             "FileAccessContext", "MessageFileReference", "ProfilePhotoReference",
-            "StickerAssetReference",
+            "StickerAssetReference", "ChatPhotoReference",
         }, names)
 
     def test_upload_status_enum(self):
