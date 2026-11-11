@@ -9,6 +9,7 @@ syntax = "proto3";
 package tinkle.v1;
 
 import "tinkle/v1/common.proto";
+import "tinkle/v1/entities.proto";
 import "tinkle/v1/users.proto";
 
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
@@ -274,8 +275,8 @@ message EditUserInfoRequest {
   UserInput user = 1;
   // Admin-set message about the user (must be non-empty).
   string message = 2;
-  // Rich-text formatting entities for the message.
-  repeated MessageEntity entities = 3;
+  // Rich-text spans in message, using the shared UTF-16 entity rules.
+  repeated Entity entities = 3;
 }
 
 // EditUserInfoResponse returns the updated workforce user info.
@@ -292,50 +293,8 @@ message WorkforceUserInfo {
   bool premium = 2;
   // Admin-set message about the user.
   string message = 3;
-  // Rich-text formatting entities for the message.
-  repeated MessageEntity entities = 4;
-}
-
-// MessageEntity represents a rich-text formatting span in a message.
-message MessageEntity {
-  // Entity type.
-  MessageEntityType type = 1;
-  // UTF-16 offset in the text where the entity starts.
-  int32 offset = 2;
-  // UTF-16 length of the entity.
-  int32 length = 3;
-  // URL for TEXT_URL entities.
-  optional string url = 4;
-  // User ID for MENTION entities.
-  optional int64 user_id = 5;
-  // Custom emoji ID for CUSTOM_EMOJI entities.
-  optional int64 custom_emoji_id = 6;
-}
-
-// MessageEntityType identifies the type of rich-text formatting.
-enum MessageEntityType {
-  // Default/unspecified entity type.
-  MESSAGE_ENTITY_TYPE_UNSPECIFIED = 0;
-  // Bold text formatting.
-  MESSAGE_ENTITY_TYPE_BOLD = 1;
-  // Italic text formatting.
-  MESSAGE_ENTITY_TYPE_ITALIC = 2;
-  // Underlined text formatting.
-  MESSAGE_ENTITY_TYPE_UNDERLINE = 3;
-  // Strikethrough text formatting.
-  MESSAGE_ENTITY_TYPE_STRIKETHROUGH = 4;
-  // Monospace inline code.
-  MESSAGE_ENTITY_TYPE_CODE = 5;
-  // Pre-formatted code block.
-  MESSAGE_ENTITY_TYPE_PRE = 6;
-  // Auto-detected URL.
-  MESSAGE_ENTITY_TYPE_URL = 7;
-  // URL with custom display text.
-  MESSAGE_ENTITY_TYPE_TEXT_URL = 8;
-  // User mention (@username).
-  MESSAGE_ENTITY_TYPE_MENTION = 9;
-  // Custom emoji.
-  MESSAGE_ENTITY_TYPE_CUSTOM_EMOJI = 10;
+  // Rich-text spans in message, using the shared UTF-16 entity rules.
+  repeated Entity entities = 4;
 }
 
 // =============================================================================

@@ -44,6 +44,7 @@ syntax = "proto3";
 package tinkle.v1;
 
 import "google/protobuf/timestamp.proto";
+import "tinkle/v1/common.proto";
 
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
@@ -430,10 +431,78 @@ message FileInfo {
   google.protobuf.Timestamp created_at = 7;
 }
 
+// FileAccessContext identifies the application reference authorizing a read.
+// Absent context permits only the authenticated uploader's own completed files.
+// A supplied context must select exactly one nonempty reference, even for the
+// uploader. Each call rechecks current object visibility and exact file membership
+// (main file or a stored variant of the exact referenced version); knowing an
+// object ID is not an access grant. Visible messages authorize only their captured
+// files/versions, never new catalog sends or unrelated asset versions.
+// Never search for some other object to authorize a mismatched context. Unknown,
+// removed, inaccessible and mismatched references/files all report not found.
+message FileAccessContext {
+  oneof reference {
+    // A currently visible message attachment or one of its variants.
+    MessageFileReference message = 1;
+    // A current, privacy-visible profile-gallery entry or one of its variants.
+    ProfilePhotoReference profile_photo = 2;
+    // An owned asset, or an asset currently in a published pack.
+    StickerAssetReference sticker_asset = 3;
+    // A currently visible chat's current photo or one of its stored variants.
+    ChatPhotoReference chat_photo = 4;
+  }
+}
+
+// MessageFileReference locates a message under the caller's history visibility,
+// including its exact captured custom-emoji/reaction versions and variants.
+// Deletion/revocation/visibility changes remove this grant on the next read.
+message MessageFileReference {
+  // Required conversation; cannot be global or an empty Target.
+  Target target = 1;
+  // Positive message ID within target, not a global message identifier.
+  int64 message_id = 2;
+}
+
+// ProfilePhotoReference locates one retained profile photo, not a file owner.
+// Selection, deletion and privacy are rechecked; nonowners see only the selected
+// photo if privacy permits it. Unselected gallery entries are owner-only.
+message ProfilePhotoReference {
+  // Positive account ID whose gallery contains photo_id.
+  int64 user_id = 1;
+  // Positive ProfilePhoto.photo_id, also returned in UserPhoto.photo_id.
+  int64 photo_id = 2;
+}
+
+// StickerAssetReference locates a unified sticker/custom-emoji asset. Nonowners
+// need a current published-pack pin of that exact version; installation alone
+// grants no access after unpublication. A visible message reference independently
+// authorizes only its captured files, not an implicit global or permanent grant.
+message StickerAssetReference {
+  // Positive StickerView.id, never a pack ID or file ID.
+  int64 asset_id = 1;
+  // Required positive exact version; zero/absence is invalid, never catalog head.
+  uint64 asset_version = 2;
+}
+
+// ChatPhotoReference locates the current photo of a group or channel.
+// On every GetFileInfo and DownloadPart call, recheck current chat visibility
+// and require file_id to be this photo's main file or a stored variant in this
+// chat. Replacement/removal or lost visibility invalidates the context on the
+// next call. Enforce these checks even for the uploader; never fall back to
+// uploader identity or an unrelated object when this context does not match.
+message ChatPhotoReference {
+  // Positive Chat.chat_id whose current photo is referenced.
+  int64 chat_id = 1;
+  // Positive current ChatPhoto.photo_id in that chat; not a file ID.
+  int64 photo_id = 2;
+}
+
 // GetFileInfoRequest requests storage information for one completed file.
 message GetFileInfoRequest {
   // Canonical file ID of the completed file.
   int64 file_id = 1;
+  // Required for non-uploaders; scopes the exact per-call authorization check.
+  FileAccessContext file_access_context = 2;
 }
 
 // GetFileInfoResponse carries the requested file's information.
@@ -468,6 +537,9 @@ message DownloadPartRequest {
   // bound. Servers may return fewer bytes than requested — at the end of
   // the file, or to respect their current transfer budget — never more.
   int32 limit = 3;
+  // Use the same reference as GetFileInfo; authorization is rechecked for every
+  // range, so a prior metadata response does not authorize later bytes.
+  FileAccessContext file_access_context = 4;
 }
 
 // DownloadPartResponse carries one byte range of a completed file.
