@@ -127,11 +127,13 @@ optional projection is unknown, not false. Personal pin changes use viewer-only
 ACK changes and never disclose another principal's private state.
 
 `DeleteHistory` uses a client-persisted `operation_id` and explicit
-`completed`/`processed_count` progress on the existing method. Retry
-identical requests with the same ID until completion; timeouts do not prove
-rollback. History selection freezes at the first accepted call, so later messages
-are not swept into retries. With `revoke=true`, the caller's own messages are
-removed for everyone, incoming messages for the caller only. No general job API
+`completed`/`processed_count` progress on the existing method. Retrying identical
+requests with the same ID can complete the operation only while it is retained;
+retention duration is server policy. Expiration before completion is a failed
+recovery path: the server rejects the expired ID and does not restart the operation.
+Timeouts do not prove rollback. History selection freezes at the first accepted
+call, so later messages are not swept into retries. With `revoke=true`, the caller's
+own messages are removed for everyone, incoming messages for the caller only. No general job API
 or authority to revoke another sender's messages is implied.
 `DeleteMessages` evaluates items independently and reports only the count newly
 deleted by that call. Unknown, inaccessible or ineligible items do not prevent

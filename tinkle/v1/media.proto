@@ -133,6 +133,8 @@ enum MediaValidationProfile {
 // A 1-pixel main has no lower-pixel thumbnail and is exempt from that requirement.
 // Already validated server-generated thumbnails for the same immutable main,
 // purpose and profile/version may be reused; no new variant identity is required.
+// If derived from an explicit cover/preview input, reuse also requires matching
+// immutable cover/preview inputs; matching the main alone is insufficient.
 // Required thumbnails have exactly one THUMBNAIL role per main; optional ones
 // have at most one. PREVIEW and FULL variants are not accepted by version 1.
 // Purpose-specific thumbnail bounds (positive dimensions and at most 256 KiB):
