@@ -13,7 +13,7 @@ option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 // Ownership verification is delegated to the downstream internal bot service.
 service BotsService {
   // ============================================================================
-  // Bot Commands (Telegram: bots.setBotCommands, bots.getBotCommands, bots.resetBotCommands)
+  // Bot Commands
   // ============================================================================
 
   // SetCommands sets the list of commands for a bot in a given scope and language.
@@ -27,7 +27,7 @@ service BotsService {
   rpc ResetCommands(ResetCommandsRequest) returns (ResetCommandsResponse);
 
   // ============================================================================
-  // Menu Button (Telegram: bots.setBotMenuButton, bots.getBotMenuButton)
+  // Menu Button
   // ============================================================================
 
   // SetMenuButton sets the menu button for a bot, either globally (user_id=0) or per specific user.
@@ -37,7 +37,7 @@ service BotsService {
   rpc GetMenuButton(GetMenuButtonRequest) returns (GetMenuButtonResponse);
 
   // ============================================================================
-  // Default Admin Scopes (Telegram: bots.setBotGroupDefaultAdminRights, bots.setBotBroadcastDefaultAdminRights)
+  // Default Admin Scopes
   // ============================================================================
 
   // SetGroupDefaultAdminScopes sets the default admin scopes requested when the bot is added to groups.
@@ -47,7 +47,7 @@ service BotsService {
   rpc SetBroadcastDefaultAdminScopes(SetBroadcastDefaultAdminScopesRequest) returns (SetBroadcastDefaultAdminScopesResponse);
 
   // ============================================================================
-  // Bot Info & Profile (Telegram: bots.setBotInfo, bots.getBotInfo)
+  // Bot Info & Profile
   // ============================================================================
 
   // SetInfo sets localized bot info (name, about, description).
@@ -58,7 +58,7 @@ service BotsService {
   rpc GetInfo(GetInfoRequest) returns (GetInfoResponse);
 
   // ============================================================================
-  // Username Management (Telegram: bots.toggleUsername, bots.reorderUsernames)
+  // Username Management
   // ============================================================================
 
   // ToggleUsername activates or deactivates a username associated with the bot.
@@ -77,18 +77,18 @@ service BotsService {
   rpc GetOwnedBots(GetOwnedBotsRequest) returns (GetOwnedBotsResponse);
 
   // ============================================================================
-  // Messaging Permissions (Telegram: bots.canSendMessage, bots.allowSendMessage)
+  // Messaging Permissions
   // ============================================================================
 
   // CanSendMessage checks whether a bot is permitted to send messages to the authenticated user.
   rpc CanSendMessage(CanSendMessageRequest) returns (CanSendMessageResponse);
 
   // AllowSendMessage grants a bot permission to send messages to the authenticated user.
-  // One-way grant — no revocation RPC exists (Telegram-aligned).
+  // One-way grant; no revocation RPC exists.
   rpc AllowSendMessage(AllowSendMessageRequest) returns (AllowSendMessageResponse);
 
   // ============================================================================
-  // Custom Requests (Telegram: bots.sendCustomRequest, bots.answerWebhookJSONQuery)
+  // Custom Requests
   // ============================================================================
 
   // SendCustomRequest forwards a custom method request with arbitrary JSON parameters
@@ -182,9 +182,6 @@ message BotMenuButtonMiniApp {
   // HTTPS URL to the mini app.
   string url = 2;
 }
-
-// BotAdminScopes is replaced by ChatAdminScopes in common.proto.
-// See: tinkle/v1/common.proto ChatAdminScopes
 
 // BotInfo contains localized bot metadata.
 message BotInfo {

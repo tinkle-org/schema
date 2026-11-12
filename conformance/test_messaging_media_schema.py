@@ -96,21 +96,22 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
                                            ("gallery_revision", 3, "uint64")],
         })
 
-    def test_messages_service_retains_39_unary_methods(self):
-        """Preserve the entire existing messaging method surface."""
+    def test_messages_service_has_43_unary_methods(self):
+        """Pin the complete messaging surface, including explicit jobs and poll closure."""
         methods = self.declarations["service"]["tinkle.v1.MessagesService"][1]["method"]
         self.assertEqual([
-            "GetDialogs", "GetHistory", "GetMessages", "GetTargetChanges",
-            "ReadHistory", "DeleteHistory", "DeleteMessages", "CreateChat",
-            "EditChatTitle", "EditChatPhoto", "EditChatAbout", "GetChats",
-            "GetChatComplete", "AddChatParticipant", "RemoveChatParticipant",
+            "GetDialogs", "GetHistory", "GetMessages", "ListMessageChanges",
+            "MarkHistoryRead", "DeleteHistory", "DeleteMessages", "CreateChat",
+            "EditChatTitle", "EditChatPhoto", "UpdateChatDescription", "GetChats",
+            "GetChatDetails", "AddChatParticipant", "RemoveChatParticipant",
             "EditChatAdmin", "EditChatRestrictedScopes", "SetHistoryTTL",
-            "UpdatePinnedMessage", "UnpinAllMessages", "SendMessage", "SendMedia",
-            "SendMultiMedia", "EditMessage", "SetTyping", "SendStartBot", "Search",
-            "GetMessagesReactions", "GetMessageReactionsList", "SendReaction",
+            "SetMessagePin", "UnpinAllMessages", "GetScheduledMessages", "CancelScheduledMessages", "SendMessage", "SendMedia",
+            "SendAlbum", "EditMessage", "SetTyping", "StartBot", "Search",
+            "BatchGetMessageReactions", "ListMessageReactions", "SendReaction",
+            "GetRecentReactions",
             "GetUnreadMentions", "ReadMentions", "GetUnreadReactions",
-            "ReadReactions", "SendVote", "GetPollVotes", "GetPollResults",
-            "ReadThread", "GetThreadMessage",
+            "ReadReactions", "SendVote", "GetPollVotes", "GetPollResults", "ClosePoll",
+            "ReadThread", "ListThreadMessages",
         ], [m["name"] for m in methods])
         for method in methods:
             self.assertFalse(method.get("clientStreaming", False))
@@ -121,11 +122,13 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
     def test_reply_album_schedule_search_and_poll_tags(self):
         """Pin additive messaging fields, types, and explicit presence."""
         expected = {
-            "ReplyInput": [("reply_to_top_id", 4, "INT64", "", False, True)],
+            "ReplyInput": [("thread_root_id", 4, "INT64", "", False, True)],
             "Message": [("album_id", 15, "INT64", "", False, True),
                         ("scheduled_state", 16, "ENUM", "MessageScheduledState", False, False),
                         ("schedule_date", 17, "INT32", "", False, True),
-                        ("body_revision", 18, "INT64", "", False, True)],
+                        ("body_revision", 18, "INT64", "", False, True),
+                        ("suppress_link_preview", 19, "BOOL", "", False, True),
+                        ("personal_pin", 20, "BOOL", "", False, True)],
             "SearchRequest": [("cursor", 13, "STRING", "", False, True),
                               ("offset_message_id", 14, "INT64", "", False, True)],
             "SearchResponse": [("next_cursor", 6, "STRING", "", False, True),
@@ -219,7 +222,7 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
         for name, prefix, values, filename in (
             ("StickerKind", "STICKER_KIND_", ["UNSPECIFIED", "STICKER", "CUSTOM_EMOJI"], files.MEDIA_FILE),
             ("PackKind", "PACK_KIND_", ["UNSPECIFIED", "STICKER", "CUSTOM_EMOJI"], "tinkle/v1/stickers.proto"),
-            ("MediaValidationProfile", "MEDIA_VALIDATION_PROFILE_", ["UNSPECIFIED", "STRICT_LOSSLESS"], files.MEDIA_FILE),
+            ("MediaValidationProfile", "MEDIA_VALIDATION_PROFILE_", ["UNSPECIFIED", "STRICT_LOSSLESS", "IMAGE", "VIDEO", "AUDIO", "VOICE"], files.MEDIA_FILE),
             ("ImageFormat", "IMAGE_FORMAT_", ["UNSPECIFIED", "PNG", "WEBP"], files.MEDIA_FILE),
             ("MessageScheduledState", "MESSAGE_SCHEDULED_STATE_", ["UNSPECIFIED", "NOT_SCHEDULED", "PENDING", "SENT"], "tinkle/v1/messages.proto"),
         ):
@@ -235,7 +238,7 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
         """Round-trip large IDs, quiz bytes, thread roots, and scheduled albums."""
         fixture = {"messageId": "9007199254740993", "albumId": "9007199254740995",
                    "scheduledState": "MESSAGE_SCHEDULED_STATE_PENDING", "scheduleDate": 1800000000,
-                   "replyTo": {"replyToMsgId": "9", "replyToTopId": "7"},
+                   "replyTo": {"replyToMessageId": "9", "threadRootId": "7"},
                    "media": {"poll": {"id": "8", "results": {"totalVoters": 2,
                        "results": [{"option": "AP8=", "voters": 2, "chosen": True, "correct": False}]}}}}
         self.assertEqual(fixture, self.round_trip(fixture, "Message"))
@@ -243,7 +246,7 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
         self.assertEqual(quiz, self.round_trip(quiz, "PollSource"))
         for message, fixture in (("SearchRequest", {"query": "x", "cursor": "opaque"}),
                                  ("SearchResponse", {"moreAvailable": False}),
-                                 ("ReplyInput", {"replyToMsgId": "9", "replyToTopId": "7"})):
+                                 ("ReplyInput", {"replyToMessageId": "9", "threadRootId": "7"})):
             self.assertEqual(fixture, self.round_trip(fixture, message))
 
     def test_contexts_round_trip_and_conflicts(self):
@@ -429,16 +432,17 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
         ], [(value["name"], value["number"]) for value in descriptor["value"]])
         for name, field, tag in (("Message", "body_revision", 18),
                                  ("TargetChange", "message_revision", 5)):
-            actual = self.descriptor(name)["field"][-1]
+            actual = next(f for f in self.descriptor(name)["field"] if f["name"] == field)
             self.assertEqual((field, tag, "TYPE_INT64", True),
                              (actual["name"], actual["number"], actual["type"],
                               actual.get("proto3Optional", False)))
         self.assert_manifest({
             "MessageChanged": [("target", 1, "Target"), ("message_id", 2, "int64"),
-                               ("body_revision", 3, "int64"), ("change_kind", 4, "TargetChangeKind")],
+                               ("body_revision", 3, "int64"), ("change_kind", 4, "TargetChangeKind"),
+                               ("reaction_effect", 5, "ReactionEffect"), ("body_invalidated", 6, "bool")],
             "TypingChanged": [("target", 1, "Target"), ("actor_id", 2, "int64"),
                               ("action", 3, "TypingAction"), ("expires_at", 4, ".google.protobuf.Timestamp"),
-                              ("top_msg_id", 5, "optional int64")],
+                              ("thread_root_id", 5, "optional int64")],
         })
         # Data messages do not add an RPC or extend the connectivity-only service.
         methods = self.declarations["service"]["tinkle.v1.UpdatesService"][1]["method"]
@@ -460,7 +464,7 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
             self.assertEqual(fixture, self.round_trip(fixture, name))
         # The stable processed cursor need not be the last visible mutation.
         self.assertEqual({"moreAvailable": False, "lastAcceptSeq": "701"}, self.round_trip(
-            {"moreAvailable": False, "lastAcceptSeq": "701"}, "GetTargetChangesResponse"))
+            {"moreAvailable": False, "lastAcceptSeq": "701"}, "ListMessageChangesResponse"))
 
     def test_typed_notification_payload_codec(self):
         """Round-trip hint payloads, expiry/thread presence and all metadata kinds."""
@@ -470,10 +474,10 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
             self.assertEqual(fixture, self.round_trip(fixture, "MessageChanged"))
         for action in ("TYPING_ACTION_TYPING", "TYPING_ACTION_CANCEL"):
             fixture = {"target": {"chatId": "9"}, "actorId": "9007199254740993", "action": action,
-                       "expiresAt": "2026-11-10T12:00:00Z", "topMsgId": "9007199254740995"}
+                       "expiresAt": "2026-11-10T12:00:00Z", "threadRootId": "9007199254740995"}
             self.assertEqual(fixture, self.round_trip(fixture, "TypingChanged"))
         for name, fixture in (("MessageChanged", {"bodyRevision": "9223372036854775808"}),
-                              ("TypingChanged", {"topMsgId": []})):
+                              ("TypingChanged", {"threadRootId": []})):
             self.assertNotEqual(0, self.convert(fixture, name, check=False).returncode)
 
 

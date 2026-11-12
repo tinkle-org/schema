@@ -195,7 +195,6 @@ class FilesSchemaTests(BufSchemaTestCase):
             ("file_name", 3, "STRING", "", False, True),
             ("mime_type", 4, "STRING", "", False, True),
             ("sha256", 5, "BYTES", "", False, True),
-            ("encrypted", 6, "BOOL", "", False, False),
         ], FILES_FILE)
         self.assert_fields("BeginUploadResponse", [
             ("upload_id", 1, "STRING", "", False, False),
@@ -268,7 +267,6 @@ class FilesSchemaTests(BufSchemaTestCase):
             ("sha256", 3, "BYTES", "", False, False),
             ("mime_type", 4, "STRING", "", False, True),
             ("file_name", 5, "STRING", "", False, True),
-            ("encrypted", 6, "BOOL", "", False, False),
             ("created_at", 7, "MESSAGE", ".google.protobuf.Timestamp",
              False, False),
         ], FILES_FILE)
@@ -343,6 +341,7 @@ class FilesSchemaTests(BufSchemaTestCase):
             ("codec", 4, "STRING", "", False, True),
             ("supports_streaming", 5, "BOOL", "", False, False),
             ("round_video", 6, "BOOL", "", False, False),
+            ("validation", 7, "MESSAGE", "MediaValidation", False, False),
         ], MEDIA_FILE)
         self.assert_fields("AudioMetadata", [
             ("duration_ms", 1, "UINT64", "", False, False),
@@ -350,6 +349,7 @@ class FilesSchemaTests(BufSchemaTestCase):
             ("performer", 3, "STRING", "", False, True),
             ("voice_message", 4, "BOOL", "", False, False),
             ("waveform", 5, "BYTES", "", False, True),
+            ("validation", 6, "MESSAGE", "MediaValidation", False, False),
         ], MEDIA_FILE)
         self.assert_fields("StickerMetadata", [
             ("emoji", 1, "STRING", "", False, False),
@@ -504,7 +504,7 @@ class FilesSchemaTests(BufSchemaTestCase):
     def test_send_requests_use_source_types(self):
         expected_type = {
             "SendMediaRequest": ("media", "MediaSource"),
-            "SendMultiMediaRequest": ("multi_media", "SingleMediaSource"),
+            "SendAlbumRequest": ("items", "AlbumItem"),
             "EditMessageRequest": ("media", "MediaSource"),
             "EditChatPhotoRequest": ("photo", "ChatPhotoSource"),
             "EditPhotoRequest": ("photo", "ChatPhotoSource"),
@@ -553,7 +553,7 @@ class FilesSchemaTests(BufSchemaTestCase):
                           ["media", "source"], "tinkle/v1/bot_api.proto")
 
     def test_source_union_has_no_legacy_input_members(self):
-        # The union only carries *Source types; no Telegram-style Input types.
+        # The union carries content sources, not result objects.
         # Lookups use the fully qualified keys of the declaration index.
         for name in ("InputPhoto", "InputDocument", "MediaInput", "InputMedia"):
             self.assertNotIn("tinkle.v1." + name, self.declarations["message"],
@@ -655,14 +655,12 @@ class FilesSchemaTests(BufSchemaTestCase):
                 "fileId": "9007199254740993",
                 "sizeBytes": "1048576",
                 "sha256": DIGEST_32,
-                "encrypted": True,
                 "createdAt": "2026-10-25T12:00:00Z",
             },
         }
         decoded = self.round_trip(fixture, "GetUploadStatusResponse")
         self.assertEqual("UPLOAD_STATUS_COMPLETED", decoded["status"])
         self.assertEqual("9007199254740993", decoded["file"]["fileId"])
-        self.assertTrue(decoded["file"]["encrypted"])
         self.assertNotIn("partSizeBytes", decoded)
         self.assertNotIn("expiresAt", decoded)
 
@@ -873,11 +871,16 @@ class FilesSchemaTests(BufSchemaTestCase):
             if file_name not in (FILES_FILE, MEDIA_FILE):
                 continue
             fields = message.get("field", [])
-            self.assertEqual(
-                list(range(1, len(fields) + 1)),
-                [f["number"] for f in fields], name,
-            )
-            self.assertFalse(message.get("reservedRange"), name)
+            reserved = [tag for interval in message.get("reservedRange", [])
+                        for tag in range(interval["start"], interval["end"])]
+            tags = [f["number"] for f in fields]
+            self.assertEqual(list(range(1, len(fields) + len(reserved) + 1)),
+                             sorted(tags + reserved), name)
+            if name in ("tinkle.v1.BeginUploadRequest", "tinkle.v1.FileInfo"):
+                self.assertEqual([6], reserved, name)
+                self.assertEqual(["encrypted"], message.get("reservedName"), name)
+            else:
+                self.assertFalse(reserved, name)
             for field in fields:
                 # Standard protojson canonical name (camelCase) is computed
                 # for every field, keeping JSON round trips deterministic.

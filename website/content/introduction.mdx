@@ -70,7 +70,7 @@ durable replay and watch (the former `ReadUpdates` and `FollowUpdates`) have
 been retired from the public contract and remain implementation-internal.
 `messages.proto` carries reconciliation primitives for clients without a
 durable feed: `GetMessages` batch-fetches messages by ID, `Message.accept_seq`
-orders and dedups per conversation, `GetTargetChanges` lists authorized retained
+orders and dedups per conversation, `ListMessageChanges` lists authorized retained
 body/metadata changes and removals after a mutation acceptance position, and
 `GetHistoryResponse.more_available` provides server-confirmed pagination.
 Complete-body freshness uses `Message.body_revision` for the same authenticated
@@ -83,6 +83,93 @@ pending positions. `MessageChanged` and `TypingChanged` are typed notification
 payloads, not additional RPCs, durable cursors, receipts or transport bindings.
 Private ACK markers/hints are disclosed only to their own viewer.
 
+The 43-method `MessagesService` includes explicit actor-owned scheduled-message
+lookup/cancellation and sender-owned poll closing. `GetScheduledMessages` requires
+exactly one nonempty set of 1..100 distinct positive message IDs or nonzero signed
+idempotency keys in one conversation; it does not discover a job list. Unknown,
+unowned and expired jobs are omitted. Job status alone proves neither accepted
+history nor peer receipt. `CancelScheduledMessages` accepts 1..100 distinct positive
+message IDs and expands selected album groups. Its durable canceled results are
+not rollback or a batch transaction; accepted history is never deleted. Reconcile
+uncertain or partially applied calls through explicit lookup.
+`ClosePoll` returns the existing caller-relative poll projection. Quiz correctness
+is hidden until the caller votes or the poll closes, not exposed by a separate key.
+
+`TargetChange.body_invalidated=6` is explicit source-authorized nonterminal body
+withholding for the canonical caller/target/message identity. With no body and a
+positive revision, purge cached bodies/file references at or below that revision
+and retain a nonterminal revision floor. Stale/unknown held responses cannot
+restore them; fresh currently authorized bodies at the same or newer revision
+can hydrate. This is not viewer deletion or permission proof.
+`MessageChanged.body_invalidated=6` is a non-authoritative hint to reconcile with
+the current source, not authority to apply a floor or to read files.
+
+`SendAlbum` accepts atomic ordered album items; `GetChatDetails` returns enriched
+`ChatDetails` in `response.chat_details`, `ListThreadMessages` lists thread replies, and reaction reads use
+`BatchGetMessageReactions` and `ListMessageReactions`. `MarkHistoryRead`, `StartBot`
+and `UpdateChatDescription` describe their actions directly. The description write
+uses `request.description`; the shared basic entity retains `Chat.about`. Send deduplication
+uses `int64 idempotency_key`, scoped to the authenticated principal and target;
+thread/reply fields use `thread_root_id` and `reply_to_message_id`.
+
+`CreateChatRequest.operation_id` must be a positive `int64` when `ttl_period > 0`;
+zero selects an unkeyed request only with absent/zero TTL.
+`AddChatParticipantRequest.operation_id` must be a positive `int64` when
+`forward_limit > 0`; zero selects an unkeyed add only with zero forward limit.
+Negative keys are invalid. Keep numeric room keys distinct from reaction/history
+UUID strings and retain original keys/arguments after uncertain completion.
+
+`SetMessagePin.pin_scope` separates shared and personal pins. Omission selects
+shared pins; explicit unspecified values are rejected. `Message.pinned` is shared;
+optional `Message.personal_pin` is caller-private and optional
+`Message.suppress_link_preview` reports link-preview suppression. An absent
+optional projection is unknown, not false. Personal pin changes use viewer-only
+ACK changes and never disclose another principal's private state.
+
+`DeleteHistory` uses a client-persisted `operation_id` and explicit
+`completed`/`processed_count` progress on the existing method. Retrying identical
+requests with the same ID can complete the operation only while it is retained;
+retention duration is server policy. Expiration before completion is a failed
+recovery path: the server rejects the expired ID and does not restart the operation.
+Timeouts do not prove rollback. History selection freezes at the first accepted
+call, so later messages are not swept into retries. With `revoke=true`, the caller's
+own messages are removed for everyone, incoming messages for the caller only. No general job API
+or authority to revoke another sender's messages is implied.
+`DeleteMessages` evaluates items independently and reports only the count newly
+deleted by that call. Unknown, inaccessible or ineligible items do not prevent
+deletion of eligible items; no operation ID or progress fields are required.
+
+Participant restrictions distinguish text, photo, video, audio, voice and raw
+document sends without collapsing them into one media flag. Favorite-sticker
+writes carry desired `is_favorite` membership: true adds, false removes.
+
+`SendReaction.operation_id` is a caller-scoped UUID required for true `animate`
+or `save_to_recents` options. Absent/false options leave those side effects off.
+`GetRecentReactions` reads only the caller's at-most-32 retained exact identities.
+`MessageChanged.reaction_effect` carries an actor, operation UUID, fixed expiry
+and exact reaction choices. Recheck recipient visibility, deduplicate by actor and
+operation, and discard expired effects; neither reconnect nor hydration restarts
+an animation or extends its expiry. Retained identities grant no asset access.
+Presentation requires a validated positive actor, canonical UUID and finite
+unexpired deadline; invalid metadata never triggers animation.
+
+Text/media/album sends carry optional `clear_draft_dialog_id` and
+`clear_draft_revision` tokens. Clearing is limited to the authenticated sender's
+exact source pair, retained unchanged on retry, for immediate and scheduled sends
+in direct conversations and rooms. `Dialog` reports its owned pair
+even when draft content is absent; initialized empty sources have revision zero,
+while missing tokens mean unknown. Newer drafts must not be cleared by late retries.
+`Dialog.notification_settings` carries owner-resolved preferences without turning
+absence into an enabled default. Optional unread mention/reaction counts preserve
+known zero separately from unknown. Optional `read_outbox_max_id` is a DM message
+reference, not an ordering position; unsupported or unknown projections omit it.
+
+Ordinary `DeleteHistory` deletion affects the caller only, leaving the peer's
+history and read state unchanged. Recovery keeps the original filters and frozen
+source selection, not a selection rebuilt from later caches or peer history.
+Participant views are independent: caller-only deletion leaves another participant's
+copy intact and proves neither physical byte erasure nor unrelated message deletion.
+
 Search returns full `Message` bodies in a shared `SearchResponse`. Its `source`
 is `SERVER` or `CACHE`, and `coverage` is `INDEXED` or `CACHED_SUBSET`; unspecified
 or absent metadata means unknown. `more_available` reports only the selected
@@ -94,6 +181,8 @@ backend; identical matching is not guaranteed. Results use stable descending
 source acceptance order within a target/source and a source-defined deterministic
 global order with target/message identity tie-breakers. Acceptance positions from
 different targets are not comparable. Continue with the selected source's cursor.
+Recovery keeps the same source and original filters; a changed source or filter
+starts a search without reusing a continuation.
 See the [reference](/schema/reference) for the contract details.
 
 This repository documents the transport-independent schema. Runtime transport

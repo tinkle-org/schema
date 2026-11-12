@@ -282,6 +282,12 @@ reference completed files only
 and require the explicit `STRICT_LOSSLESS` validation profile, version 1.
 Its accepted formats and bounded validation rules are defined in
 [`media.proto`](tinkle/v1/media.proto) and the source-message comments.
+General media use separate version 1 `IMAGE`, `VIDEO`, `AUDIO` and `VOICE`
+profiles. Clients normalize/upload the main; servers measure physical facts and
+generate required lower-pixel thumbnails before owning-object publication.
+Raw documents remain raw unless an explicit typed purpose is selected. There
+are no file-level encryption options. The [file-transfer guide](website/content/file-transfers.mdx)
+defines the processing split, per-purpose thumbnail requirements and readiness.
 
 [`updates.proto`](tinkle/v1/updates.proto) defines `UpdatesService`,
 streaming only ephemeral privacy-filtered per-user `ConnectivityChanged`
@@ -299,7 +305,7 @@ in their implementation repositories.
 To support clients reconciling without a durable feed,
 [`messages.proto`](tinkle/v1/messages.proto) defines `GetMessages` batch fetch by
 message ID, a per-conversation ordering and dedup token on
-`Message.accept_seq`, `GetTargetChanges` listing authorized retained body,
+`Message.accept_seq`, `ListMessageChanges` listing authorized retained body,
 metadata and removal changes after a mutation acceptance position, and a server-confirmed
 `more_available` on `GetHistoryResponse`.
 `Message.body_revision` orders complete bodies for the same principal and message;
@@ -311,7 +317,15 @@ revision: filtering, retention and pending positions prevent assuming continuity
 `MessageChanged` and `TypingChanged` are transport-neutral notification payloads,
 not RPCs, replay cursors or receipts; ACK markers/hints are private to their viewer.
 They do not extend the connectivity-only `UpdatesService` or define a transport.
-The 39-method `MessagesService` also carries explicit thread roots in `ReplyInput`,
+`TargetChange.body_invalidated=6` explicitly reports source-authorized nonterminal
+body withholding for the canonical caller/target/message identity. It requires
+an absent body, a positive revision and a nonterminal kind. Purge cached bodies
+and file references at or below that revision and retain a nonterminal revision
+floor; reject stale/unknown held responses. A fresh currently authorized body at
+the same or newer revision may hydrate. This is not viewer deletion or permission
+proof. `MessageChanged.body_invalidated=6` is only a non-authoritative hint:
+reconcile with the current source before applying an invalidation or floor.
+The 43-method `MessagesService` also carries explicit thread roots in `ReplyInput`,
 album identity and scheduling state on returned messages, quiz answer definitions
 and caller-relative poll aggregates, and opaque search continuation with an
 explicit `more_available` report. An omitted search target means global search
@@ -319,6 +333,82 @@ over currently visible conversations; an empty present target is invalid.
 Conversation search also supports full-width `offset_message_id`; opaque cursors
 remain usable for every search scope. Poll options and quiz answers retain their
 opaque byte identifiers, not option indexes.
+
+`GetScheduledMessages` resolves only explicit jobs owned by the authenticated actor
+in one conversation. Supply exactly one nonempty collection of 1..100 distinct
+positive message IDs or nonzero signed idempotency keys; an empty request never
+discovers a list. Unknown, unowned and expired jobs are omitted. `ScheduledMessage`
+reports job state separately from accepted-history visibility; status alone proves
+neither history acceptance nor peer receipt. `CancelScheduledMessages` takes 1..100
+distinct positive message IDs; any album item selects its whole group. Cancellation
+reports durable canceled items, not rollback or a batch transaction, and never
+deletes accepted history. Recover uncertain or partially applied calls by lookup.
+`ClosePoll` closes a currently visible sender-owned poll and returns the same
+caller-relative projection as `GetPollResults`. Quiz correctness stays hidden until
+the caller votes or the poll closes; it is not a separate answer-key API.
+
+Messaging uses `SendAlbum` with ordered `AlbumItem` entries, `GetChatDetails`,
+`ListThreadMessages`, `BatchGetMessageReactions`, `ListMessageReactions`,
+`MarkHistoryRead`, `StartBot` and `UpdateChatDescription`. `GetChatDetailsResponse.chat_details`
+contains `ChatDetails`; `UpdateChatDescriptionRequest.description` sets the description.
+The shared basic entity retains `Chat.about`. Sends use full-width
+`int64 idempotency_key`; reply/thread fields use `reply_to_message_id` and
+`thread_root_id`. `SetMessagePin.pin_scope` selects shared or caller-private
+personal pins; omission selects shared and explicit unspecified is invalid.
+Optional `Message.personal_pin` is caller-relative, separate from shared `pinned`;
+optional `Message.suppress_link_preview` reports preview suppression.
+`ChatPhoto` exposes its main `file_id`, measured metadata and ready variants for
+the existing chat-photo read context. Restrictions represent each of text, photo,
+video, audio, voice and raw-document sending independently. Favorite-sticker
+writes specify desired `is_favorite` membership: true adds and false removes.
+
+`CreateChatRequest.operation_id` is a positive `int64` required when
+`ttl_period > 0`; zero permits an unkeyed request only when TTL is absent/zero.
+`AddChatParticipantRequest.operation_id` is a positive `int64` required when
+`forward_limit > 0`; zero permits an unkeyed add only when the limit is zero.
+Negative keys are invalid. These numeric keys, and `EditChatPhoto`'s numeric
+publication key, are distinct from the UUID strings used for reaction side
+effects and resumable history deletion. Retain the original key and arguments
+after uncertain completion.
+
+`SendReaction.operation_id` is a caller-scoped UUID required when `animate` or
+`save_to_recents` is true. Absent/false options disable those side effects, not
+the reaction update. `GetRecentReactions` returns only the caller's at-most-32
+retained exact identities, never current catalog heads or an asset access grant.
+`MessageChanged.reaction_effect` carries typed `ReactionEffect` presentation
+metadata: deduplicate `(actor_id, operation_id)`, discard expired effects and
+never extend the original deadline on retry, delivery or reconnect. Current
+recipient visibility still controls delivery; durable hydration is not animation replay.
+Render only validated positive actor IDs, canonical operation UUIDs and finite
+unexpired deadlines; malformed presentation metadata grants no access or effect.
+
+Send requests carry optional `clear_draft_dialog_id`/`clear_draft_revision` pairs
+for the authenticated sender's source-fenced draft clearing on immediate or scheduled
+sends in direct conversations and rooms. Preserve the original
+pair on retries; never clear a newer source. `Dialog.draft_dialog_id` and
+`draft_revision` report the owned pair even with no draft content, including
+revision zero for an initialized empty source. Missing tokens mean unknown.
+`Dialog.notification_settings` is the owner-resolved scope/target preference;
+its absence is unknown, not an enabled default. Optional unread mention/reaction
+counts distinguish unknown from zero. Optional `read_outbox_max_id` is a DM
+message reference, not an acceptance position; rooms/unknown states omit it.
+
+`DeleteHistory` reports stable `operation_id`, explicit `completed` and cumulative
+`processed_count` on its response type.
+Clients persist the request ID before sending and retry identical parameters to
+continue/recover bounded work; no job service is introduced. History selection
+freezes at first acceptance. Revocation removes the caller's own messages for
+everyone and incoming messages for the caller only. Cancellation and timeouts
+do not imply rollback or completion.
+Ordinary deletion leaves the peer's history and read state unchanged. Recovery
+retains the original filters and frozen source selection rather than reconstructing
+work from a later cache or the peer's history.
+`DeleteMessages` authorizes and deletes items independently; an ineligible item
+does not prevent deletion of eligible items. Its response reports only the count
+newly deleted by that call, without operation identity or progress fields.
+Participant views are independent: caller-only deletion removes the caller's view,
+not another participant's copy, and proves neither physical byte erasure nor
+deletion of unrelated messages.
 
 `Entity` and `EntityType` are shared by help text, message bodies, media captions,
 drafts and quotes. Spans count UTF-16 code units and must start and end on Unicode
@@ -342,6 +432,8 @@ Within a target/source results follow stable descending source acceptance order,
 not edit time or relevance. Global ordering is source-defined and deterministic,
 with target/message identity tie-breakers; per-target acceptance positions are
 not globally comparable. Use the selected backend's continuation unchanged.
+Recovery preserves that source and the original filters; changing either starts
+a new search without reusing the cursor.
 
 ## BSR resource
 

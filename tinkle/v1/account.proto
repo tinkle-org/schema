@@ -542,17 +542,18 @@ message SessionChanged {
 // ProfilePhotoSource defines a photo from completed uploader-owned files.
 // Required metadata declares STRICT_LOSSLESS version 1, PNG or static lossless
 // WebP, and matching positive dimensions at most 4096x4096. Main bytes are at
-// most 20 MiB; animation and encrypted files are rejected. Supply at most one
-// static THUMBNAIL (at most 160x160, 256 KiB), with both dimensions required.
+// most 10,000,000 bytes; animation is rejected. Supply at most one optional static
+// THUMBNAIL input (at most 160x160, 256 KiB), with both dimensions required.
 // Validate its bytes under the same profile. PREVIEW, FULL, extra variants and
 // unknown roles are rejected, never silently discarded. file_id names the main
-// image. No generated variants or transcoding are promised.
+// image. Servers generate a required lower-pixel thumbnail before gallery-entry
+// publication under MediaValidation rules; clients process/upload the main.
 message ProfilePhotoSource {
   // Positive canonical completed-file ID; never an upload ID, URL or inline bytes.
   int64 file_id = 1;
   // Required dimensions, format, static-animation flag and validation declaration.
   ImageMetadata metadata = 2;
-  // Optional completed, caller-owned THUMBNAIL only; at most one, not the main file.
+  // Optional completed caller-owned thumbnail input, not a required upload.
   repeated MediaVariantSource variants = 3;
 }
 

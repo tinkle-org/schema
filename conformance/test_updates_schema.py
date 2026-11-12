@@ -14,6 +14,8 @@ import subprocess
 import tempfile
 import unittest
 
+from test_contract_completion import FIELD_NAMES, RPC_NAMES
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 UPDATES_FILE = "tinkle/v1/updates.proto"
@@ -196,6 +198,24 @@ CHANGED_DECLARATIONS = {
     "tinkle.v1.DeleteProfilePhotoResponse",
 }
 
+# Scoped descriptor changes are pinned by the contract completion suite.
+CHANGED_DECLARATIONS.update({
+    "tinkle.v1." + name + suffix
+    for pair in RPC_NAMES.items() for name in pair for suffix in ("Request", "Response")
+})
+CHANGED_DECLARATIONS.update({"tinkle.v1." + name for name in (
+    "AlbumItem", "ChatPhoto", "ChatRestrictedScope", "PinScope", "ChatComplete", "ChatDetails",
+    "DeleteHistoryResponse", "ToggleFavoriteStickerRequest",
+)})
+
+# Exact option/collection additions are pinned by test_messaging_options_schema.py.
+CHANGED_DECLARATIONS.update({"tinkle.v1." + name for name in (
+    "CreateChatRequest", "AddChatParticipantRequest", "ReactionEffect",
+    "GetRecentReactionsRequest", "GetRecentReactionsResponse",
+    "ScheduleState", "ScheduledMessage", "GetScheduledMessagesRequest", "GetScheduledMessagesResponse",
+    "CancelScheduledMessagesRequest", "CancelScheduledMessagesResponse", "ClosePollRequest", "ClosePollResponse",
+)})
+
 # Message type names rebinded by the *Source renames; a baseline field's
 # typeName is mapped through this table before comparison so renames do not
 # mask field-level drift.
@@ -334,7 +354,7 @@ class ConnectivitySchemaTests(unittest.TestCase):
                 for f in self.current["message"][name][1].get("field", [])
             }
             for field in self.baseline["message"][name][1].get("field", []):
-                field_name = field["name"]
+                field_name = FIELD_NAMES.get(field["name"], field["name"])
                 # The custom-emoji rename preserves Reaction's tag and wire type.
                 if name == "tinkle.v1.Reaction" and field_name == "document_id":
                     field_name = "custom_emoji_id"
@@ -343,15 +363,22 @@ class ConnectivitySchemaTests(unittest.TestCase):
                 current = current_fields[field_name]
                 label = name + "." + field_name
                 self.assertEqual(field["number"], current["number"], label)
-                self.assertEqual(field["type"], current["type"], label)
-                self.assertEqual(
-                    RENAMED_TYPE_NAMES.get(field.get("typeName", ""),
-                                           field.get("typeName", "")),
-                    current.get("typeName", ""), label,
-                )
+                if field["name"] == "pm_oneside":
+                    self.assertEqual("TYPE_ENUM", current["type"], label)
+                    self.assertEqual(".tinkle.v1.PinScope", current["typeName"], label)
+                else:
+                    self.assertEqual(field["type"], current["type"], label)
+                if field["name"] != "pm_oneside":
+                    self.assertEqual(
+                        RENAMED_TYPE_NAMES.get(field.get("typeName", ""),
+                                               field.get("typeName", "")),
+                        current.get("typeName", ""), label,
+                    )
                 self.assertEqual(field["label"], current["label"], label)
-                self.assertEqual(field.get("proto3Optional", False),
-                                 current.get("proto3Optional", False), label)
+                expected_presence = field.get("proto3Optional", False) or (
+                    name == "tinkle.v1.Dialog" and field_name == "read_outbox_max_id")
+                self.assertEqual(expected_presence,
+                                  current.get("proto3Optional", False), label)
 
     def test_constructor_inventory(self):
         self.assertEqual({

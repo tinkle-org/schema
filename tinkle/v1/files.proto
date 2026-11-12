@@ -19,21 +19,24 @@
 //     indistinguishable from unknown sessions.
 //
 // Lifecycle of a media attachment:
-//   1. Upload the bytes: BeginUpload, then UploadPart for every part, then
+//   1. Process the main bytes for the explicit media purpose, then upload:
+//      BeginUpload, then UploadPart for every part, then
 //      CompleteUpload — yielding a canonical file_id.
 //   2. Construct the typed attachment (PhotoSource, DocumentSource,
 //      VideoSource, AudioSource, VoiceSource, StickerSource) referencing
 //      that file_id, with client-declared metadata and variant references.
 //   3. Send or edit the application object (message, profile photo,
-//      sticker, ...) that carries the attachment.
+//      sticker, ...) that carries the attachment. Servers validate the typed
+//      media and generate required lower-pixel thumbnails before publishing the
+//      owning object, as specified by MediaValidation. Raw documents stay raw.
 //
 // BeginUpload deliberately carries no media-specific metadata: attachment
 // semantics belong to the *Source types, and FileInfo stays limited to
 // immutable storage facts. Everything clients declare — MIME types, file
-// names, dimensions, durations, codecs, encryption flags — is a
-// non-authoritative claim: the server verifies it where it can inspect
-// the bytes, and cannot verify anything for encrypted files. Decryption
-// keys and confidential metadata travel outside this contract.
+// names, dimensions, durations and codecs — is a non-authoritative claim.
+// Typed authoring measures physical facts from the bytes; file names and MIME
+// declarations do not select a media purpose. File-level encryption is not
+// supported by this contract; it exposes no encryption options or key material.
 //
 // Authorization is never derived from content: this contract exposes no
 // global existence oracle for content digests, so content addressing (if
@@ -158,8 +161,7 @@ service FilesService {
   // completed, immutable files are downloadable; there is no way to read
   // an active session's bytes. Offsets are byte-oriented, not
   // part-oriented, which supports resumable downloads and video seeking.
-  // For encrypted files, size, offsets, data, and digests all describe the
-  // stored ciphertext. Every download passes access checks, and the
+  // Every download passes access checks, and the
   // maximum requestable range is discoverable through
   // GetFileInfoResponse.max_download_part_bytes when advertised.
   rpc DownloadPart(DownloadPartRequest) returns (DownloadPartResponse);
@@ -188,6 +190,9 @@ enum UploadStatus {
 // must be known upfront so the server can derive the part count and verify
 // completion exactly.
 message BeginUploadRequest {
+  reserved 6;
+  reserved "encrypted";
+
   // Client-generated idempotency key, scoped to the authenticated
   // principal. Two BeginUpload calls with the same key and identical
   // parameters return the same session; differing parameters are rejected.
@@ -200,19 +205,13 @@ message BeginUploadRequest {
   // Client-declared MIME type; informational and not verified.
   optional string mime_type = 4;
   // Optional client-computed SHA-256 digest of the exact stored bytes;
-  // exactly 32 bytes when present. For encrypted uploads this covers the
-  // ciphertext the server will store. The declaration is fixed for the
+  // exactly 32 bytes when present. The declaration is fixed for the
   // session's lifetime and completion verifies it, so an unsatisfiable
   // declaration can never be corrected — the session must be aborted and
   // re-created. For zero-byte uploads the server validates the
   // declaration before completing: a digest other than the SHA-256 of
   // the empty byte sequence is rejected at creation.
   optional bytes sha256 = 5;
-  // Declares that the stored bytes are client-side encrypted. This is
-  // informational: the server does not verify the encryption format, and
-  // decryption keys are distributed through Tinkle's E2EE messaging
-  // system, not through this contract.
-  bool encrypted = 6;
 }
 
 // BeginUploadResponse carries either the negotiated configuration of a new
@@ -411,6 +410,9 @@ message AbortUploadResponse {
 // client declarations. Media-specific attributes are kept out of this
 // message and live with the media contracts.
 message FileInfo {
+  reserved 6;
+  reserved "encrypted";
+
   // Canonical, stable identifier of the committed file. Globally unique,
   // opaque, and never reassigned; its numeric value exposes nothing about
   // storage internals, and authorization never relies on possessing it.
@@ -418,15 +420,12 @@ message FileInfo {
   // Exact size of the stored bytes. Zero serializes as absent.
   int64 size_bytes = 2;
   // Authoritative SHA-256 digest of the stored bytes, always exactly 32
-  // bytes. For encrypted files this covers the ciphertext.
+  // bytes.
   bytes sha256 = 3;
   // Declared content type; client-provided and not verified.
   optional string mime_type = 4;
   // Original file name, if declared; client-provided and not verified.
   optional string file_name = 5;
-  // Whether the stored bytes are client-side encrypted, as declared at
-  // upload time. The server does not verify the encryption format.
-  bool encrypted = 6;
   // When the file was committed.
   google.protobuf.Timestamp created_at = 7;
 }
