@@ -11,6 +11,7 @@ syntax = "proto3";
 package tinkle.v1;
 
 import "google/protobuf/timestamp.proto";
+import "tinkle/v1/account.proto";
 import "tinkle/v1/common.proto";
 import "tinkle/v1/entities.proto";
 import "tinkle/v1/media.proto";
@@ -27,12 +28,12 @@ service MessagesService {
   rpc GetHistory(GetHistoryRequest) returns (GetHistoryResponse);
   // GetMessages fetches specific messages by ID in one conversation.
   rpc GetMessages(GetMessagesRequest) returns (GetMessagesResponse);
-  // GetTargetChanges lists authorized retained body, metadata and removal changes
+  // ListMessageChanges lists authorized retained body, metadata and removal changes
   // of one conversation after a caller-supplied mutation acceptance position.
-  rpc GetTargetChanges(GetTargetChangesRequest) returns (GetTargetChangesResponse);
-  // ReadHistory marks messages as read up to a specified message_id.
-  rpc ReadHistory(ReadHistoryRequest) returns (ReadHistoryResponse);
-  // DeleteHistory deletes conversation history with optional bilateral revocation.
+  rpc ListMessageChanges(ListMessageChangesRequest) returns (ListMessageChangesResponse);
+  // MarkHistoryRead marks messages as read up to a specified message_id.
+  rpc MarkHistoryRead(MarkHistoryReadRequest) returns (MarkHistoryReadResponse);
+  // DeleteHistory deletes history for the caller, optionally revoking the sender's own messages.
   rpc DeleteHistory(DeleteHistoryRequest) returns (DeleteHistoryResponse);
   // DeleteMessages deletes specific messages by ID.
   rpc DeleteMessages(DeleteMessagesRequest) returns (DeleteMessagesResponse);
@@ -45,12 +46,12 @@ service MessagesService {
   rpc EditChatTitle(EditChatTitleRequest) returns (EditChatTitleResponse);
   // EditChatPhoto updates or removes a chat's photo.
   rpc EditChatPhoto(EditChatPhotoRequest) returns (EditChatPhotoResponse);
-  // EditChatAbout updates a chat's description.
-  rpc EditChatAbout(EditChatAboutRequest) returns (EditChatAboutResponse);
+  // UpdateChatDescription updates a chat's description.
+  rpc UpdateChatDescription(UpdateChatDescriptionRequest) returns (UpdateChatDescriptionResponse);
   // GetChats returns basic info for multiple chats by ID.
   rpc GetChats(GetChatsRequest) returns (GetChatsResponse);
-  // GetChatComplete returns full chat details including participants, admins, and invite links.
-  rpc GetChatComplete(GetChatCompleteRequest) returns (GetChatCompleteResponse);
+  // GetChatDetails returns full chat details including participants, admins, and invite links.
+  rpc GetChatDetails(GetChatDetailsRequest) returns (GetChatDetailsResponse);
 
   // ---- Participants & Scopes (4 RPCs) ----
 
@@ -63,14 +64,18 @@ service MessagesService {
   // EditChatRestrictedScopes applies restricted permissions to a user in a chat.
   rpc EditChatRestrictedScopes(EditChatRestrictedScopesRequest) returns (EditChatRestrictedScopesResponse);
 
-  // ---- TTL, Pinned, Scheduled (3 RPCs) ----
+  // ---- TTL, Pinned, Scheduled (5 RPCs) ----
 
   // SetHistoryTTL configures auto-delete timer for a conversation.
   rpc SetHistoryTTL(SetHistoryTTLRequest) returns (SetHistoryTTLResponse);
-  // UpdatePinnedMessage pins or unpins a message in a conversation.
-  rpc UpdatePinnedMessage(UpdatePinnedMessageRequest) returns (UpdatePinnedMessageResponse);
+  // SetMessagePin pins or unpins a message in the selected shared or personal scope.
+  rpc SetMessagePin(SetMessagePinRequest) returns (SetMessagePinResponse);
   // UnpinAllMessages unpins all messages in a conversation or thread.
   rpc UnpinAllMessages(UnpinAllMessagesRequest) returns (UnpinAllMessagesResponse);
+  // GetScheduledMessages explicitly resolves owned jobs, not a discoverable job list.
+  rpc GetScheduledMessages(GetScheduledMessagesRequest) returns (GetScheduledMessagesResponse);
+  // CancelScheduledMessages cancels pending owned jobs; any album item selects its whole group.
+  rpc CancelScheduledMessages(CancelScheduledMessagesRequest) returns (CancelScheduledMessagesResponse);
 
   // ---- Sending & Editing (6 RPCs) ----
 
@@ -78,28 +83,30 @@ service MessagesService {
   rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
   // SendMedia sends a media message (photo, document, geo, contact, poll).
   rpc SendMedia(SendMediaRequest) returns (SendMediaResponse);
-  // SendMultiMedia sends an album of multiple media items.
-  rpc SendMultiMedia(SendMultiMediaRequest) returns (SendMultiMediaResponse);
+  // SendAlbum sends an album of multiple media items.
+  rpc SendAlbum(SendAlbumRequest) returns (SendAlbumResponse);
   // EditMessage edits an existing message's content or media.
   rpc EditMessage(EditMessageRequest) returns (EditMessageResponse);
   // SetTyping broadcasts a typing indicator to conversation participants.
   rpc SetTyping(SetTypingRequest) returns (SetTypingResponse);
-  // SendStartBot starts a bot interaction with a start parameter.
-  rpc SendStartBot(SendStartBotRequest) returns (SendStartBotResponse);
+  // StartBot starts a bot interaction with a start parameter.
+  rpc StartBot(StartBotRequest) returns (StartBotResponse);
 
   // ---- Search (1 RPC) ----
 
   // Search searches messages within a conversation or globally.
   rpc Search(SearchRequest) returns (SearchResponse);
 
-  // ---- Reactions (7 RPCs) ----
+  // ---- Reactions (8 RPCs) ----
 
-  // GetMessagesReactions returns reaction summaries for multiple messages.
-  rpc GetMessagesReactions(GetMessagesReactionsRequest) returns (GetMessagesReactionsResponse);
-  // GetMessageReactionsList returns individual reactors for a message.
-  rpc GetMessageReactionsList(GetMessageReactionsListRequest) returns (GetMessageReactionsListResponse);
+  // BatchGetMessageReactions returns reaction summaries for multiple messages.
+  rpc BatchGetMessageReactions(BatchGetMessageReactionsRequest) returns (BatchGetMessageReactionsResponse);
+  // ListMessageReactions returns individual reactors for a message.
+  rpc ListMessageReactions(ListMessageReactionsRequest) returns (ListMessageReactionsResponse);
   // SendReaction adds or removes reactions on a message.
   rpc SendReaction(SendReactionRequest) returns (SendReactionResponse);
+  // GetRecentReactions reads the caller's bounded exact-version reaction collection.
+  rpc GetRecentReactions(GetRecentReactionsRequest) returns (GetRecentReactionsResponse);
   // GetUnreadMentions returns messages mentioning the authenticated user.
   rpc GetUnreadMentions(GetUnreadMentionsRequest) returns (GetUnreadMentionsResponse);
   // ReadMentions marks all mentions in a conversation as read.
@@ -109,7 +116,7 @@ service MessagesService {
   // ReadReactions marks all reactions in a conversation as read.
   rpc ReadReactions(ReadReactionsRequest) returns (ReadReactionsResponse);
 
-  // ---- Polls & Votes (3 RPCs) ----
+  // ---- Polls & Votes (4 RPCs) ----
 
   // SendVote records or retracts a vote on a poll.
   rpc SendVote(SendVoteRequest) returns (SendVoteResponse);
@@ -117,13 +124,15 @@ service MessagesService {
   rpc GetPollVotes(GetPollVotesRequest) returns (GetPollVotesResponse);
   // GetPollResults returns current poll results.
   rpc GetPollResults(GetPollResultsRequest) returns (GetPollResultsResponse);
+  // ClosePoll permanently closes the caller's own poll, returning its authorized projection.
+  rpc ClosePoll(ClosePollRequest) returns (ClosePollResponse);
 
   // ---- Threaded (2 RPCs) ----
 
   // ReadThread marks thread messages as read up to a specified ID.
   rpc ReadThread(ReadThreadRequest) returns (ReadThreadResponse);
-  // GetThreadMessage returns thread replies with pagination.
-  rpc GetThreadMessage(GetThreadMessageRequest) returns (GetThreadMessageResponse);
+  // ListThreadMessages returns thread replies with pagination.
+  rpc ListThreadMessages(ListThreadMessagesRequest) returns (ListThreadMessagesResponse);
 }
 
 // =============================================================================
@@ -136,6 +145,98 @@ enum ChatType {
   CHAT_TYPE_GROUP = 1;
   CHAT_TYPE_CHANNEL = 2;
   CHAT_TYPE_BROADCAST = 3;
+}
+
+// ScheduleState describes durable job ownership, independently of message visibility.
+enum ScheduleState {
+  // No authoritative job state supplied.
+  SCHEDULE_STATE_UNSPECIFIED = 0;
+  // Enqueued and still cancellable; not an accepted history entry.
+  SCHEDULE_STATE_PENDING = 1;
+  // Dispatch owns the job; cancellation cannot promise rollback.
+  SCHEDULE_STATE_PROCESSING = 2;
+  // Dispatch completed; this does not prove peer receipt or current body visibility.
+  SCHEDULE_STATE_DELIVERED = 3;
+  // Durable cancellation fenced dispatch before acceptance.
+  SCHEDULE_STATE_CANCELED = 4;
+  // Dispatch was durably fenced without delivery, not merely timed out.
+  SCHEDULE_STATE_FAILED = 5;
+}
+
+// ScheduledMessage is an owned job descriptor, never by itself accepted history.
+// Job status is not acceptance proof for a history entry or a peer receipt.
+message ScheduledMessage {
+  // Frozen message identity, also retained through terminal states.
+  int64 message_id = 1;
+  // Original nonzero signed client retry key of this item.
+  int64 idempotency_key = 2;
+  // Authorized conversation containing this job.
+  Target target = 3;
+  // Current due time, including pending rescheduling.
+  google.protobuf.Timestamp scheduled_at = 4;
+  // Authoritative durable lifecycle state.
+  ScheduleState state = 5;
+  // Stable shared album identity when this job is an album item.
+  optional int64 album_id = 6;
+  // Optional currently authorized owned snapshot. Pending snapshots have no
+  // acceptance position. Delivered snapshots use current history visibility,
+  // never the frozen prepared body; processing/canceled/failed have no snapshot.
+  Message message = 7;
+}
+
+// GetScheduledMessagesRequest explicitly selects jobs in one conversation.
+// Only jobs owned by the authenticated actor are eligible. No implicit discovery:
+// an empty selector request is invalid, never a request to enumerate owned jobs.
+message GetScheduledMessagesRequest {
+  // Required conversation under current read authorization.
+  Target target = 1;
+  // Exactly one selector collection must be nonempty, with 1..100 distinct
+  // positive identities. Unknown, unowned and expired jobs are omitted.
+  repeated int64 message_ids = 2;
+  // Alternative 1..100 distinct nonzero signed retry keys, including album items.
+  repeated int64 idempotency_keys = 3;
+}
+
+// GetScheduledMessagesResponse preserves selector order, minus omitted jobs.
+message GetScheduledMessagesResponse {
+  // At most one owned item per explicit selector; albums are not expanded.
+  repeated ScheduledMessage messages = 1;
+}
+
+// CancelScheduledMessagesRequest selects owned jobs, never accepted history deletion.
+// Only jobs owned by the authenticated actor are eligible; selectors grant no access.
+message CancelScheduledMessagesRequest {
+  // Required conversation under current read authorization.
+  Target target = 1;
+  // 1..100 distinct positive identities. Any album item selects the whole group;
+  // repeated selections within the same group cause only one cancellation.
+  repeated int64 message_ids = 2;
+}
+
+// CancelScheduledMessagesResponse reports durable canceled states, not rollback
+// or a batch transaction. An error may follow partial effects; reconcile via lookup.
+message CancelScheduledMessagesResponse {
+  // Actual canceled items, including identical retries and expanded album items,
+  // in first-selected group order and manifest order within each album. Unknown,
+  // unowned, processing, delivered and failed jobs are omitted. At most 1000 items;
+  // no snapshots. Accepted history is never revoked or removed by this operation.
+  repeated ScheduledMessage messages = 1;
+}
+
+// ClosePollRequest identifies a currently visible sender-owned poll.
+message ClosePollRequest {
+  // Required conversation.
+  Target target = 1;
+  // Positive accepted poll identity.
+  int64 message_id = 2;
+}
+
+// ClosePollResponse preserves the existing caller-relative poll disclosure rules.
+// Correctness is hidden until the caller votes or the poll closes; use the same
+// caller-relative projection as GetPollResults, not a separate answer-key response.
+message ClosePollResponse {
+  // Current authorized closed poll, including only disclosed correctness.
+  Message message = 1;
 }
 
 // MessagesFilter filters search results by content type.
@@ -189,7 +290,14 @@ enum TypingAction {
   TYPING_ACTION_CANCEL = 10;
 }
 
-// ChatRestrictedScope describes actions that can be restricted for participants.
+// ChatRestrictedScope describes actions prohibited for participants when listed.
+// SEND_MESSAGE prohibits all sends; SEND_MEDIA prohibits all file-backed media.
+// The individual SEND_* categories remain independent: never collapse them to a
+// broad restriction when reading or writing a participant's policy. Classify by
+// the accepted source purpose, not a MIME declaration or file extension. Captions
+// on media follow that media's category, not SEND_TEXT; raw documents, including
+// images sent as documents, use SEND_DOCUMENT. Apply every relevant restriction
+// to composite content, and reject unknown values rather than dropping them.
 enum ChatRestrictedScope {
   CHAT_RESTRICTED_SCOPE_UNSPECIFIED = 0;
   CHAT_RESTRICTED_SCOPE_VIEW_MESSAGE = 1;
@@ -204,6 +312,28 @@ enum ChatRestrictedScope {
   CHAT_RESTRICTED_SCOPE_CHANGE_INFO = 10;
   CHAT_RESTRICTED_SCOPE_INVITE_USERS = 11;
   CHAT_RESTRICTED_SCOPE_PIN_MESSAGES = 12;
+  // Prohibit standalone text messages.
+  CHAT_RESTRICTED_SCOPE_SEND_TEXT = 13;
+  // Prohibit photo attachments, including explicitly typed image documents.
+  CHAT_RESTRICTED_SCOPE_SEND_PHOTO = 14;
+  // Prohibit video attachments, including round video notes.
+  CHAT_RESTRICTED_SCOPE_SEND_VIDEO = 15;
+  // Prohibit audio attachments other than voice messages.
+  CHAT_RESTRICTED_SCOPE_SEND_AUDIO = 16;
+  // Prohibit voice messages independently of other audio.
+  CHAT_RESTRICTED_SCOPE_SEND_VOICE = 17;
+  // Prohibit raw document attachments independently of typed media.
+  CHAT_RESTRICTED_SCOPE_SEND_DOCUMENT = 18;
+}
+
+// PinScope selects whose pin state is changed, not who may read the message.
+enum PinScope {
+  // Invalid when explicitly supplied; omission on SetMessagePin selects SHARED.
+  PIN_SCOPE_UNSPECIFIED = 0;
+  // Conversation-wide pin state, subject to the caller's pin permissions.
+  PIN_SCOPE_SHARED = 1;
+  // Private pin state of the authenticated caller; never changes shared state.
+  PIN_SCOPE_PERSONAL = 2;
 }
 
 // TargetChangeKind describes how a single message changed in one conversation.
@@ -215,7 +345,7 @@ enum TargetChangeKind {
   TARGET_CHANGE_KIND_EDITED = 1;
   // The message was removed for this viewer; visibility for other participants is unchanged.
   TARGET_CHANGE_KIND_DELETED = 2;
-  // The message was removed for every participant (bilateral revocation).
+  // The message was removed for every participant.
   TARGET_CHANGE_KIND_REVOKED = 3;
   // Pin state changed; hydrate the authorized current body, not a user edit.
   TARGET_CHANGE_KIND_PIN = 4;
@@ -250,10 +380,28 @@ message Dialog {
   int64 top_message = 2;
   int32 unread_count = 3;
   int64 read_inbox_max_id = 4;
-  int64 read_outbox_max_id = 5;
+  // DM-only outgoing message reference covered by the counterparty read watermark.
+  // Absent when unknown or unsupported (including rooms); zero is a known empty
+  // outgoing acknowledgement. This is a message ID, never an ordering position.
+  optional int64 read_outbox_max_id = 5;
   bool pinned = 6;
   int64 space_id = 7;
   DraftMessage draft = 8;
+  // Exact owned dialog generation for conditional draft clearing. Present only
+  // in the authenticated owner's projection, including when draft content is absent.
+  optional int64 draft_dialog_id = 9;
+  // Source revision paired with draft_dialog_id, including zero before the first
+  // draft. An initialized empty source reports both tokens with revision zero;
+  // absent tokens mean unknown, not permission to clear. Persist and resend this
+  // original pair; never infer it from dates or another principal's dialog.
+  optional int64 draft_revision = 10;
+  // Effective owner-resolved preferences for this dialog's exact account scope
+  // and supported target override. Absent when no account setting exists.
+  NotificationSetting notification_settings = 11;
+  // Exact current caller-owned unread mentions; absent means unknown, not zero.
+  optional int64 unread_mention_count = 12;
+  // Exact current sender-owned unread reactions; absent means unknown, not zero.
+  optional int64 unread_reaction_count = 13;
 }
 
 // DraftMessage represents an unsent draft in a dialog.
@@ -261,7 +409,8 @@ message DraftMessage {
   string message = 1;
   // Rich-text spans in message, using the shared UTF-16 entity rules.
   repeated Entity entities = 2;
-  int64 reply_to_msg_id = 3;
+  // Message being replied to in this draft's conversation.
+  int64 reply_to_message_id = 3;
   google.protobuf.Timestamp date = 4;
 }
 
@@ -281,6 +430,7 @@ message Message {
   google.protobuf.Timestamp edit_date = 9;
   MessageReactions reactions = 10;
   MessageReplies replies = 11;
+  // Shared conversation pin state, independent of this caller's personal pin.
   bool pinned = 12;
   int32 ttl_period = 13;
   // accept_seq is the server-assigned acceptance position of this message within
@@ -289,12 +439,12 @@ message Message {
   // for messages in that conversation; they are not globally comparable across
   // conversations and are not a replay cursor. The token is assigned once on
   // acceptance and stays stable across later body/metadata changes; mutations
-  // have separate event positions disclosed under GetTargetChanges. This token
+  // have separate event positions disclosed under ListMessageChanges. This token
   // never ranks body freshness. Absent on pending scheduled messages; an absent token
   // never supplies an ordering or deduplication vote.
   optional int64 accept_seq = 14;
   // Positive, opaque album identifier shared by every item of one successful
-  // SendMultiMedia call; scoped to target, stable across edits and delivery.
+  // SendAlbum call; scoped to target, stable across edits and delivery.
   // Absent for a standalone message. Album items are accepted atomically, in
   // request order; an invalid item rejects the entire album.
   optional int64 album_id = 15;
@@ -315,13 +465,23 @@ message Message {
   // changes; retain the cached copy and reconcile rather than inventing a date.
   // Absence means unknown, never zero. A revision is not a cursor or receipt.
   optional int64 body_revision = 18;
+  // Whether link preview generation is suppressed. Absent means unreported,
+  // not false. A reported value is part of the complete message body.
+  optional bool suppress_link_preview = 19;
+  // Private pin state for this authenticated caller only; false means unpinned,
+  // absent means unreported. Never disclose another user's personal pins or copy
+  // this state across principals. Changes use viewer-only ACK markers/hints and
+  // caller-relative body revisions; they do not change shared pinned or edit_date.
+  optional bool personal_pin = 20;
 }
 
 // MessageReplyHeader contains reply context for a message.
 message MessageReplyHeader {
-  int64 reply_to_msg_id = 1;
+  // Message being replied to in the source conversation.
+  int64 reply_to_message_id = 1;
   int64 reply_to_peer_id = 2;
-  int64 reply_to_top_id = 3;
+  // Thread root in the source conversation; zero when outside a thread.
+  int64 thread_root_id = 3;
   string quote_text = 4;
   // Rich-text spans in quote_text, independent of source-message offsets.
   repeated Entity quote_entities = 5;
@@ -347,14 +507,25 @@ message Chat {
   int64 owner_id = 8;
 }
 
-// ChatPhoto represents a chat's photo.
+// ChatPhoto describes the current chat photo and its immutable completed files.
+// A nonempty photo reports all three file/metadata/variant fields. File reads use
+// ChatPhotoReference with this chat and photo_id, rechecking visibility and exact
+// membership on each call. Replacement/removal invalidates that reference.
 message ChatPhoto {
+  // Positive photo identity, not a file ID; zero denotes no current photo.
   int64 photo_id = 1;
+  // Whether the current photo includes video; an animated image is not video.
   bool has_video = 2;
+  // Canonical main image file; zero only when there is no current photo.
+  int64 file_id = 3;
+  // Server-measured image facts and IMAGE version 1 validation result.
+  ImageMetadata metadata = 4;
+  // Completed server-published variants, ready with the main photo.
+  repeated MediaVariant variants = 5;
 }
 
-// ChatComplete contains full chat details.
-message ChatComplete {
+// ChatDetails contains full chat details.
+message ChatDetails {
   Chat chat = 1;
   repeated Participant participants = 2;
   repeated Participant admins = 3;
@@ -549,7 +720,10 @@ message MissingInvitee {
 // definitions: a source describes what an operation should use, and is
 // never a server response object. File-backed sources reference an
 // uploaded, completed Tinkle file — never a local path, URL, or unfinished
-// upload — and may carry client-asserted metadata and variant references.
+// upload. Clients process and upload the main file for the explicit source
+// purpose; servers validate bytes and generate required thumbnails before
+// publication as specified by MediaValidation. Metadata and variant references
+// supplied by clients are untrusted inputs, never validation authority.
 message MediaSource {
   oneof media {
     PhotoSource photo = 1;
@@ -564,61 +738,62 @@ message MediaSource {
   }
 }
 
-// PhotoSource defines a photo attachment built from a completed file.
+// PhotoSource defines a photo attachment satisfying IMAGE version 1. Chat photos
+// use the same profile. Profile photos use ProfilePhotoSource's tighter bounds.
 message PhotoSource {
   // Canonical file ID of an uploaded, completed image file.
   int64 file_id = 1;
-  // Client-asserted image metadata. Servers may verify it against the
-  // bytes when the file is not encrypted; otherwise it is a claim.
+  // Optional claims; if supplied, must match server-measured bytes and IMAGE
+  // version 1. Omission does not bypass validation or thumbnail generation.
   optional ImageMetadata metadata = 2;
-  // Client-supplied variant references (thumbnails/previews) uploaded
-  // through FilesService. Referenced files must be accessible to the
-  // caller and are access-checked like any other file reference.
+  // Optional completed caller-owned variant inputs under MediaVariantSource
+  // rules; required published thumbnails are generated by the server.
   repeated MediaVariantSource variants = 3;
 }
 
 // DocumentSource defines a document attachment built from a completed file.
-// Typed semantics are supplied as composable MediaAttribute entries, at
-// most one attribute of each kind; duplicated or conflicting kinds are
-// rejected. The typed sources are equivalent sugar: a VideoSource is a
-// DocumentSource with a video attribute, and so on.
+// With no attributes this is a raw document: retain the bytes unchanged, without
+// normalization, automatic type selection by sniffing, or required thumbnails.
+// Explicit attributes select typed media purposes and their validation policies:
+// image uses IMAGE, video VIDEO, audio AUDIO or VOICE according to voice_message,
+// sticker STRICT_LOSSLESS. At most one of each kind; duplicate or conflicting
+// kinds are rejected. The typed sources select the same policies. A file that
+// looks like an image remains a raw document unless a typed purpose is selected.
 message DocumentSource {
   // Canonical file ID of an uploaded, completed file.
   int64 file_id = 1;
-  // Composable typed attributes describing the document's semantics.
+  // Explicit typed purpose claims; empty selects raw-document handling.
   repeated MediaAttribute attributes = 2;
-  // Client-supplied variant references uploaded through FilesService.
+  // Optional variant inputs; raw-document thumbnails are optional, never inferred.
   repeated MediaVariantSource variants = 3;
 }
 
-// VideoSource defines a video attachment built from a completed file.
+// VideoSource defines a video attachment satisfying VIDEO version 1.
 message VideoSource {
   // Canonical file ID of an uploaded, completed video file.
   int64 file_id = 1;
-  // Client-asserted video metadata; a claim, verified only when the
-  // server can inspect the bytes.
+  // Optional claims, verified against measured bytes and VIDEO version 1.
   optional VideoMetadata metadata = 2;
-  // Client-supplied cover/thumbnail variant references.
+  // Optional variant inputs; a required video thumbnail is server-generated.
   repeated MediaVariantSource variants = 3;
 }
 
-// AudioSource defines an audio attachment built from a completed file.
+// AudioSource defines an audio attachment satisfying AUDIO version 1.
 message AudioSource {
   // Canonical file ID of an uploaded, completed audio file.
   int64 file_id = 1;
-  // Client-asserted audio metadata; a claim, verified only when the
-  // server can inspect the bytes.
+  // Optional claims, verified against measured bytes; voice_message must be false.
   optional AudioMetadata metadata = 2;
-  // Client-supplied cover variant references.
+  // Optional completed cover inputs; audio does not require a thumbnail.
   repeated MediaVariantSource variants = 3;
 }
 
 // VoiceSource defines a voice message built from a completed file.
-// Equivalent to a DocumentSource with a voice audio attribute.
+// Selects VOICE version 1, equivalent to an explicit voice audio attribute.
 message VoiceSource {
   // Canonical file ID of an uploaded, completed voice recording.
   int64 file_id = 1;
-  // Duration of the recording in milliseconds; must be greater than zero.
+  // Positive duration claim in milliseconds; must match the measured recording.
   uint64 duration_ms = 2;
   // Client-encoded waveform for inline voice rendering; opaque to the
   // server. Unset when the client did not generate one; an explicitly set
@@ -633,13 +808,17 @@ message VoiceSource {
 // assets here. A message-context read grant alone cannot authorize a new send.
 // Accepted messages retain these exact files independently of pack withdrawal,
 // but message visibility is rechecked on each later read.
+// Direct file sources use STRICT_LOSSLESS version 1 and StickerAssetSource's
+// STICKER bounds, including required metadata. An asset reference reuses its
+// validated generated thumbnail rather than replacing its exact files.
 message StickerSource {
   // Canonical file ID of an uploaded, completed sticker image.
   int64 file_id = 1;
-  // Client-asserted sticker metadata; required and exactly matching the stored
-  // asset metadata when asset_id is present.
+  // Required STRICT_LOSSLESS declaration and physical claims; when asset_id is
+  // present these must exactly match that stored version's metadata.
   optional StickerMetadata metadata = 2;
-  // Client-supplied thumbnail variant references.
+  // Optional completed thumbnail inputs; STRICT_LOSSLESS bounds apply and the
+  // required published thumbnail is server-generated.
   repeated MediaVariantSource variants = 3;
   // Positive StickerView.id when sending an authored asset, not a file ID.
   // Omit only when constructing a sticker directly from caller-owned files.
@@ -682,15 +861,16 @@ message PollSource {
 
 // ReplyInput represents reply context for send operations.
 message ReplyInput {
-  int64 reply_to_msg_id = 1;
+  // Positive visible message ID being replied to in the send target.
+  int64 reply_to_message_id = 1;
   string quote_text = 2;
   // Rich-text spans in quote_text, using the shared UTF-16 entity rules.
   repeated Entity quote_entities = 3;
   // Explicit thread root in the send target. Positive when present; the
-  // reply_to_msg_id must be that root or a reply belonging to it, and both
+  // reply_to_message_id must be that root or a reply belonging to it, and both
   // must be visible to the caller. Omit for an ordinary reply outside a thread.
   // Never infer a root from a quote or accept a root from another conversation.
-  optional int64 reply_to_top_id = 4;
+  optional int64 thread_root_id = 4;
 }
 
 // ChatPhotoSource selects the photo for chat photo operations: it either
@@ -707,13 +887,14 @@ message ChatPhotoSource {
   }
 }
 
-// SingleMediaSource represents a single item in a multi-media album.
-message SingleMediaSource {
+// AlbumItem defines one media item and its caption in an album.
+message AlbumItem {
   MediaSource media = 1;
   string message = 2;
   // Rich-text spans in this item's message caption.
   repeated Entity entities = 3;
-  int64 random_id = 4;
+  // Nonzero client-generated deduplication key, scoped to principal and target.
+  int64 idempotency_key = 4;
 }
 
 // =============================================================================
@@ -832,19 +1013,19 @@ message GetMessagesRequest {
 // compare body_revision when both copies report it. Only if either revision is
 // absent, fall back to edit_date as described on Message.body_revision; metadata
 // changes do not create user edit dates. Learn retained body/metadata/removal
-// events through GetTargetChanges, not by diffing fetched bodies.
+// events through ListMessageChanges, not by diffing fetched bodies.
 message GetMessagesResponse {
   repeated Message messages = 1;
   repeated User users = 2;
   repeated Chat chats = 3;
 }
 
-// GetTargetChangesRequest lists retained conversation mutations strictly after
+// ListMessageChangesRequest lists retained conversation mutations strictly after
 // one acceptance position. The journal keeps mutations at their original
 // acceptance order; use this to reconcile body/metadata changes and removals
 // without a durable update feed. Positions order mutations across messages in
 // this conversation, not versions or identities of an individual message.
-message GetTargetChangesRequest {
+message ListMessageChangesRequest {
   // target identifies the conversation whose changes are listed (required).
   Target target = 1;
   // after_accept_seq is the exclusive lower bound on the conversation's
@@ -857,8 +1038,8 @@ message GetTargetChangesRequest {
   int32 limit = 3;
 }
 
-// GetTargetChangesResponse carries one page of retained conversation mutations.
-message GetTargetChangesResponse {
+// ListMessageChangesResponse carries one page of retained conversation mutations.
+message ListMessageChangesResponse {
   // Authorized markers ordered ascending by mutation accept_seq. EDITED, PIN,
   // REACTION, POLL and viewer-only ACK hydrate the currently visible body;
   // DELETED/REVOKED never disclose a removed body. Recheck current authorization
@@ -893,7 +1074,8 @@ message TargetChange {
   int64 message_id = 1;
   // Body/metadata change or removal; ACK is disclosed only to its own viewer.
   TargetChangeKind kind = 2;
-  // Authorized hydrated current body for EDITED, PIN, REACTION, POLL or ACK;
+  // Authorized hydrated current body for EDITED, PIN, REACTION, POLL or ACK,
+  // unless body_invalidated explicitly reports authorized identity-only invalidation;
   // never a body for DELETED/REVOKED. Recheck current visibility before hydration.
   // Its body_revision may be newer than this marker's message_revision; do not
   // replace it with the event revision. Its accept_seq stays the message's own
@@ -911,12 +1093,22 @@ message TargetChange {
   // be equal or newer, never older. Removal markers can report a revision without
   // disclosing a body. Do not label a hydrated newer body with this event revision.
   optional int64 message_revision = 5;
+  // Source-authorized canonical identity (caller, request target, message_id)
+  // for a nonterminal change whose current body is withheld. Requires positive
+  // message_id/message_revision, message absent and a nonterminal kind, never
+  // UNSPECIFIED, DELETED or REVOKED. Retain a nonterminal revision floor and purge
+  // cached bodies and file references at or below that revision. Reject stale or
+  // unknown-revision held responses; a fresh currently authorized source body at
+  // the same or newer revision may hydrate. This is not a viewer deletion and
+  // not permission proof. An absent message without true body_invalidated does
+  // not establish invalidation or removal.
+  bool body_invalidated = 6;
 }
 
 // MessageChanged is a typed notification payload, not a transport envelope,
 // journal cursor, delivery receipt or authoritative body/removal record. Runtime
 // bindings own routing and delivery. Hints may duplicate, coalesce, arrive late or
-// be missed; reconcile through authorized fetches/GetTargetChanges, including on
+// be missed; reconcile through authorized fetches/ListMessageChanges, including on
 // reconnect without a hint. Recheck recipient visibility at delivery. ACK hints
 // are private to the viewer whose acknowledgement metadata changed, never fanout
 // to other conversation participants. A hint grants no access or proof of receipt.
@@ -930,6 +1122,33 @@ message MessageChanged {
   int64 body_revision = 3;
   // Disclosed body/metadata/removal kind; never UNSPECIFIED for a valid hint.
   TargetChangeKind change_kind = 4;
+  // Optional expiring animation on a REACTION hint; absence requests no effect.
+  // Deduplicate actor_id/operation_id and discard after expiry, independently
+  // of reconciling the current reaction body.
+  ReactionEffect reaction_effect = 5;
+  // A non-authoritative hint of nonterminal body withholding for the source's
+  // canonical identity (caller, target, message_id). Reconcile with the current source
+  // before applying an authoritative invalidation or revision floor; this hint is
+  // not permission proof and does not establish a viewer deletion. Requires a
+  // positive body_revision and nonterminal change_kind; no reaction_effect or
+  // body content accompanies it. Only current-source authorization permits hydration.
+  bool body_invalidated = 6;
+}
+
+// ReactionEffect is presentation metadata, never a message or asset access grant.
+// Recheck current recipient visibility before delivery; clients discard expired
+// effects. Never replay presentation from body hydration or durable change markers.
+// Render only source-validated metadata: positive authenticated actor_id, canonical
+// operation UUID and a finite unexpired deadline. Invalid metadata requests no effect.
+message ReactionEffect {
+  // Canonical caller-scoped UUID; never animate this actor_id/operation_id twice.
+  string operation_id = 1;
+  // Authenticated original reacting account.
+  int64 actor_id = 2;
+  // Original fixed deadline, never extended by delivery or reconnect.
+  google.protobuf.Timestamp expires_at = 3;
+  // Exact Unicode/custom-version choices, at most eight.
+  repeated Reaction reactions = 4;
 }
 
 // TypingChanged is an ephemeral typed notification payload, independent of its
@@ -948,44 +1167,87 @@ message TypingChanged {
   // deadline without needing a cancellation hint. CANCEL clears it immediately.
   google.protobuf.Timestamp expires_at = 4;
   // Positive thread root when activity is thread-scoped; omit for conversation scope.
-  optional int64 top_msg_id = 5;
+  optional int64 thread_root_id = 5;
 }
 
-// ReadHistoryRequest marks messages as read in a conversation.
-message ReadHistoryRequest {
+// MarkHistoryReadRequest marks messages as read in a conversation.
+message MarkHistoryReadRequest {
   Target target = 1;
   int64 max_id = 2;
 }
 
-// ReadHistoryResponse confirms the read state update.
-message ReadHistoryResponse {
+// MarkHistoryReadResponse confirms the read state update.
+message MarkHistoryReadResponse {
   bool success = 1;
 }
 
-// DeleteHistoryRequest specifies a conversation history range to delete.
+// DeleteHistoryRequest deletes a fixed range through a resumable operation.
+// The first accepted call freezes the eligible message set at its acceptance
+// horizon; later messages never enter it. Each call performs bounded work. Retry
+// the same operation_id and identical parameters to continue or recover the
+// outcome; concurrent retries serialize progress without duplicate effects.
+// Recheck current authorization before every effect. Timeout, cancellation or
+// failure is not rollback; recover using this same request, not a new operation.
+// Operation identity is bound to the caller, method and exact parameters,
+// including optional presence; conflicts fail without effect. A retained terminal
+// outcome is stable. An expired operation is rejected and never restarts under
+// the same ID; retention duration is server policy. No background job API is implied.
+// Recovery keeps the original filters and frozen source selection, never a new
+// selection reconstructed from later client caches or the peer's history.
 message DeleteHistoryRequest {
+  // Required visible conversation, never a global selection.
   Target target = 1;
+  // Inclusive upper message ID; zero selects the acceptance horizon's last ID.
   int64 max_id = 2;
+  // If true, revoke the sender's own messages for everyone; incoming messages
+  // are removed for the caller only. False/absence removes all selected messages
+  // for the caller only: the peer's history is unchanged. Never grants authority
+  // to revoke another sender's messages or modify the peer's read state.
   optional bool revoke = 3;
+  // Inclusive lower Unix-seconds bound on original message date, when present.
   optional int32 min_date = 4;
+  // Inclusive upper Unix-seconds bound; cannot precede min_date.
   optional int32 max_date = 5;
+  // Required client-generated UUID, persisted before the first call. Reuse only
+  // for this exact history selection; never reuse across principals.
+  string operation_id = 6;
 }
 
-// DeleteHistoryResponse reports the deletion offset.
+// DeleteHistoryResponse is one consistent operation-progress snapshot.
 message DeleteHistoryResponse {
+  // Whether this call was accepted successfully; not evidence of completion.
   bool success = 1;
+  // Informational remaining-work estimate, not a cursor or completion signal.
   int32 offset = 2;
+  // Exact request operation_id; stable across progress and recovery calls.
+  string operation_id = 3;
+  // Always reported: true only when every selected message has been processed.
+  // False means retry the identical request; absence is unknown, never complete.
+  optional bool completed = 4;
+  // Cumulative distinct selected messages processed, including already absent
+  // messages; monotonically nondecreasing, stable once completed. Not a percentage
+  // or a count of globally revoked messages. Discloses no hidden incoming history.
+  uint64 processed_count = 5;
 }
 
-// DeleteMessagesRequest specifies messages to delete.
+// DeleteMessagesRequest deletes specific messages independently, not atomically
+// as a batch. Each item is authorized separately; unknown, inaccessible or
+// ineligible IDs have no effect and do not prevent deletion of eligible items.
 message DeleteMessagesRequest {
+  // Required conversation containing every selected ID.
   Target target = 1;
+  // Message IDs to delete; each distinct eligible ID is counted at most once.
   repeated int64 message_ids = 2;
+  // True revokes only the caller's own messages for everyone; incoming messages
+  // are removed for the caller only. False/absence removes for the caller only.
   optional bool revoke = 3;
 }
 
-// DeleteMessagesResponse reports the deletion count.
+// DeleteMessagesResponse reports the result of independent item deletions.
 message DeleteMessagesResponse {
+  // Messages newly removed for the caller by this call. Unknown, inaccessible,
+  // ineligible and already removed IDs do not increase the count; no per-ID
+  // existence or failure details are disclosed.
   int32 deleted_count = 1;
 }
 
@@ -998,6 +1260,11 @@ message CreateChatRequest {
   string title = 1;
   repeated int64 user_ids = 2;
   optional int32 ttl_period = 3;
+  // Required when ttl_period > 0: a positive int64 retry key scoped to actor/method.
+  // Zero permits an unkeyed request only when ttl_period is absent or zero;
+  // negative keys are invalid. Retry uncertain completion with the original key
+  // and identical arguments. This is a numeric key, not a UUID string.
+  int64 operation_id = 4;
 }
 
 // CreateChatResponse is the response for CreateChat.
@@ -1022,6 +1289,10 @@ message EditChatTitleResponse {
 message EditChatPhotoRequest {
   int64 chat_id = 1;
   ChatPhotoSource photo = 2;
+  // Positive retry key scoped to the authenticated actor. Required for publishing
+  // a new photo; reuse with different input is rejected. Retry after a timeout
+  // with the same key: cancellation does not prove rollback.
+  int64 operation_id = 3;
 }
 
 // EditChatPhotoResponse confirms the photo update.
@@ -1029,14 +1300,15 @@ message EditChatPhotoResponse {
   bool success = 1;
 }
 
-// EditChatAboutRequest updates a chat's description.
-message EditChatAboutRequest {
+// UpdateChatDescriptionRequest updates a chat's description.
+message UpdateChatDescriptionRequest {
   int64 chat_id = 1;
-  string about = 2;
+  // New chat description; an empty string clears it.
+  string description = 2;
 }
 
-// EditChatAboutResponse confirms the about update.
-message EditChatAboutResponse {
+// UpdateChatDescriptionResponse confirms the description update.
+message UpdateChatDescriptionResponse {
   bool success = 1;
 }
 
@@ -1050,14 +1322,15 @@ message GetChatsResponse {
   repeated Chat chats = 1;
 }
 
-// GetChatCompleteRequest requests full details for a specific chat.
-message GetChatCompleteRequest {
+// GetChatDetailsRequest requests full details for a specific chat.
+message GetChatDetailsRequest {
   int64 chat_id = 1;
 }
 
-// GetChatCompleteResponse is the response for GetChatComplete.
-message GetChatCompleteResponse {
-  ChatComplete chat_complete = 1;
+// GetChatDetailsResponse is the response for GetChatDetails.
+message GetChatDetailsResponse {
+  // Complete details for the requested chat.
+  ChatDetails chat_details = 1;
 }
 
 // =============================================================================
@@ -1069,6 +1342,11 @@ message AddChatParticipantRequest {
   int64 chat_id = 1;
   int64 user_id = 2;
   int32 forward_limit = 3;
+  // Required when forward_limit > 0: a positive int64 retry key scoped to actor/method.
+  // Zero permits an unkeyed add only when forward_limit is zero; negative keys
+  // are invalid. A retry never rejoins a removed user. Retain the original numeric
+  // key and arguments on recovery; this is not a UUID string.
+  int64 operation_id = 4;
 }
 
 // AddChatParticipantResponse is the response for AddChatParticipant.
@@ -1128,24 +1406,33 @@ message SetHistoryTTLResponse {
   bool success = 1;
 }
 
-// UpdatePinnedMessageRequest pins or unpins a message in a conversation.
-message UpdatePinnedMessageRequest {
+// SetMessagePinRequest pins or unpins a visible message in one scope.
+// Shared changes require conversation pin permissions; personal changes affect
+// the authenticated caller only and require current message visibility. Personal
+// changes never notify other participants or change their pin state.
+message SetMessagePinRequest {
   Target target = 1;
   int64 message_id = 2;
+  // Suppress participant notification for a shared pin; personal pins never fan out.
   optional bool silent = 3;
+  // True unpins, false/absence pins in the selected scope.
   optional bool unpin = 4;
-  optional bool pm_oneside = 5;
+  // Selected pin state; absence selects SHARED. Reject explicit UNSPECIFIED and
+  // unknown values. PERSONAL changes only Message.personal_pin, SHARED only pinned.
+  optional PinScope pin_scope = 5;
 }
 
-// UpdatePinnedMessageResponse confirms the pin update.
-message UpdatePinnedMessageResponse {
+// SetMessagePinResponse confirms the pin update.
+message SetMessagePinResponse {
   bool success = 1;
 }
 
-// UnpinAllMessagesRequest unpins all messages in a conversation or thread.
+// UnpinAllMessagesRequest unpins shared pins in a conversation or thread;
+// personal pins are unaffected. Requires shared pin permissions.
 message UnpinAllMessagesRequest {
   Target target = 1;
-  optional int64 top_msg_id = 2;
+  // Optional positive thread root limiting the shared pins to remove.
+  optional int64 thread_root_id = 2;
 }
 
 // UnpinAllMessagesResponse reports the number of messages unpinned.
@@ -1161,15 +1448,25 @@ message UnpinAllMessagesResponse {
 message SendMessageRequest {
   Target target = 1;
   string message = 2;
-  int64 random_id = 3;
+  // Nonzero client-generated key scoped to principal and target; identical
+  // retained retries return the original message, conflicting content is rejected.
+  int64 idempotency_key = 3;
   optional ReplyInput reply_to = 4;
+  // Sender-selected silent notification preference, not a peer read acknowledgement.
   optional bool silent = 5;
-  optional bool no_forward = 6;
+  // Whether forwarding of the accepted message is restricted.
+  optional bool forwarding_restricted = 6;
+  // Clear only the authenticated sender's exact DM or room draft source pair
+  // below after accepted send or durable scheduling; never recapture it on retry.
   optional bool clear_draft = 7;
   // Rich-text spans in message, using the shared UTF-16 entity rules.
   repeated Entity entities = 8;
   // Future Unix seconds to queue delivery; omit for immediate acceptance.
   optional int32 schedule_date = 9;
+  // Exact dialog generation to clear when clear_draft=true. Retain on retries.
+  optional int64 clear_draft_dialog_id = 10;
+  // Exact draft revision in that generation, including zero; never a late clear.
+  optional int64 clear_draft_revision = 11;
 }
 
 // SendMessageResponse is the response for SendMessage.
@@ -1184,15 +1481,25 @@ message SendMediaRequest {
   Target target = 1;
   MediaSource media = 2;
   optional string message = 3;
-  int64 random_id = 4;
+  // Nonzero client-generated key scoped to principal and target; identical
+  // retained retries return the original message, conflicting content is rejected.
+  int64 idempotency_key = 4;
   optional ReplyInput reply_to = 5;
+  // Sender-selected silent notification preference, not a peer read acknowledgement.
   optional bool silent = 6;
-  optional bool no_forward = 7;
+  // Whether forwarding of the accepted message is restricted.
+  optional bool forwarding_restricted = 7;
+  // Clear only the authenticated sender's exact DM or room draft source pair
+  // below after accepted send or durable scheduling; never recapture it on retry.
   optional bool clear_draft = 8;
   // Rich-text spans in message, used as the media caption.
   repeated Entity entities = 9;
   // Future Unix seconds to queue delivery; omit for immediate acceptance.
   optional int32 schedule_date = 10;
+  // Exact dialog generation to clear when clear_draft=true. Retain on retries.
+  optional int64 clear_draft_dialog_id = 11;
+  // Exact draft revision in that generation, including zero; never a late clear.
+  optional int64 clear_draft_revision = 12;
 }
 
 // SendMediaResponse is the response for SendMedia.
@@ -1202,24 +1509,33 @@ message SendMediaResponse {
   repeated Chat chats = 3;
 }
 
-// SendMultiMediaRequest sends 2..10 photo/video/document items as one album.
-// Every random_id must be nonzero and distinct; retries of the exact same
-// principal/target/random_id tuple return the original items, not another album.
-// Conflicting content for a retained random_id is rejected. Polls, contacts,
+// SendAlbumRequest sends 2..10 photo/video/document items as one album.
+// Every idempotency_key must be nonzero and distinct; retries of the exact same
+// principal/target/idempotency_key tuple return the original items, not another album.
+// Conflicting content for a retained idempotency_key is rejected. Polls, contacts,
 // geo points, voice messages, and stickers are not album items.
-message SendMultiMediaRequest {
+message SendAlbumRequest {
   Target target = 1;
-  repeated SingleMediaSource multi_media = 2;
+  // Album items in acceptance order; validate all before atomic publication.
+  repeated AlbumItem items = 2;
   optional ReplyInput reply_to = 3;
+  // Sender-selected silent notification preference shared by all album items.
   optional bool silent = 4;
-  optional bool no_forward = 5;
+  // Whether forwarding of every accepted album item is restricted.
+  optional bool forwarding_restricted = 5;
+  // Clear only the authenticated sender's exact DM or room draft source pair
+  // below through one group obligation after acceptance or durable scheduling.
   optional bool clear_draft = 6;
   // Future Unix seconds shared by every item; omit for immediate acceptance.
   optional int32 schedule_date = 7;
+  // Exact dialog generation to clear when clear_draft=true. Retain on retries.
+  optional int64 clear_draft_dialog_id = 8;
+  // Exact draft revision in that generation, including zero; never a late clear.
+  optional int64 clear_draft_revision = 9;
 }
 
-// SendMultiMediaResponse is the response for SendMultiMedia.
-message SendMultiMediaResponse {
+// SendAlbumResponse is the response for SendAlbum.
+message SendAlbumResponse {
   repeated Message messages = 1;
   repeated User users = 2;
   repeated Chat chats = 3;
@@ -1233,7 +1549,9 @@ message EditMessageRequest {
   optional MediaSource media = 4;
   // Rich-text spans in message, including a replacement media caption.
   repeated Entity entities = 5;
-  optional bool no_webpage = 6;
+  // Present true suppresses link previews, false permits them; omission preserves
+  // existing state. Returned as Message.suppress_link_preview when reported.
+  optional bool suppress_link_preview = 6;
   // Future Unix seconds replacing a pending message's delivery date. Omission
   // preserves it; setting this on a delivered message is rejected.
   optional int32 schedule_date = 7;
@@ -1250,7 +1568,8 @@ message EditMessageResponse {
 message SetTypingRequest {
   Target target = 1;
   TypingAction action = 2;
-  optional int64 top_msg_id = 3;
+  // Positive thread root for thread-scoped activity; omit for conversation scope.
+  optional int64 thread_root_id = 3;
 }
 
 // SetTypingResponse acknowledges the typing indicator.
@@ -1258,16 +1577,17 @@ message SetTypingResponse {
   bool success = 1;
 }
 
-// SendStartBotRequest starts a bot interaction with a start parameter.
-message SendStartBotRequest {
+// StartBotRequest starts a bot interaction with a start parameter.
+message StartBotRequest {
   Target bot = 1;
   Target target = 2;
   string start_param = 3;
-  int64 random_id = 4;
+  // Nonzero deduplication key scoped to principal and target for this interaction.
+  int64 idempotency_key = 4;
 }
 
-// SendStartBotResponse is the response for SendStartBot.
-message SendStartBotResponse {
+// StartBotResponse is the response for StartBot.
+message StartBotResponse {
   Message message = 1;
   repeated User users = 2;
   repeated Chat chats = 3;
@@ -1280,7 +1600,7 @@ message SendStartBotResponse {
 // SearchRequest is the request for Search.
 message SearchRequest {
   // Omit to search all conversations currently visible to the caller. A present
-  // empty Target is invalid, never global. top_msg_id, min_id, max_id,
+  // empty Target is invalid, never global. thread_root_id, min_id, max_id,
   // offset_message_id and nonzero offset_id/add_offset require a target;
   // global pagination uses cursor only.
   Target target = 1;
@@ -1291,7 +1611,8 @@ message SearchRequest {
   // server index and local cache is not guaranteed.
   string query = 2;
   optional Target from_target = 3;
-  optional int64 top_msg_id = 4;
+  // Positive visible thread root restricting results within target.
+  optional int64 thread_root_id = 4;
   MessagesFilter filter = 5;
   int32 min_date = 6;
   int32 max_date = 7;
@@ -1309,6 +1630,8 @@ message SearchRequest {
   // rejected; restart without a cursor. Page size may change per page.
   // A continuation belongs to the selected backend, never a different source.
   // Global message IDs are not comparable: continue only with this cursor.
+  // Recovery preserves the selected source and original filters; changing either
+  // restarts without a cursor, never reuses another source's continuation.
   optional string cursor = 13;
   // Full-width conversation-local offset. Positive when present; mutually
   // exclusive with nonzero offset_id and with a nonempty cursor. Applies the
@@ -1352,19 +1675,19 @@ message SearchResponse {
 // Reactions RPC messages
 // =============================================================================
 
-// GetMessagesReactionsRequest requests reaction summaries for multiple messages.
-message GetMessagesReactionsRequest {
+// BatchGetMessageReactionsRequest requests reaction summaries for multiple messages.
+message BatchGetMessageReactionsRequest {
   Target target = 1;
   repeated int64 message_ids = 2;
 }
 
-// GetMessagesReactionsResponse is the response for GetMessagesReactions.
-message GetMessagesReactionsResponse {
+// BatchGetMessageReactionsResponse is the response for BatchGetMessageReactions.
+message BatchGetMessageReactionsResponse {
   repeated MessageReactions reactions = 1;
 }
 
-// GetMessageReactionsListRequest requests individual reactors for a message.
-message GetMessageReactionsListRequest {
+// ListMessageReactionsRequest requests individual reactors for a message.
+message ListMessageReactionsRequest {
   Target target = 1;
   int64 message_id = 2;
   optional Reaction reaction = 3;
@@ -1372,21 +1695,38 @@ message GetMessageReactionsListRequest {
   int32 limit = 5;
 }
 
-// GetMessageReactionsListResponse is the response for GetMessageReactionsList.
-message GetMessageReactionsListResponse {
+// ListMessageReactionsResponse is the response for ListMessageReactions.
+message ListMessageReactionsResponse {
   repeated PeerReaction reactions = 1;
   int32 count = 2;
   optional string next_offset = 3;
   repeated User users = 4;
 }
 
-// SendReactionRequest adds or removes reactions on a message.
+// SendReactionRequest replaces the authenticated caller's choices on a message.
+// Presentation and recents options are caller-scoped, not another sender's policy.
+// Absence or false disables each optional side effect, not the reaction update.
 message SendReactionRequest {
   Target target = 1;
   int64 message_id = 2;
   repeated Reaction reactions = 3;
-  optional bool big = 4;
-  optional bool add_to_recent = 5;
+  // Whether clients should animate the reaction effect.
+  optional bool animate = 4;
+  // Whether to save chosen identities for the authenticated caller only.
+  optional bool save_to_recents = 5;
+  // Canonical caller-scoped client UUID, required when animate or save_to_recents is true.
+  // Persist before the first call and retain the exact parameters on every retry.
+  string operation_id = 6;
+}
+
+// GetRecentReactionsRequest selects only the authenticated caller's collection.
+// No user selector or cross-principal lookup; retained identities grant no asset access.
+message GetRecentReactionsRequest {}
+
+// GetRecentReactionsResponse returns at most 32 exact retained reaction identities.
+message GetRecentReactionsResponse {
+  // Most recently used first; versions never follow current catalog heads.
+  repeated Reaction reactions = 1;
 }
 
 // SendReactionResponse is the response for SendReaction.
@@ -1399,7 +1739,8 @@ message SendReactionResponse {
 // GetUnreadMentionsRequest requests messages mentioning the authenticated user.
 message GetUnreadMentionsRequest {
   Target target = 1;
-  optional int64 top_msg_id = 2;
+  // Optional positive thread root restricting unread mentions.
+  optional int64 thread_root_id = 2;
   int64 offset_id = 3;
   int32 add_offset = 4;
   int32 limit = 5;
@@ -1418,7 +1759,8 @@ message GetUnreadMentionsResponse {
 // ReadMentionsRequest marks all mentions in a conversation as read.
 message ReadMentionsRequest {
   Target target = 1;
-  optional int64 top_msg_id = 2;
+  // Optional positive thread root restricting acknowledgement scope.
+  optional int64 thread_root_id = 2;
 }
 
 // ReadMentionsResponse confirms mentions are read.
@@ -1429,7 +1771,8 @@ message ReadMentionsResponse {
 // GetUnreadReactionsRequest requests messages with new reactions for the user.
 message GetUnreadReactionsRequest {
   Target target = 1;
-  optional int64 top_msg_id = 2;
+  // Optional positive thread root restricting unread reactions.
+  optional int64 thread_root_id = 2;
   int64 offset_id = 3;
   int32 add_offset = 4;
   int32 limit = 5;
@@ -1448,7 +1791,8 @@ message GetUnreadReactionsResponse {
 // ReadReactionsRequest marks all reactions in a conversation as read.
 message ReadReactionsRequest {
   Target target = 1;
-  optional int64 top_msg_id = 2;
+  // Optional positive thread root restricting acknowledgement scope.
+  optional int64 thread_root_id = 2;
 }
 
 // ReadReactionsResponse confirms reactions are read.
@@ -1517,7 +1861,8 @@ message GetPollResultsResponse {
 // ReadThreadRequest marks thread messages as read up to a specified ID.
 message ReadThreadRequest {
   Target target = 1;
-  int64 top_msg_id = 2;
+  // Required positive visible root of the thread being acknowledged.
+  int64 thread_root_id = 2;
   int64 read_max_id = 3;
 }
 
@@ -1526,8 +1871,8 @@ message ReadThreadResponse {
   bool success = 1;
 }
 
-// GetThreadMessageRequest requests thread replies with pagination.
-message GetThreadMessageRequest {
+// ListThreadMessagesRequest requests thread replies with pagination.
+message ListThreadMessagesRequest {
   Target target = 1;
   int64 message_id = 2;
   optional int64 offset_id = 3;
@@ -1538,8 +1883,8 @@ message GetThreadMessageRequest {
   optional int64 min_id = 8;
 }
 
-// GetThreadMessageResponse is the response for GetThreadMessage.
-message GetThreadMessageResponse {
+// ListThreadMessagesResponse is the response for ListThreadMessages.
+message ListThreadMessagesResponse {
   repeated Message messages = 1;
   repeated User users = 2;
   repeated Chat chats = 3;

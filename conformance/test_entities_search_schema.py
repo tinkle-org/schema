@@ -36,7 +36,7 @@ class EntitiesSearchSchemaTests(files.BufSchemaTestCase):
         expected = {
             ("DraftMessage", "entities", 2), ("Message", "entities", 7),
             ("MessageReplyHeader", "quote_entities", 5),
-            ("ReplyInput", "quote_entities", 3), ("SingleMediaSource", "entities", 3),
+            ("ReplyInput", "quote_entities", 3), ("AlbumItem", "entities", 3),
             ("SendMessageRequest", "entities", 8), ("SendMediaRequest", "entities", 9),
             ("EditMessageRequest", "entities", 5),
             ("EditUserInfoRequest", "entities", 3), ("WorkforceUserInfo", "entities", 4),
@@ -60,7 +60,7 @@ class EntitiesSearchSchemaTests(files.BufSchemaTestCase):
                   "customEmojiId": "9007199254740993", "fallbackText": "👋",
                   "assetVersion": "18446744073709551615"}
         self.assertEqual(entity, self.round_trip(entity, "Entity"))
-        for name in ("Message", "DraftMessage", "SingleMediaSource", "SendMessageRequest",
+        for name in ("Message", "DraftMessage", "AlbumItem", "SendMessageRequest",
                      "SendMediaRequest", "EditMessageRequest", "EditUserInfoRequest",
                      "WorkforceUserInfo"):
             fixture = {"message": "😀👋", "entities": [entity]}

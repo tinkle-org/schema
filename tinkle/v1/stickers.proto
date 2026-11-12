@@ -103,7 +103,8 @@ service StickersService {
   rpc GetFavoriteStickers(GetFavoriteStickersRequest) returns (GetFavoriteStickersResponse);
 
   // ToggleFavoriteSticker adds or removes a sticker from the user's favorites.
-  // Set unfave=true to remove. Hard cap of 100 favorites (RESOURCE_EXHAUSTED if exceeded).
+  // Set is_favorite=true to add, false to remove; repeated desired state is a no-op.
+  // Hard cap of 100 favorites (RESOURCE_EXHAUSTED if exceeded).
   rpc ToggleFavoriteSticker(ToggleFavoriteStickerRequest) returns (ToggleFavoriteStickerResponse);
 
   // CreateStickerAsset validates completed files and creates an owned asset.
@@ -420,8 +421,9 @@ message GetFavoriteStickersResponse {
 message ToggleFavoriteStickerRequest {
   // ID of the sticker. Must be > 0.
   int64 sticker_id = 1;
-  // If true, removes the sticker from favorites instead of adding it.
-  bool unfave = 2;
+  // Desired membership: true adds, false removes. Repeating the desired state
+  // is idempotent; false/omission never adds a sticker.
+  bool is_favorite = 2;
 }
 
 // ToggleFavoriteStickerResponse contains the toggle result.
@@ -438,15 +440,17 @@ message ToggleFavoriteStickerResponse {
 // are at most 1 MiB; animated lossless WebP mains at most 4 MiB, 3000 ms, 180
 // frames. PNG must be static. Enforce decoded dimensions and aggregate decoded
 // pixels (width * height * frame_count), not just a container header. A source
-// has at most one static thumbnail, at most 128x128 and 256 KiB, with both
-// dimensions supplied. Validate it under the same profile. No implicit thumbnail
-// generation or lossy transcoding is promised; unsupported bytes are rejected.
+// has at most one optional static thumbnail input, at most 128x128 and 256 KiB,
+// with both dimensions supplied. Validate it under the same profile. Servers
+// derive the required sticker thumbnail before asset publication under
+// MediaValidation rules; custom-emoji thumbnails are optional. Clients process
+// and upload the main; unsupported bytes are rejected, not transcoded by servers.
 message StickerAssetSource {
   // Positive canonical file ID; no upload ID, URL, local path, or inline bytes.
   int64 file_id = 1;
   // Required complete format, dimensions, animation and validation declaration.
   StickerMetadata metadata = 2;
-  // Optional THUMBNAIL only; its file must also be completed and caller-owned.
+  // Optional THUMBNAIL input only; completed and caller-owned, not an output fact.
   repeated MediaVariantSource variants = 3;
 }
 

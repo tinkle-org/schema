@@ -13,5 +13,15 @@
 # Buf caches
 .buf-cache/
 
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+
 # Schema docs content (website/) — see website/.gitignore for nested rules
 website/content/reference/

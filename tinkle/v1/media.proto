@@ -8,11 +8,12 @@
 // Naming conventions used across tinkle.v1:
 //   - `*Metadata` messages and `MediaAttribute` describe media content.
 //     Metadata supplied by clients is an explicit claim, never a server
-//     verification; for encrypted files the server cannot inspect bytes at all.
+//     verification. Returned physical facts and validation results are
+//     server-measured from the completed bytes, never copied as authority.
 //   - `MediaVariant` is a server-published alternative representation of a
 //     completed file (for example a thumbnail).
-//   - `MediaVariantSource` is a client-supplied reference to an uploaded,
-//     completed variant file.
+//   - `MediaVariantSource` is an optional client-supplied completed variant
+//     input; required thumbnails are server-generated before publication.
 syntax = "proto3";
 
 package tinkle.v1;
@@ -68,27 +69,89 @@ enum ImageFormat {
 
 // MediaValidationProfile selects a fixed validation rule set, not transcoding.
 enum MediaValidationProfile {
-  // Invalid for sticker-asset and profile-photo authoring.
+  // Invalid when explicitly supplied for typed media authoring.
   MEDIA_VALIDATION_PROFILE_UNSPECIFIED = 0;
   // Only static PNG and lossless WebP. WebP image/frame payloads must use VP8L,
   // never lossy VP8; format alone does not prove losslessness. TGS, WebM, APNG,
-  // unknown containers and encrypted files are rejected. GIF is a client input
+  // unknown containers are rejected. GIF is a client input
   // format only: normalize to supported lossless bytes before upload, preserving
   // animation unless the user explicitly chooses a still frame. Servers neither
-  // transcode nor silently flatten animation or substitute lossy media.
+  // transcode mains nor silently flatten animation or substitute lossy media.
+  // Sticker/custom-emoji/profile-photo domain bounds apply in addition.
   MEDIA_VALIDATION_PROFILE_STRICT_LOSSLESS = 1;
+  // General image main: static PNG or static/animated lossless WebP, at most
+  // 10,000,000 bytes, with positive width and height each at most 10,000 pixels.
+  // WebP frame payloads use VP8L, never lossy VP8. Automatic main-image resizing
+  // is permitted to meet both byte and dimension bounds, preserving aspect ratio
+  // without upscaling. Losslessness refers to encoding the final resized pixels,
+  // not retaining the original resolution. Clients upload the normalized main.
+  // Animation is preserved in lossless WebP unless the user makes an explicit still
+  // choice; no automatic flattening. These are main
+  // output bounds, not permission to bypass tighter domain-specific limits.
+  MEDIA_VALIDATION_PROFILE_IMAGE = 2;
+  // General video main: MP4 containing H.264, 8-bit 4:2:0 video and optional
+  // AAC-LC audio, with no other media tracks. Display dimensions after rotation
+  // have long edge at most 1920 and short edge at most 1080, both positive.
+  // Clients preserve aspect ratio, do not upscale, and keep the source frame rate
+  // unchanged while normalizing before upload. Servers verify the output codec,
+  // tracks, pixel format, display bounds and positive duration from the bytes;
+  // source frame rate and user intent are client processing obligations, not
+  // facts provable from the output alone. No bitrate or frame-rate conversion is
+  // implied. Resource/transfer limits remain deployment policy.
+  MEDIA_VALIDATION_PROFILE_VIDEO = 3;
+  // General audio main: audio-only MP4/M4A with AAC-LC, positive duration and
+  // no video track. Clients normalize and upload; servers validate stored bytes.
+  MEDIA_VALIDATION_PROFILE_AUDIO = 4;
+  // Recorded voice main: the same audio-only MP4/M4A AAC-LC rules as AUDIO,
+  // with voice-message purpose retained independently of other audio.
+  MEDIA_VALIDATION_PROFILE_VOICE = 5;
 }
 
-// MediaValidation declares the rules clients must satisfy and servers verify.
-// STRICT_LOSSLESS version 1 requires fully decodable, bounded files; declared
+// MediaValidation identifies a fixed, versioned validation result or input claim.
+// Version 1 is defined independently for each profile above. The explicit source
+// purpose selects the required profile, not a file name, MIME type or sniffed type.
+// General sources may omit metadata/validation claims; servers still apply the
+// purpose's version 1 policy. Strict asset/profile sources require the declaration.
+// All typed media require fully decodable, bounded files; supplied physical
 // format, dimensions, animation, duration and frame count must match the bytes.
 // Reject malformed/truncated containers, trailing data, unknown versions and
-// unsupported profiles, never silently downgrade. Validate every supplied
-// variant under the same profile. Server results attest successful validation;
-// client inputs remain untrusted claims. These rules apply at authoring, not at
-// raw upload completion, which publishes only immutable storage facts.
+// unsupported or purpose-mismatched profiles, never silently downgrade. Servers
+// measure physical facts and publish the applied profile/version in metadata;
+// client inputs remain untrusted claims. Opaque descriptive text and waveform
+// data remain client-supplied, not measured assertions. These rules apply at
+// authoring, not raw upload completion, which publishes only immutable storage facts.
+//
+// Thumbnail policy, version 1: before publication of any owning message, album,
+// chat photo, profile entry or asset version, required thumbnails must be durably
+// completed and published atomically with that object's main reference, measured
+// metadata and variants. A failure leaves that object unpublished; no placeholder
+// file IDs, pending variants or successful source acceptance followed by generation.
+// Servers derive required static PNG/lossless WebP thumbnails from the accepted
+// main bytes (a representative animation/video frame), preserve aspect ratio
+// with integer-pixel rounding, never upscale, and use strictly fewer pixels than
+// the main display image/frame.
+// A 1-pixel main has no lower-pixel thumbnail and is exempt from that requirement.
+// Already validated server-generated thumbnails for the same immutable main,
+// purpose and profile/version may be reused; no new variant identity is required.
+// Required thumbnails have exactly one THUMBNAIL role per main; optional ones
+// have at most one. PREVIEW and FULL variants are not accepted by version 1.
+// Purpose-specific thumbnail bounds (positive dimensions and at most 256 KiB):
+//   - Message photo/video: required, at most 320x320.
+//   - Chat/profile photo: required, at most 160x160.
+//   - Sticker: required, at most 128x128; custom emoji: optional, at most 128x128.
+//   - Audio cover and raw document: optional, at most 320x320; voice: none.
+// Optional thumbnails are generated by the server from an explicit cover/preview
+// input and are ready under the same publication rule. They preserve aspect ratio
+// without upscaling; image-purpose thumbnails also have fewer pixels than the main.
+// Audio/raw-document covers have no main display dimensions to compare against.
+// Raw documents are not inspected to select media purpose or automatically create
+// previews. An optional cover/preview is an explicit input, never inferred from
+// document bytes.
+// Domain bounds on supplied thumbnail inputs also apply. Client thumbnail inputs
+// do not replace server derivation of required thumbnails. Publication exposes
+// only final measured variants; it need not echo input variant file IDs.
 message MediaValidation {
-  // Required validation profile for the application object being authored.
+  // Purpose-specific profile claimed by the client or verified by the server.
   MediaValidationProfile profile = 1;
   // Exact rule-set version; only 1 is defined, zero is invalid.
   uint32 version = 2;
@@ -111,31 +174,33 @@ message ImageMetadata {
   uint32 width = 1;
   // Image height in pixels; must be greater than zero.
   uint32 height = 2;
-  // Whether the image is animated (GIF-like playback). This is the single
-  // source of truth for image animation; it applies to `PhotoSource` and
-  // to the image attribute of `DocumentSource`.
+  // Whether the image is animated; measured from bytes in returned metadata.
+  // Applies to PhotoSource and the image attribute of DocumentSource.
   bool animated = 3;
   // Encoded format, independent of animated; required for profile-photo sources.
   ImageFormat format = 4;
-  // Required for profile-photo authoring; returned after successful validation.
+  // Applied IMAGE policy, or STRICT_LOSSLESS for profile photos; verified in
+  // server results. Required as an input declaration for profile-photo authoring.
   MediaValidation validation = 5;
 }
 
 // VideoMetadata describes a video attachment.
 message VideoMetadata {
-  // Video width in pixels.
+  // Display width in pixels after applying rotation metadata.
   uint32 width = 1;
-  // Video height in pixels.
+  // Display height in pixels after applying rotation metadata.
   uint32 height = 2;
   // Duration in milliseconds; must be greater than zero.
   uint64 duration_ms = 3;
-  // Client-declared codec identifier (for example "h264"); not verified.
+  // Codec claim on input; server-measured codec identifier ("h264") on output.
   optional string codec = 4;
   // Whether the file supports progressive download and playback before the
   // whole file is present on the client.
   bool supports_streaming = 5;
   // Whether this is a round (circular) video note.
   bool round_video = 6;
+  // VIDEO version 1 policy; input claims are optional, server results report it.
+  MediaValidation validation = 7;
 }
 
 // AudioMetadata describes an audio attachment or voice message.
@@ -153,6 +218,9 @@ message AudioMetadata {
   // server; the encoding is a small client-defined sequence of amplitude
   // values.
   optional bytes waveform = 5;
+  // AUDIO or VOICE version 1 according to purpose; server-measured validation
+  // result on output. Input declarations are optional, never authoritative.
+  MediaValidation validation = 6;
 }
 
 // StickerMetadata describes a sticker image independently of pack ownership,
@@ -179,9 +247,9 @@ message StickerMetadata {
 }
 
 // MediaAttribute is one typed attribute of a document-like attachment.
-// Attributes compose: a video sticker carries both video and sticker
-// attributes. At most one attribute of each kind is accepted per attachment;
-// duplicated or conflicting kinds are rejected.
+// Explicit attributes select purpose and validation as defined by DocumentSource.
+// At most one attribute of each kind is accepted per attachment; duplicates and
+// incompatible purposes/profiles are rejected, not silently reclassified.
 message MediaAttribute {
   oneof kind {
     // The document is an image of the described dimensions.
@@ -197,9 +265,10 @@ message MediaAttribute {
 }
 
 // MediaVariant is a server-published alternative representation of a
-// completed file, such as a generated or client-uploaded thumbnail.
+// completed file, such as a server-generated thumbnail ready with its owner.
 // Variant file IDs are canonical file references and must pass the same
-// access checks as the parent file before use.
+// access checks as the parent file before use. Image dimensions are always
+// measured and reported for published thumbnails, not copied from input claims.
 message MediaVariant {
   // Role this variant plays for its parent media attachment.
   MediaVariantRole role = 1;
@@ -214,7 +283,13 @@ message MediaVariant {
 // MediaVariantSource references an uploaded, completed variant file that a
 // client supplies when building a media attachment. The referenced file must
 // be accessible to the caller; variant references are access-checked like
-// any other file reference.
+// any other file reference. This is an optional processing input, not an
+// authoritative output or a way to avoid required server thumbnail generation.
+// Version 1 permits at most one static PNG/lossless WebP THUMBNAIL input under
+// the owning purpose's size/dimension bounds; validate its decoded bytes and
+// reject mismatched claims or unsupported roles. Width and height are required
+// for supplied image inputs. Voice accepts none. The server derives the final
+// thumbnail before owner publication and reports its measured dimensions.
 message MediaVariantSource {
   // Canonical file ID of the uploaded, completed variant file.
   int64 file_id = 1;
