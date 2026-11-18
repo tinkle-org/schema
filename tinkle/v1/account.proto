@@ -116,6 +116,10 @@ service AccountService {
   // gallery, and selects it atomically. The gallery holds at most 10 photos;
   // a full gallery rejects insertion rather than silently evicting photos.
   rpc SetProfilePhoto(SetProfilePhotoRequest) returns (SetProfilePhotoResponse);
+  // GetProfilePhotoUpdate recovers the caller's original photo request.
+  rpc GetProfilePhotoUpdate(GetProfilePhotoUpdateRequest) returns (GetProfilePhotoUpdateResponse);
+  // CancelProfilePhotoUpdate reports the actual durable outcome, not rollback.
+  rpc CancelProfilePhotoUpdate(CancelProfilePhotoUpdateRequest) returns (CancelProfilePhotoUpdateResponse);
   // GetProfilePhotos returns the complete bounded gallery for self; for another
   // user it returns only the selected photo if current photo privacy permits it.
   rpc GetProfilePhotos(GetProfilePhotosRequest) returns (GetProfilePhotosResponse);
@@ -543,22 +547,23 @@ message SessionChanged {
 // Required metadata declares STRICT_LOSSLESS version 1, PNG or static lossless
 // WebP, and matching positive dimensions at most 4096x4096. Main bytes are at
 // most 10,000,000 bytes; animation is rejected. Supply at most one optional static
-// THUMBNAIL input (at most 160x160, 256 KiB), with both dimensions required.
-// Validate its bytes under the same profile. PREVIEW, FULL, extra variants and
-// unknown roles are rejected, never silently discarded. file_id names the main
-// image. Servers generate a required lower-pixel thumbnail before gallery-entry
-// publication under MediaValidation rules; clients process/upload the main.
+// thumbnail input (at most 160x160, 256 KiB), with both dimensions positive.
+// Validate its bytes under the same profile. file_id names the main
+// image. Thumbnails are optional enrichment under MediaValidation rules.
 message ProfilePhotoSource {
   // Positive canonical completed-file ID; never an upload ID, URL or inline bytes.
   int64 file_id = 1;
   // Required dimensions, format, static-animation flag and validation declaration.
   ImageMetadata metadata = 2;
+  // Optional bounded hint validated with the source.
+  InlinePreview inline_preview = 3;
   // Optional completed caller-owned thumbnail input, not a required upload.
-  repeated MediaVariantSource variants = 3;
+  ThumbnailSource thumbnail = 4;
 }
 
 // ProfilePhoto is a retained gallery entry with canonical immutable-file references.
-// Metadata and variants are validated at creation and cannot be edited in place.
+// Main/metadata/preview are immutable. Output membership may enrich at its
+// independent representation revision; older unrevisioned entries remain frozen.
 message ProfilePhoto {
   // Positive stable gallery-entry ID; not a file ID and never reassigned.
   int64 photo_id = 1;
@@ -568,10 +573,14 @@ message ProfilePhoto {
   int64 file_id = 3;
   // Validated format, dimensions and validation profile/version.
   ImageMetadata metadata = 4;
-  // Validated stored variants; access-checked with the gallery entry.
-  repeated MediaVariant variants = 5;
   // Server time of gallery insertion; selection does not change ordering.
-  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp created_at = 5;
+  // Optional accepted preview; selection/privacy controls its disclosure.
+  InlinePreview inline_preview = 6;
+  // Positive independent output-set revision, absent for older frozen entries.
+  optional uint64 representation_revision = 7;
+  // Optional validated thumbnail; access-checked with the gallery entry.
+  Thumbnail thumbnail = 8;
 }
 
 // SetProfilePhotoRequest inserts or selects a photo for the current account.
@@ -585,21 +594,138 @@ message ProfilePhoto {
 // main file is rejected, not silently substituted. At a matching revision,
 // selecting that already-selected entry is a no-op; selecting it from elsewhere
 // changes selection/revision, not identity or gallery order. After an ambiguous
-// call, find its file/source in GetProfilePhotos and reconcile selection before
-// acting again. No operation-ID replay or deduplication across deletion is promised.
+// call, query GetProfilePhotoUpdate by the original request_id, even after removal.
+// A retained success never replays selection or creates a duplicate entry.
 message SetProfilePhotoRequest {
   // Required complete source; validate all files before changing gallery/selection.
   ProfilePhotoSource source = 1;
   // Required positive owner gallery_revision; zero/absence is invalid.
   uint64 expected_revision = 2;
+  // Required canonical lowercase nonzero UUID, persisted before calling. Scoped
+  // to the actor and bound permanently to exact request bytes/original CAS.
+  string request_id = 3;
 }
 
 // SetProfilePhotoResponse returns the newly selected gallery entry.
 message SetProfilePhotoResponse {
-  // Complete validated selected photo.
+  // Current authorized original matching selected photo, absent otherwise.
   ProfilePhoto photo = 1;
-  // Owner gallery revision atomically resulting from this insertion/selection.
+  // Original commit gallery revision, zero unless SUCCEEDED (also in the status).
   uint64 gallery_revision = 2;
+  // Required even for immediate success; non-success has no photo and revision 0.
+  // PENDING/PROCESSING have not inserted, selected or consumed gallery capacity.
+  ProfilePhotoUpdate photo_update = 3;
+}
+
+// ProfilePhotoUpdateState separates private work from gallery acceptance.
+enum ProfilePhotoUpdateState {
+  // Unknown, never a conforming status.
+  PROFILE_PHOTO_UPDATE_STATE_UNSPECIFIED = 0;
+  // Recorded, gallery/selection unchanged.
+  PROFILE_PHOTO_UPDATE_STATE_PENDING = 1;
+  // Claimed; cancellation cannot promise rollback.
+  PROFILE_PHOTO_UPDATE_STATE_PROCESSING = 2;
+  // Gallery/selection commit succeeded, not current visibility proof.
+  PROFILE_PHOTO_UPDATE_STATE_SUCCEEDED = 3;
+  // Fenced with no gallery/selection change.
+  PROFILE_PHOTO_UPDATE_STATE_FAILED = 4;
+  // Cancellation durably prevented the mutation.
+  PROFILE_PHOTO_UPDATE_STATE_CANCELED = 5;
+}
+
+// ProfilePhotoUpdateFailure is a bounded terminal category, never raw diagnostics.
+enum ProfilePhotoUpdateFailure {
+  // Required unless FAILED.
+  PROFILE_PHOTO_UPDATE_FAILURE_UNSPECIFIED = 0;
+  // Main or supplied preview/thumbnail failed validation.
+  PROFILE_PHOTO_UPDATE_FAILURE_INVALID_MEDIA = 1;
+  // Current authority or file access failed.
+  PROFILE_PHOTO_UPDATE_FAILURE_NOT_AUTHORIZED = 2;
+  // Original expected_revision or other precondition failed.
+  PROFILE_PHOTO_UPDATE_FAILURE_PRECONDITION = 3;
+  // Gallery capacity or resource bound exceeded.
+  PROFILE_PHOTO_UPDATE_FAILURE_RESOURCE_LIMIT = 4;
+  // Processing failed and later effects are fenced.
+  PROFILE_PHOTO_UPDATE_FAILURE_PROCESSING = 5;
+}
+
+// ProfilePhotoUpdate is private to the original authenticated actor. Apply
+// MediaValidation's exact-byte binding, lifecycle and final authorization/CAS
+// rules. Full outcomes last at least 30 days; successful identity receipts stay
+// queryable after expiry and entry removal. Deduplication never permits key reuse.
+// Recheck identity disclosure every time, without changing the status revision.
+message ProfilePhotoUpdate {
+  // Original actor-scoped SetProfilePhotoRequest.request_id.
+  string request_id = 1;
+  // Explicit durable state, independent of current gallery or selected photo.
+  ProfilePhotoUpdateState state = 2;
+  // Positive state revision, initially 1; independent of gallery/representations.
+  uint64 revision = 3;
+  // Nonzero if and only if FAILED.
+  ProfilePhotoUpdateFailure failure = 4;
+  // Original committed positive gallery-entry identity, disclosed success only.
+  optional int64 photo_id = 5;
+  // Required only for SUCCEEDED: false requires photo_id; true omits it.
+  optional bool reference_withheld = 6;
+  // Original commit revision, positive only for SUCCEEDED; never a fresh CAS token.
+  uint64 gallery_revision = 7;
+  // Fixed terminal full-outcome deadline, at least 30 days from termination.
+  google.protobuf.Timestamp retain_until = 8;
+}
+
+// GetProfilePhotoUpdateRequest selects the caller's binding, never another user.
+message GetProfilePhotoUpdateRequest {
+  // Original canonical request UUID; unknown/foreign/expired failures are NOT_FOUND.
+  string request_id = 1;
+}
+
+// GetProfilePhotoUpdateResponse separates identity receipts from the optional
+// current original matching photo. Require current authorization and selection;
+// omit removed/unselected/superseded photos, never replay a selection. Newer
+// representations of the same main are allowed. GetProfilePhotos reconciles now.
+message GetProfilePhotoUpdateResponse {
+  // Required private durable snapshot, regardless of photo disclosure.
+  ProfilePhotoUpdate photo_update = 1;
+  // Original matching currently selected photo, only for SUCCEEDED.
+  ProfilePhoto photo = 2;
+}
+
+// CancelProfilePhotoUpdateRequest selects the original set, not deletion.
+message CancelProfilePhotoUpdateRequest {
+  // Original canonical actor-scoped request UUID.
+  string request_id = 1;
+}
+
+// CancelProfilePhotoUpdateResponse reports the actual durable state. CANCELED
+// fences work; claimed PROCESSING requires lookup and may still complete. Never
+// undo selection/insertion or abort uploads, including when SUCCEEDED wins.
+message CancelProfilePhotoUpdateResponse {
+  // Required snapshot with current identity-disclosure policy applied.
+  ProfilePhotoUpdate photo_update = 1;
+}
+
+// ProfilePhotoUpdateChanged is an actor-only hint to query GetProfilePhotoUpdate.
+// May duplicate/reorder/disappear; query on reconnect and after an in-flight hint.
+// Stopping observation does not cancel work; a hint is not a receipt/access grant.
+message ProfilePhotoUpdateChanged {
+  // Original actor-scoped request UUID.
+  string request_id = 1;
+  // Positive hinted status revision; the source query may be newer.
+  uint64 revision = 2;
+}
+
+// ProfilePhotoRepresentationChanged is a privacy-filtered hint, not a file grant.
+// Fetch GetProfilePhotos on startup/reconnect and after hints (again if in-flight).
+// Match exact entry/main and replace complete sets; never restore from this hint.
+message ProfilePhotoRepresentationChanged {
+  // Exact account whose gallery entry changed; delivery rechecks photo privacy.
+  int64 user_id = 1;
+  // Exact retained entry, not a new selection or replacement.
+  int64 photo_id = 2;
+  // Immutable main file identity.
+  int64 main_file_id = 3;
+  // Positive independent hinted output-set revision.
+  uint64 representation_revision = 4;
 }
 
 // GetProfilePhotosRequest chooses self or another user's privacy-filtered view.

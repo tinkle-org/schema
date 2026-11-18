@@ -1,6 +1,6 @@
-// Media Types — Shared media metadata, attributes, and file variants.
+// Media Types — Shared media metadata, attributes, and thumbnails.
 //
-// Contains the typed media metadata and file-variant vocabulary shared by
+// Contains the typed media metadata and thumbnail vocabulary shared by
 // the file-transfer and messaging contracts. Everything here describes
 // application-level media; authoritative storage facts about the underlying
 // bytes live in FileInfo (files.proto).
@@ -10,27 +10,44 @@
 //     Metadata supplied by clients is an explicit claim, never a server
 //     verification. Returned physical facts and validation results are
 //     server-measured from the completed bytes, never copied as authority.
-//   - `MediaVariant` is a server-published alternative representation of a
-//     completed file (for example a thumbnail).
-//   - `MediaVariantSource` is an optional client-supplied completed variant
-//     input; required thumbnails are server-generated before publication.
+//   - `Thumbnail` is a server-published completed thumbnail linked by its owner.
+//   - `ThumbnailSource` is an optional client-supplied completed thumbnail
+//     input; omission never gates acceptance of validated mains.
+// MediaValidation versions describe main bytes, not an opt-in lifecycle.
 syntax = "proto3";
 
 package tinkle.v1;
 
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
-// MediaVariantRole describes the role an image variant plays for its parent
-// media attachment. Servers validate allowed roles per attachment kind.
-enum MediaVariantRole {
-  // Unspecified; rejected by servers.
-  MEDIA_VARIANT_ROLE_UNSPECIFIED = 0;
-  // Small thumbnail used in lists and previews.
-  MEDIA_VARIANT_ROLE_THUMBNAIL = 1;
-  // Medium preview shown while the full-size image downloads.
-  MEDIA_VARIANT_ROLE_PREVIEW = 2;
-  // Largest or full-size representation.
-  MEDIA_VARIANT_ROLE_FULL = 3;
+// InlinePreview is an optional, self-contained static JPEG presentation hint,
+// never a main file, regular thumbnail, validation result or file access grant.
+// Both axes are 1..40 pixels and jpeg is 1..4096 bytes. Servers require a fully
+// decoded single JPEG image with dimensions exactly matching width/height,
+// no trailing bytes, and bounded decoder work; reject malformed/oversized input.
+// Clients preserve aspect ratio without upscaling when creating the preview.
+// Preview absence is valid. It never substitutes for validating the main bytes.
+// Accepted bytes are retained with the owning object and share its visibility;
+// they are not a separate file ID and carry no encryption options.
+message InlinePreview {
+  // Decoded width in pixels, 1..40 inclusive.
+  uint32 width = 1;
+  // Decoded height in pixels, 1..40 inclusive.
+  uint32 height = 2;
+  // Complete static JPEG bytes, 1..4096 bytes inclusive.
+  bytes jpeg = 3;
+}
+
+// MediaProcessingIntent explicitly requests asynchronous inspection of completed
+// main bytes. It is not inferred from MIME/name, not permission to transcode a
+// main, and not a validation result. Omit for raw documents, audio and voice.
+enum MediaProcessingIntent {
+  // Invalid when explicitly supplied; omission means no processing intent.
+  MEDIA_PROCESSING_INTENT_UNSPECIFIED = 0;
+  // Image inspection, including strict image purposes selected by the owner.
+  MEDIA_PROCESSING_INTENT_IMAGE = 1;
+  // Video inspection and optional representative-frame thumbnail generation.
+  MEDIA_PROCESSING_INTENT_VIDEO = 2;
 }
 
 // StickerFormat identifies the file format of a sticker image.
@@ -121,37 +138,87 @@ enum MediaValidationProfile {
 // data remain client-supplied, not measured assertions. These rules apply at
 // authoring, not raw upload completion, which publishes only immutable storage facts.
 //
-// Thumbnail policy, version 1: before publication of any owning message, album,
-// chat photo, profile entry or asset version, required thumbnails must be durably
-// completed and published atomically with that object's main reference, measured
-// metadata and variants. A failure leaves that object unpublished; no placeholder
-// file IDs, pending variants or successful source acceptance followed by generation.
-// Servers derive required static PNG/lossless WebP thumbnails from the accepted
-// main bytes (a representative animation/video frame), preserve aspect ratio
-// with integer-pixel rounding, never upscale, and use strictly fewer pixels than
-// the main display image/frame.
-// A 1-pixel main has no lower-pixel thumbnail and is exempt from that requirement.
-// Already validated server-generated thumbnails for the same immutable main,
-// purpose and profile/version may be reused; no new variant identity is required.
-// If derived from an explicit cover/preview input, reuse also requires matching
-// immutable cover/preview inputs; matching the main alone is insufficient.
-// Required thumbnails have exactly one THUMBNAIL role per main; optional ones
-// have at most one. PREVIEW and FULL variants are not accepted by version 1.
-// Purpose-specific thumbnail bounds (positive dimensions and at most 256 KiB):
-//   - Message photo/video: required, at most 320x320.
-//   - Chat/profile photo: required, at most 160x160.
-//   - Sticker: required, at most 128x128; custom emoji: optional, at most 128x128.
-//   - Audio cover and raw document: optional, at most 320x320; voice: none.
-// Optional thumbnails are generated by the server from an explicit cover/preview
-// input and are ready under the same publication rule. They preserve aspect ratio
-// without upscaling; image-purpose thumbnails also have fewer pixels than the main.
-// Audio/raw-document covers have no main display dimensions to compare against.
-// Raw documents are not inspected to select media purpose or automatically create
-// previews. An optional cover/preview is an explicit input, never inferred from
-// document bytes.
-// Domain bounds on supplied thumbnail inputs also apply. Client thumbnail inputs
-// do not replace server derivation of required thumbnails. Publication exposes
-// only final measured variants; it need not echo input variant file IDs.
+// Thumbnail policy: every thumbnail is optional enrichment. Validate main bytes
+// independently of generated sizes; missing or failed generation never blocks or
+// reverses acceptance. Supplied inputs are separate completed files, validated
+// before acceptance and adopted under their exact IDs; never silently discard an
+// invalid supplied input. At most one static PNG/lossless WebP thumbnail per main,
+// positive dimensions, at most 256 KiB. Bounds:
+//   - Message photo/video, audio cover and raw document preview: at most 320x320.
+//   - Chat/profile photo: at most 160x160.
+//   - Sticker/custom emoji: at most 128x128.
+//   - Voice: no thumbnail or inline preview.
+// Preserve aspect ratio with integer-pixel rounding, never upscale, and use fewer
+// pixels than an image/video main display frame. A 1-pixel main has no thumbnail.
+// Audio/raw-document covers have no main display dimensions to compare against;
+// their explicit supplied inputs are validated, never derived by sniffing mains.
+// Automatic generation is limited to explicitly typed images and video frames
+// with matching upload processing_intent. The asynchronous worker inspects only
+// image/video, never audio/voice, and produces no video output or main transcode.
+// Reuse of generated thumbnails requires the same immutable main, purpose,
+// profile/version and any explicit cover inputs. Do not replace an adopted input.
+//
+// New result projections carry a positive representation_revision, initially 1.
+// A later durably completed thumbnail is attached atomically by the owning domain,
+// incrementing only that independent revision, never main file identity/bytes,
+// physical metadata, authored preview, body_revision, edit_date, asset_version,
+// gallery_revision or pack_revision. Equal revisions describe identical complete
+// representation sets. Compare revisions only for the same principal, owning
+// reference/version and immutable main; never merge across a main replacement.
+// Source replacement/removal fences stale worker completions. Membership is
+// exact per-output membership, never all children of an uploaded main. Generated
+// output existence alone grants no read; only an explicit durable owner link does.
+// Older captures have absent representation_revision and stay frozen: do not
+// enrich them or widen their captured file grants. Sending an existing asset pins
+// its exact main/version and explicitly captures its current output membership;
+// future asset enrichment does not implicitly enrich that message capture.
+// A new message can capture an older asset without modifying that asset. Reusing
+// a retained profile entry does not retrofit its source or representation policy.
+//
+// Pending lifecycle rules for ordinary SendMedia/SendAlbum, EditChatPhoto,
+// channel EditPhoto, SetProfilePhoto and Create/UpdateStickerAsset: no separate
+// submission is needed. Only explicit image/video inspection may wait for the
+// asynchronous worker. Other purposes validate without that worker. Scheduled
+// sends and message edits do not use these pending lifecycles; validate their
+// mains before existing scheduling/edit acceptance, with optional thumbnails.
+// Persist the authenticated actor, original method/scope, exact original request
+// bytes, keys, immutable sources/claims, preview/thumbnail, captions/entities/reply,
+// options, original CAS and draft pair before returning PENDING. Clients persist
+// and retry exact bytes; bindings preserve the original method payload unchanged.
+// Reject unknown fields recursively before binding. A fingerprint is internal,
+// never a public field or content lookup. Keys bind one method/scope/request;
+// conflicting reuse has no effect and syntactic rejection consumes no key.
+// Recover an existing binding before evaluating fresh CAS/source preconditions;
+// a terminal retry never reapplies the mutation or fails merely due to its old CAS.
+// PENDING/PROCESSING have no recipient-visible acceptance, history, file grant,
+// source mutation, fanout or draft clear. Workers never substitute their own
+// principal, a new source/head or refreshed CAS/draft tokens. At final commit,
+// recheck current authorization, file access, main and supplied input validation,
+// reply/entity/catalog references, original CAS and domain bounds. Albums commit
+// all-or-nothing. Success, deduplication, accepted identities, owning mutation,
+// exact file membership and durable change/draft obligations commit atomically.
+// Clear only the captured draft pair on acceptance, never a newer draft.
+// Each family has actor-private Get/Cancel methods, with unknown/foreign/mismatched
+// or expired non-successful identities reporting NOT_FOUND alike. PENDING may
+// become PROCESSING or terminal; PROCESSING may become terminal. Terminal states
+// never change. Cancel unclaimed PENDING work durably before responding, racing
+// claim/commit atomically. Return a terminal state or claimed PROCESSING, never
+// PENDING as a cancellation acknowledgement. Claimed work may report PROCESSING,
+// not cancellation or rollback. Query until terminal.
+// Cancellation never aborts uploads or deletes accepted objects. RPC cancellation
+// or a deadline proves no durable outcome. Pending records survive restarts and
+// replica changes and cannot be evicted. Retain full terminal outcomes at least
+// 30 days from termination; retain deduplication tombstones indefinitely, including
+// exact request binding and successful accepted identities, queryable even after
+// full-body retention or source edits/removal. Expiry never permits key reuse.
+// Recheck identity-disclosure policy on every submit/query/cancel. Success always
+// includes explicit reference_withheld decisions; absence is unknown/nonconforming.
+// Ordinary edits/removal do not erase receipts. Withholding omits sensitive IDs,
+// never changes durable success or its revision. Receipts grant no current body or
+// file access. Optional results require current authorization and the original
+// matching authored source/revision; omit removed, edited or superseded bodies,
+// never resurrect them or substitute current heads. Later representations of the
+// same original main may hydrate. Fetch current source separately to reconcile.
 message MediaValidation {
   // Purpose-specific profile claimed by the client or verified by the server.
   MediaValidationProfile profile = 1;
@@ -266,39 +333,34 @@ message MediaAttribute {
   }
 }
 
-// MediaVariant is a server-published alternative representation of a
-// completed file, such as a server-generated thumbnail ready with its owner.
-// Variant file IDs are canonical file references and must pass the same
-// access checks as the parent file before use. Image dimensions are always
-// measured and reported for published thumbnails, not copied from input claims.
-message MediaVariant {
-  // Role this variant plays for its parent media attachment.
-  MediaVariantRole role = 1;
-  // Canonical file ID of the completed variant bytes.
-  int64 file_id = 2;
-  // Image width in pixels, for image variants.
-  optional uint32 width = 3;
-  // Image height in pixels, for image variants.
-  optional uint32 height = 4;
+// Thumbnail is a durably ready static PNG/lossless WebP thumbnail explicitly
+// linked by its owner under MediaValidation's purpose bounds. File reads require
+// current authorization and exact output membership, just like the main file.
+// When this message is present all fields must be positive. Dimensions are
+// server-measured, never copied as authority from input claims. This file is
+// separate from InlinePreview's tiny JPEG bytes.
+message Thumbnail {
+  // Positive canonical file ID of the completed thumbnail bytes.
+  int64 file_id = 1;
+  // Measured image width in pixels; must be greater than zero.
+  uint32 width = 2;
+  // Measured image height in pixels; must be greater than zero.
+  uint32 height = 3;
 }
 
-// MediaVariantSource references an uploaded, completed variant file that a
-// client supplies when building a media attachment. The referenced file must
-// be accessible to the caller; variant references are access-checked like
-// any other file reference. This is an optional processing input, not an
-// authoritative output or a way to avoid required server thumbnail generation.
-// Version 1 permits at most one static PNG/lossless WebP THUMBNAIL input under
-// the owning purpose's size/dimension bounds; validate its decoded bytes and
-// reject mismatched claims or unsupported roles. Width and height are required
-// for supplied image inputs. Voice accepts none. The server derives the final
-// thumbnail before owner publication and reports its measured dimensions.
-message MediaVariantSource {
-  // Canonical file ID of the uploaded, completed variant file.
+// ThumbnailSource references one uploaded, completed caller-owned thumbnail.
+// This optional processing input is not an authoritative output. When present,
+// file_id, width and height must all be positive; zero/missing dimensions are
+// invalid, not omission. Validate decoded static PNG/lossless WebP bytes under
+// MediaValidation's purpose bounds and reject mismatched claims. Voice accepts
+// none. Access-check and adopt the exact validated file ID, reporting measured
+// dimensions. Omission never blocks main acceptance or requires generation.
+// This is separate from InlinePreview bytes.
+message ThumbnailSource {
+  // Positive canonical file ID of the uploaded, completed thumbnail file.
   int64 file_id = 1;
-  // Role this variant plays for the attachment being built.
-  MediaVariantRole role = 2;
-  // Client-asserted image width in pixels, for image variants.
-  optional uint32 width = 3;
-  // Client-asserted image height in pixels, for image variants.
-  optional uint32 height = 4;
+  // Client-asserted image width in pixels; must be greater than zero.
+  uint32 width = 2;
+  // Client-asserted image height in pixels; must be greater than zero.
+  uint32 height = 3;
 }

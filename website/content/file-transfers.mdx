@@ -36,12 +36,13 @@ built in three steps, and the contract keeps them separate on purpose:
 2. **Construct the typed attachment** — a `PhotoSource`, `DocumentSource`,
    `VideoSource`, `AudioSource`, `VoiceSource`, or `StickerSource`
    referencing that `file_id`, with client-declared metadata and variant
-   references. `BeginUpload` carries no media metadata: attachment
+   references. `BeginUpload` carries only optional generic `processing_intent`,
+   not physical media metadata: attachment
    semantics belong to the `*Source` types, and `FileInfo` stays limited
    to immutable storage facts.
-3. **Send or edit the application object** — the server validates the bytes,
-   generates required lower-pixel thumbnails, and publishes the owning message,
-   profile photo, chat photo, or sticker with final metadata and variants.
+3. **Send or edit the application object** — validate main bytes independently of
+   optional thumbnails. Ordinary owning methods can return private pending work,
+   then accept the validated main and later attach optional representations.
 
 Client-declared MIME types, dimensions, durations and codecs are non-authoritative
 claims. Typed authoring measures physical facts from completed bytes and rejects
@@ -64,6 +65,18 @@ The idempotency key is scoped to the authenticated principal and bound to
 the exact request parameters. Equivalence is exact: optional fields compare
 by presence as well as value, so an omitted optional field and one set to
 its empty value are different parameters and conflict.
+
+`BeginUploadRequest.processing_intent` is optional: `IMAGE` requests image
+inspection and `VIDEO` requests video inspection, only after durable upload
+completion. Explicit `UNSPECIFIED` and unknown values are invalid before key
+binding. Presence and exact enum value participate in idempotency: omitted,
+`IMAGE`, and `VIDEO` are distinct inputs. The intent is fixed for the session
+and completed file, grants no access, and never authorizes main transcoding.
+Completion still returns only immutable storage facts without waiting for a
+worker. For new typed image/video authoring, require the matching intent; raw
+documents, audio and voice require omission. MIME/name/sniffing never select it.
+Capturing an already validated exact catalog asset version is exempt from the
+upload-intent requirement; it does not require re-uploading that version's main.
 
 A retry with the same key resolves to the retained session, and
 `BeginUploadResponse.status` says which outcome that is — clients decide
@@ -96,11 +109,12 @@ succeeds idempotently with the same file.
 
 ## Part sizes and transport limits
 
-Part sizes are deployment and transport limits, not schema constants. The
-server negotiates **one exact part size per session** at creation,
+New sessions select **64, 128, 256 or 512 KiB** (65536, 131072, 262144 or
+524288 bytes), uniformly across all media types. The server negotiates
+**one exact part size per session** at creation,
 sized to fit the deployment's maximum transport message size with protobuf
 framing and envelopes included, and persists it for the session's
-lifetime:
+lifetime. If no allowed size fits, session creation fails:
 
 - Every non-final part must be exactly the negotiated size; the final part
   must exactly complete the declared total size. Wrong-size parts are
@@ -246,12 +260,12 @@ entries select typed purpose and its validation policy; duplicate or incompatibl
 attributes are rejected. The typed sources select the same policies. Sending an
 image as a raw document does not implicitly select photo handling.
 
-Variant inputs (`MediaVariantSource`) are optional completed, caller-owned files,
+Thumbnail inputs (`ThumbnailSource`) are optional completed, caller-owned files,
 access-checked like every other file reference. They are processing inputs, not
-validated output facts. Version 1 accepts at most one static `THUMBNAIL` input,
-with both dimensions supplied; unsupported roles or mismatched bytes are rejected.
-Required published thumbnails are derived by the server, even if a thumbnail
-input was supplied. Final variant IDs need not echo the input IDs.
+validated output facts. Accept at most one static thumbnail input,
+with both dimensions positive; mismatched bytes are rejected.
+Valid supplied thumbnails are adopted under their exact file IDs. Invalid supplied
+inputs fail the owning action, never silently disappear; omission is valid.
 
 ## Main media processing and validation
 
@@ -285,38 +299,242 @@ processing obligations, not server attestations. Servers validate the normalized
 output, not a claimed source history. Transfer/resource limits remain deployment
 policy; no general video/audio byte, duration or bitrate limit is implied here.
 
-### Thumbnails and publication
+### Optional thumbnails
 
-Required thumbnails must be completed and durable **before publication** of the
-owning object. The main reference, measured metadata and final variants become
-visible together. An album waits for every item's required variants. Failure
-leaves the owner unpublished; a successful source operation never promises to
-finish required thumbnail generation later. `CompleteUpload` may already have
-completed the uploader's main file; that does not publish an owning source object.
+Every thumbnail is optional. Validate main bytes independently of generated sizes;
+missing or failed generation never blocks or reverses main acceptance. A supplied
+thumbnail is a completed file with validated static PNG/lossless WebP bytes and
+measured dimensions, adopted under its exact ID. Invalid supplied inputs fail the
+owning action, never silently disappear. At most one thumbnail is linked per
+main. There is no thumbnail role selector or collection.
 
-Servers generate required static PNG/lossless WebP thumbnails from accepted main
-bytes (a representative animation/video frame), preserving aspect ratio with
-integer-pixel rounding, never upscaling and using strictly fewer pixels than the
-main display image/frame.
-A one-pixel main is exempt because no smaller positive image exists. Every
-published thumbnail reports measured dimensions. At most one `THUMBNAIL` is
-published per main; version 1 accepts no `PREVIEW` or `FULL` variants.
+`ThumbnailSource` and returned `Thumbnail` each have exactly `int64 file_id=1`,
+`uint32 width=2`, `uint32 height=3`. The scalar dimensions have no optional
+presence: when the enclosing message is present, all three values must be
+positive. Missing or zero dimensions are invalid, not thumbnail omission.
+Omit the entire message when no thumbnail is supplied/ready. Returned dimensions
+are measured from the validated bytes, not copied from claims.
+
+This clean breaking cutover removes every retired `variants` field and the
+duplicate `StickerView.thumb_file_id`, without reserved numbers or names. The
+entire public schema uses consecutive declaration-order tags from 1 per message,
+including oneof members and independent nested-message sequences. Empty messages
+stay empty; enum `UNSPECIFIED = 0` values remain. Old wire slots are deliberately
+reused, with no compatibility aliases. All consumers must regenerate together;
+old protobuf payloads/caches require an explicit migration or reset before use.
+The singular fields use these compact tags:
+
+| Message | `thumbnail` type/tag | `inline_preview` tag | `representation_revision` tag |
+| --- | --- | --- | --- |
+| `PhotoSource`, `DocumentSource`, `VideoSource`, `AudioSource` | `ThumbnailSource` / 4 | 3 | — |
+| `StickerSource` | `ThumbnailSource` / 6 | 5 | — |
+| `ProfilePhotoSource`, `StickerAssetSource` | `ThumbnailSource` / 4 | 3 | — |
+| `Photo` | `Thumbnail` / 9 | 7 | 8 |
+| `Document` | `Thumbnail` / 10 | 8 | 9 |
+| `ChatPhoto` | `Thumbnail` / 7 | 5 | 6 |
+| `UserPhoto` | `Thumbnail` / 5 | 3 | 4 |
+| `ProfilePhoto` | `Thumbnail` / 8 | 6 | 7 |
+| `StickerView` | `Thumbnail` / 11 | 9 | 10 |
 
 | Purpose | Thumbnail | Bounds |
 | --- | --- | --- |
-| Message photo/video | Required | At most 320x320, 256 KiB |
-| Chat/profile photo | Required | At most 160x160, 256 KiB |
-| Sticker | Required | At most 128x128, 256 KiB |
-| Custom emoji | Optional | At most 128x128, 256 KiB |
-| Audio cover/raw document preview | Optional, only with an explicit cover/preview input | At most 320x320, 256 KiB |
-| Voice | None | Variant inputs are rejected |
+| Message photo/video | Optional | At most 320x320, 256 KiB |
+| Chat/profile photo | Optional | At most 160x160, 256 KiB |
+| Sticker/custom emoji | Optional | At most 128x128, 256 KiB |
+| Audio cover/raw document preview | Optional explicit supplied input only | At most 320x320, 256 KiB |
+| Voice | None | Thumbnail inputs and inline preview are rejected |
 
-Optional thumbnails are generated from the explicit input without upscaling and
-are ready with the owning object. Image-purpose thumbnails also have fewer pixels
-than the main; audio/raw-document covers have no main display dimensions to
-compare against. Raw document bytes are never
-sniffed to create a preview automatically. Supplied variant inputs must satisfy
-the owning purpose's bounds; they do not replace required server derivation.
+Preserve aspect ratio with integer-pixel rounding, never upscale, and use strictly
+fewer pixels than an image/video main display frame. A one-pixel main has no
+thumbnail. Audio/raw-document covers have no main display dimensions to compare.
+Automatic optional generation inspects only explicit image/video intent; no
+audio/voice worker, video output, or main transcode is promised. Raw documents
+remain unclassified. Do not replace an adopted client thumbnail. Reuse requires
+the same immutable main, purpose, profile/version and any explicit cover inputs.
+
+### Ordinary domain pending lifecycles
+
+There is one contract, with no version opt-in, generic operation service, or extra
+submission call. `SendMedia`, `SendAlbum`, `EditChatPhoto`, channel `EditPhoto`,
+`SetProfilePhoto` and `CreateStickerAsset`/`UpdateStickerAsset` can return durable
+private pending image/video validation directly. Physical validation profile
+versions remain `1`. No audio/voice asynchronous worker is implied. Scheduled
+sends, message edits and bot actions validate before their existing acceptance;
+they do not use these pending lifecycles and still use optional thumbnails.
+
+| Owner | Original mutation identity | Response snapshot | Query / cancellation |
+| --- | --- | --- | --- |
+| Messages | Existing signed nonzero `idempotency_key`; ordered distinct keys for albums | `send_status: SendStatus` | `GetSendStatus` / `CancelSend` with `target` and any one original key |
+| Messages chat photo | Existing positive numeric `operation_id` | `photo_update: ChatPhotoUpdate` | `GetChatPhotoUpdate` / `CancelChatPhotoUpdate` with `chat_id`, `operation_id` |
+| Channels photo | Direct `request_id` | `photo_update: ChannelPhotoUpdate` | `GetPhotoUpdate` / `CancelPhotoUpdate` with `channel_id`, `request_id` |
+| Account photo | Direct `request_id` | `photo_update: ProfilePhotoUpdate` | `GetProfilePhotoUpdate` / `CancelProfilePhotoUpdate` with `request_id` |
+| Stickers asset | Direct `request_id`; original `asset_id` for updates | `asset_change: AssetChange` | `GetAssetChange` / `CancelAssetChange` with `request_id`, optional `asset_id` (required for update, absent for create) |
+
+New string request IDs are canonical lowercase nonzero UUIDs scoped to the actor;
+persist before the first call. Required on profile sets, channel new-photo actions,
+asset creates and source-replacing updates. Metadata-only asset edits remain
+synchronous; an optional supplied ID uses the same deduplication/status contract.
+New chat/channel photo actions support both the direct completed-file and full
+photo source forms. Removal is synchronous with no status; channel removal omits
+`request_id`, and chat removal uses `operation_id=0`. Removing a current photo does
+not cancel an earlier pending update: use its cancel method and reconcile.
+Both chat and channel new-photo actions capture the current photo generation at
+binding; final acceptance fails precondition instead of overwriting an intervening
+replacement/removal. Existing profile/asset CAS tokens likewise remain fixed.
+Immediate file-backed sends/albums always include status, even on immediate
+success; scheduled and non-file sends retain their existing response contract.
+
+The domain owner durably records the original actor, method/scope, exact original
+request bytes, all send keys in order, immutable sources and claims, preview and
+thumbnail inputs, captions/entities/replies/options, CAS and draft tokens **before
+returning PENDING**. Persist and retry exact bytes, not reserialized equivalents
+or reconstructed cache data. Forwarding preserves the original method payload.
+Reject unknown fields recursively before binding; syntactic rejection consumes no
+keys. Fingerprints remain internal, not public fields or lookup keys. Reusing a
+bound key/ID with different bytes/method/scope conflicts. Every album member key
+binds the entire ordered request; another key or UUID cannot bypass it.
+Recover existing bindings before fresh CAS/source checks; a terminal retry cannot
+fail merely because its original CAS is now old, nor reapply a completed mutation.
+
+Each family has its own state and failure enum: `PENDING` may become `PROCESSING`
+or terminal; `PROCESSING` may become terminal. Only `SUCCEEDED`, `FAILED` and
+`CANCELED` are terminal, and they never change. Revisions are positive, initially
+1, advancing only with state transitions, never with disclosure/enrichment.
+Failures are bounded categories, not raw diagnostics. `PENDING`/`PROCESSING` have
+**no recipient-visible acceptance**, history, file grant, source mutation, fanout
+or draft clear. Workers retain the original actor and source, never fresh CAS or
+draft tokens. Before committing, recheck current authorization, file access, main
+and supplied inputs, reply/entity/catalog references, original CAS and domain
+bounds. Album validation and acceptance are all-or-nothing. Success, deduplication,
+accepted identities, owning mutation, exact file membership and durable change/
+draft obligations commit atomically. Clear only the captured draft pair on success.
+
+Cancel reports the actual durable outcome: only `CANCELED` proves later effects
+are fenced. Claimed work may report `PROCESSING` and still complete; query until
+terminal. Cancel unclaimed `PENDING` durably before responding, atomically racing
+claim/commit; return terminal or `PROCESSING`, never acknowledge `PENDING` as
+canceled. A cancel request never aborts uploads, deletes accepted objects or rolls
+back committed selection/head changes. RPC cancellation/deadlines are ambiguous,
+not a durable cancel decision. Identical retries recover the same status under
+current disclosure policy, not another side effect. No durable gateway is added.
+
+Pending records survive restarts/replica changes and cannot be evicted. Full
+terminal outcomes last at least **30 days** from termination (`retain_until`).
+Successful identity receipts remain queryable after full-body retention expires.
+Deduplication tombstones retain original actor/method/scope, exact-byte binding,
+main identities and accepted mapping indefinitely; expiry never permits key reuse.
+Unknown, foreign, mismatched and expired non-successful lookups report NOT_FOUND
+alike. Get/cancel are actor-only, not discovery or file-access APIs.
+
+#### Acceptance identities are separate from current bodies
+
+`SendStatus.accepted` contains one `SendReceipt` for a single send or **2..10 in
+original item order** for an album. Looking up any bound member key returns the
+same complete ordered mapping, even after edits/removal. Each receipt has its
+original `idempotency_key`, optional `message_id`, optional shared `album_id`, and
+an explicit optional-presence `reference_withheld` decision. False requires the
+original accepted message ID (and album ID for albums); true omits both IDs but
+keeps the slot/key. Pending/processing/failed/canceled have no accepted receipts.
+
+Photo statuses retain the original `photo_id`; asset status retains exact
+`accepted: AssetReference`, distinct from its optional original update selector
+`asset_id`. Profile status also retains the original commit `gallery_revision`,
+not a newly acquired CAS token. Successful photo/asset receipts require an
+explicit `reference_withheld`: false discloses the exact original identity, true
+omits it. Recheck identity policy on every submit/query/cancel. Ordinary edits or
+removal do not erase receipts; disclosure changes do not advance status revision.
+Missing decisions/mappings are unknown/nonconforming, never proof of no effect.
+
+Queries separate required status from optional current original matching bodies.
+Only success may carry bodies; recheck current source authorization. Omit edited,
+removed, superseded, unselected or inaccessible original results; never resurrect
+stale bodies or substitute a current photo/asset head. Albums return the complete
+matching original body result or none, never partial results or related entities
+without bodies. Later representations of the same original main may hydrate.
+The same disclosure rules apply to original-method retries. A lost response plus
+an intervening edit can therefore report success and receipt IDs without bodies.
+Use `GetMessages` for current edited bodies, `GetChats`/`GetChannels`,
+`GetProfilePhotos` or exact `GetStickerAssets` to reconcile current source data.
+Never send under a fresh key merely because a body/identity was withheld.
+
+### Inline previews and regular thumbnails
+
+`InlinePreview { width=1, height=2, jpeg=3 }` is wired to photo, video, document,
+audio-cover, sticker, profile and chat/catalog source/result projections. Both
+axes are **1..40** pixels; the JPEG is **1..4096** bytes. Servers require a fully
+decoded static single JPEG with exactly matching dimensions, no trailing bytes
+and bounded decode work. Clients preserve aspect ratio without upscaling. Empty,
+oversized or malformed previews are rejected; omission is valid. This lossy hint
+does not relax lossless main validation, create a file ID or carry encryption
+flags. It shares its owner's visibility and cannot prove the main contents.
+Video results continue using the existing `Document` representation. Raw-document
+previews are explicit hints, never automatic media classification. Voice accepts
+neither preview nor thumbnail.
+
+Regular optional thumbnails remain separately uploaded completed file IDs in
+`ThumbnailSource`. Validate and adopt their **exact IDs** under the
+existing per-purpose static PNG/lossless WebP format, dimensions, 256 KiB, single
+thumbnail and lower-pixel rules. Invalid supplied inputs fail acceptance; they
+are not silently dropped. No client thumbnail upload is required. If missing,
+automatic optional image enrichment derives a thumbnail from typed image/video
+main bytes; raw documents/audio/voice are never classified by sniffing. The owner
+may publish the validated main before generation completes, or with no generated
+size at all. Generation failure does not fail or reverse successful publication.
+There is no synchronous worker method or separate optional-generation status API.
+
+### Independent representation revision and recovery
+
+New `Photo`, `Document`, `ProfilePhoto`, `UserPhoto`, `ChatPhoto` and `StickerView`
+report positive `representation_revision`, initially 1, even with no thumbnail.
+The owner atomically links durably ready output IDs and increments only that
+revision; it never replaces an adopted client thumbnail. Main identity/bytes,
+measured facts, authored preview, message `body_revision`/`edit_date`, asset version,
+gallery revision and pack revision do not change for enrichment. Equal revisions
+describe identical complete sets. Compare only within the same principal, exact
+owner/version and immutable main; stale jobs cannot attach to replacements.
+Every read checks **exact per-output membership**, **never all children** of a
+processed main. A ready generated output grants nothing until explicitly linked
+to that particular owner. Removal/replacement/visibility changes revoke the
+context on the next file read.
+
+Older objects and message captures have absent representation revisions and stay
+frozen; do not enrich them or widen their grants. New sends of existing catalog
+assets capture the exact main/version and explicit current output membership;
+later catalog enrichment never implicitly widens that message capture. New sends
+may capture older assets without modifying them. Reusing an older retained gallery
+entry does not retrofit its source or representation policy. Optional sizes never
+gate pack publication or increment the pack's authored revision.
+
+Message enrichment uses `TARGET_CHANGE_KIND_REPRESENTATION`, additive
+`TargetChange.representation_revision` and `MessageChanged.representation_revision`.
+It creates a retained mutation position, **not** an authored edit; body revision
+stays unchanged. Existing `GetMessages`, `GetHistory` and `ListMessageChanges`
+hydrate complete currently authorized representations. Resume only from the
+existing stable change cursor; compare body and representation revisions
+independently and never merge representations across an edited/replaced main.
+`ChatPhotoRepresentationChanged` (group/channel exact `chat_id`),
+`ProfilePhotoRepresentationChanged` and `StickerAssetRepresentationChanged` are
+visibility-filtered hints; fetch `GetChats`/`GetChannels`, `GetProfilePhotos` or
+exact `GetStickerAssets`. Actor-only `ChatPhotoUpdateChanged`,
+`ChannelPhotoUpdateChanged`, `ProfilePhotoUpdateChanged` and `AssetChangeChanged`
+still hint their corresponding domain queries. Query those on startup or
+reconnect, and query again if another hint arrives during a fetch. Stopping
+observation does not cancel pending work.
+
+For immediate file-backed sends and albums, `SendStatusChanged` is an actor-only
+hint to refresh with `MessagesService.GetSendStatus`. It can arrive out of order
+or be missed. Recover unresolved sends on startup and reconnect using the
+original target and key (any original member key for an album). Query again if a
+hint arrives during a fetch. Missing status after an ambiguous send does not
+prove failure or permit a fresh key. The hint does not grant body or file access.
+
+For both sends and chat-photo updates, while connected, schedule a fallback query
+30 seconds after an ambiguous mutation response or a nonterminal status, even
+if no hint arrives. Use the original binding: `GetSendStatus` for sends and
+`GetChatPhotoUpdate` with the original `chat_id` and `operation_id` for chat photos.
+Restart the 30-second timer after each query that leaves the outcome unresolved.
+Keep at most one status query in flight per operation and stop the timer once a
+terminal outcome is known.
 
 ## Authorization
 
@@ -327,8 +545,8 @@ an authorized application object or uploader authorization, so a bare
 `file_id` obtained from any other source — for example an export or a
 guess — must not resolve. Servers report unknown and inaccessible files
 identically, and upload sessions of other principals are indistinguishable
-from unknown sessions. The same rules apply to variant files such as
-thumbnails and previews: a `MediaVariantSource` or `MediaVariant` file
+from unknown sessions. The same rules apply to thumbnail files:
+a `ThumbnailSource` or `Thumbnail` file
 reference is access-checked like any other file. Runtime enforcement lives
 in the server implementation, not in this contract.
 
@@ -338,7 +556,7 @@ Select exactly one of `MessageFileReference` (conversation and message ID),
 `ProfilePhotoReference` (user and gallery-entry ID), `StickerAssetReference`
 (unified asset ID and exact version), or `ChatPhotoReference` (chat and current
 photo ID). The requested `file_id` must be the referenced version's main file or
-a stored variant. With no context, only the
+its explicitly linked thumbnail. With no context, only the
 uploader can read their own
 completed file. A supplied context is checked even for the uploader; it cannot
 authorize an unrelated file or fall back to uploader identity or another object.
@@ -350,9 +568,9 @@ and mismatched file membership have the same not-found outcome.
 `FileAccessContext.chat_photo` in `tinkle/v1/files.proto` references a positive
 chat/group/channel `chat_id` and the current `ChatPhoto.photo_id` from
 `tinkle/v1/messages.proto`, not a file ID. `ChatPhoto.file_id`, `metadata` and
-`variants` describe the current main file and completed alternatives. The contract requires every
+`thumbnail` describe the current main file and optional completed thumbnail. The contract requires every
 `GetFileInfo` and `DownloadPart` call to check current chat visibility and that
-the requested file is that current photo's main file or a stored variant in that
+the requested file is that current photo's main file or its linked thumbnail in that
 chat. Replacement, removal, or lost visibility invalidates the context on the
 next call; no historical chat-photo gallery is promised.
 
@@ -382,13 +600,14 @@ revision to avoid disclosing hidden gallery changes. Matching no-ops preserve
 the revision, changes increment it once, and stale attempts fail without effect.
 Repeated sets of an identical retained file/source reuse the gallery-entry ID;
 they do not append duplicates. After a timeout, refetch and reconcile the source
-and selection rather than retrying with a fresh token. No operation-ID replay
-or deduplication across deletion is promised.
+and selection rather than retrying with a fresh token. Recover ambiguous sets
+through the original `request_id`; deletion never makes that ID reusable.
 
 `StickerAssetSource` and `ProfilePhotoSource` require `MediaValidation` with
 `MEDIA_VALIDATION_PROFILE_STRICT_LOSSLESS`, version `1`. Raw upload completion
 does not validate application media. Authoring verifies the complete source and
-all supplied variants before making the object visible. This profile accepts
+any supplied thumbnail before making the object visible. Optional generated
+thumbnails do not gate publication. This profile accepts
 static PNG and lossless WebP, not TGS, WebM, APNG or lossy WebP.
 WebP can animate: format and animation metadata are independent. GIF input must
 be normalized by the client to supported lossless bytes; do not silently flatten
@@ -396,9 +615,8 @@ animation or use lossy encoding. Profile photos must be static, at most 4096x409
 and 10,000,000 bytes. Sticker mains are at most 512x512; custom emoji at most
 128x128. Static asset mains are at most 1 MiB; animated mains at most 4 MiB,
 3000 ms and 180 frames. These bounds apply in addition to format validation.
-Version 1 permits at most one optional static thumbnail input per authored
-asset/photo. Required server-generated thumbnails and publication readiness
-follow the purpose table above. Unsupported roles or extra inputs are rejected,
+Accept at most one optional static thumbnail input per authored
+asset/photo under the purpose table above. Invalid supplied inputs are rejected,
 never silently discarded. Exact decoded bounds live in the source-message
 comments in the generated reference. Servers do not transcode mains.
 
@@ -449,8 +667,9 @@ Three rules apply across the table:
 
 ## Implementation defaults
 
-Part sizes, parallelism, session expiry, download limits, and retention
-windows are deployment configuration, not schema constants. Clients must
+Part-size selection within the four allowed sizes, parallelism, session expiry,
+download limits and upload-session retention are deployment configuration. Domain
+pending full outcomes have the minimum 30-day retention described above. Clients must
 honor the values returned by `BeginUpload` and
 `GetFileInfoResponse.max_download_part_bytes` instead of assuming
 defaults, and must treat all of them as potentially different on the next

@@ -123,12 +123,31 @@ Versions are `{plugin-version}-{module-commit-timestamp}-{module-commit-id}.{plu
 9. **Keep this repository transport independent.** Document the public
    schema in proto comments and the hand-written pages in `website/content/`.
    Runtime transport bindings and implementation protocols belong in their
-   implementation repositories. Public UpdatesService bindings are not
-   implemented in Chorus; internal replay, watch, and presence capabilities exist.
+   implementation repositories. `UpdatesService.ObserveConnectivity` is
+   ephemeral presence; it does not provide durable replay.
+
+## Update-based public contracts
+
+- Use typed, domain-owned updates for live state changes and asynchronous
+  command outcomes. Keep explicit reads for initial snapshots, detail, search,
+  pagination, transfers, and recovery. Do not add per-operation status RPCs
+  as the normal way to wait for completion.
+- Say whether each update carries a committed outcome, invalidates current
+  state, or reports an ephemeral observation. Define the audience, stable
+  identity, ordering scope, and handling of duplicate or late updates. Keep private
+  command outcomes separate from resource state visible to other callers.
+  An update does not grant access to a body or file.
+- For outcomes clients must recover, define bounded catch-up for startup,
+  reconnect, and missed delivery, including what to do after retention expiry.
+  Keep the applied cursor distinct from an operation key, object revision,
+  or transport acknowledgment. Retire a status read only after the client
+  can recover the original outcome without it, even if both the command reply
+  and the live update were missed.
 
 ## When asked to "add a new RPC"
 
-1. Open a PR in this repo (`tinkle-org/schema`) editing the
+1. Check whether an update or an existing read meets the requirement. If a
+   new RPC is needed, open a PR in this repo (`tinkle-org/schema`) editing the
    relevant `tinkle/v1/*.proto`. Add the request/response messages
    and the method to the appropriate `service` block. Keep the
    Protobuf `package` and `option go_package` lines as they are.

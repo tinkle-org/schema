@@ -109,7 +109,8 @@ class AccountSchemaTests(unittest.TestCase):
             "ChangePhoneNumber", "GetContentSettings", "SetContentSetting",
             "Logout", "RevokeSession", "RevokeSessions", "GetSessions",
             "ConfirmSession",
-            "SetProfilePhoto", "GetProfilePhotos", "SelectProfilePhoto", "DeleteProfilePhoto",
+            "SetProfilePhoto", "GetProfilePhotoUpdate", "CancelProfilePhotoUpdate",
+            "GetProfilePhotos", "SelectProfilePhoto", "DeleteProfilePhoto",
         ], [m["name"] for m in service["method"]])
         for method in service["method"]:
             with self.subTest(method=method["name"]):

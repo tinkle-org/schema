@@ -117,10 +117,14 @@ enum ContentScope {
 message UserPhoto {
   // Canonical file ID of the full-size photo.
   int64 file_id = 1;
-  // Stored variants (thumbnails/previews) of the photo.
-  repeated MediaVariant variants = 2;
   // Positive gallery-entry identifier for ProfilePhotoReference; not a file ID.
-  int64 photo_id = 3;
+  int64 photo_id = 2;
+  // Optional accepted hint, governed by the same current photo privacy.
+  InlinePreview inline_preview = 3;
+  // Same independent revision as ProfilePhoto; absent means older/frozen.
+  optional uint64 representation_revision = 4;
+  // Optional completed thumbnail; governed by the same current photo privacy.
+  Thumbnail thumbnail = 5;
 }
 
 // User represents a user with either minimal (Empty) or full (UserData) info.

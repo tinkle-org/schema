@@ -35,8 +35,8 @@ option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 // ABORTED with no effect; no-op at a matching token succeeds without increment.
 // After timeout, refetch and reconcile; a stale retry never overwrites newer
 // work. Do not blindly retry with a fresh token. CreatePack's unique short name
-// permits lookup after an ambiguous creation; CreateStickerAsset has no operation
-// deduplication guarantee, so an ambiguous create must not be blindly repeated.
+// permits lookup after an ambiguous creation. Asset source changes use the direct
+// request_id and GetAssetChange; never retry with a fresh ID or CAS token.
 service StickersService {
   // ============================================================================
   // Installed Pack Management
@@ -111,6 +111,10 @@ service StickersService {
   rpc CreateStickerAsset(CreateStickerAssetRequest) returns (CreateStickerAssetResponse);
   // UpdateStickerAsset creates a new head version; pinned versions are unchanged.
   rpc UpdateStickerAsset(UpdateStickerAssetRequest) returns (UpdateStickerAssetResponse);
+  // GetAssetChange recovers an original create/update request for the caller.
+  rpc GetAssetChange(GetAssetChangeRequest) returns (GetAssetChangeResponse);
+  // CancelAssetChange reports the durable outcome without undoing a catalog write.
+  rpc CancelAssetChange(CancelAssetChangeRequest) returns (CancelAssetChangeResponse);
   // DeleteStickerAsset deletes an owned asset not present in any pack.
   rpc DeleteStickerAsset(DeleteStickerAssetRequest) returns (DeleteStickerAssetResponse);
   // GetStickerAssets resolves up to 100 sticker/custom-emoji IDs in one call.
@@ -158,26 +162,28 @@ message StickerView {
   int64 id = 1;
   // Canonical completed-file ID of the main asset; never a URL or inline bytes.
   int64 file_id = 2;
-  // Canonical thumbnail file ID, or zero if none. When present it equals the
-  // THUMBNAIL variant's file_id; there cannot be two different thumbnails.
-  int64 thumb_file_id = 3;
   // Whether this sticker requires a premium subscription.
-  bool is_premium = 4;
+  bool is_premium = 3;
   // Server-published typed sticker metadata, when available. Pack
   // ownership and mask positions stay in the sticker domain.
-  optional StickerMetadata metadata = 5;
+  optional StickerMetadata metadata = 4;
   // Asset use, independent of metadata.format and metadata.animated.
-  StickerKind kind = 6;
+  StickerKind kind = 5;
   // Owning user ID, not a caller-supplied authorization assertion.
-  int64 owner_id = 7;
+  int64 owner_id = 6;
   // Nonempty plain UTF-8 text, at most 64 bytes, for CUSTOM_EMOJI. Used when
   // the asset is unavailable or a renderer cannot display it; empty for stickers.
-  string fallback_text = 8;
-  // Validated stored thumbnail, at most one; all bytes use FilesService.
-  repeated MediaVariant variants = 9;
-  // Exact immutable version represented by every field of this projection.
+  string fallback_text = 7;
+  // Exact authored version; main, metadata and fallback are immutable. Only
+  // output membership can enrich at its independent representation revision.
   // Positive even on head-resolution results; never implicitly rebind to head.
-  uint64 asset_version = 10;
+  uint64 asset_version = 8;
+  // Optional accepted hint, visible only with this exact asset version.
+  InlinePreview inline_preview = 9;
+  // Positive independent output-set revision; absent means older/frozen.
+  optional uint64 representation_revision = 10;
+  // Optional validated thumbnail; all bytes use FilesService with exact membership.
+  Thumbnail thumbnail = 11;
 }
 
 // StickerPackPreview is a compact pack representation for list views.
@@ -441,17 +447,18 @@ message ToggleFavoriteStickerResponse {
 // frames. PNG must be static. Enforce decoded dimensions and aggregate decoded
 // pixels (width * height * frame_count), not just a container header. A source
 // has at most one optional static thumbnail input, at most 128x128 and 256 KiB,
-// with both dimensions supplied. Validate it under the same profile. Servers
-// derive the required sticker thumbnail before asset publication under
-// MediaValidation rules; custom-emoji thumbnails are optional. Clients process
+// with both dimensions positive. Validate it under the same profile. Thumbnails
+// are optional enrichment under MediaValidation. Clients process
 // and upload the main; unsupported bytes are rejected, not transcoded by servers.
 message StickerAssetSource {
   // Positive canonical file ID; no upload ID, URL, local path, or inline bytes.
   int64 file_id = 1;
   // Required complete format, dimensions, animation and validation declaration.
   StickerMetadata metadata = 2;
-  // Optional THUMBNAIL input only; completed and caller-owned, not an output fact.
-  repeated MediaVariantSource variants = 3;
+  // Optional bounded hint validated with the source.
+  InlinePreview inline_preview = 3;
+  // Optional completed caller-owned thumbnail input, not an output fact.
+  ThumbnailSource thumbnail = 4;
 }
 
 // CreateStickerAssetRequest creates a draft asset for the authenticated owner.
@@ -463,12 +470,17 @@ message CreateStickerAssetRequest {
   // Required nonempty plain text for CUSTOM_EMOJI (1..64 UTF-8 bytes);
   // must be empty for STICKER. Clients copy it into custom-emoji entities.
   string fallback_text = 3;
+  // Required canonical lowercase nonzero UUID, persisted before calling. Scoped
+  // to the actor and permanently bound to this method/exact original bytes.
+  string request_id = 4;
 }
 
 // CreateStickerAssetResponse returns the validated owned asset.
 message CreateStickerAssetResponse {
-  // Complete asset, including validated metadata and canonical file references.
+  // Authorized current original matching head/version, absent otherwise.
   StickerView asset = 1;
+  // Required even for immediate success; non-success creates no catalog entry.
+  AssetChange asset_change = 2;
 }
 
 // UpdateStickerAssetRequest creates a new immutable version and advances head
@@ -482,12 +494,138 @@ message UpdateStickerAssetRequest {
   optional string fallback_text = 3;
   // Required positive current head version; mismatch is ABORTED with no effect.
   uint64 expected_version = 4;
+  // Required canonical lowercase nonzero UUID when source is present. Optional
+  // for synchronous metadata-only edits; if supplied, use the same durable
+  // binding/status contract. Never refresh expected_version on a bound retry.
+  string request_id = 5;
 }
 
 // UpdateStickerAssetResponse returns the current validated asset.
 message UpdateStickerAssetResponse {
-  // Updated asset, with unchanged identity and kind.
+  // Authorized current original matching head/version, absent otherwise.
   StickerView asset = 1;
+  // Required for keyed changes, including immediate success. Non-success has no
+  // asset or head advance. Absent only for unkeyed synchronous metadata edits.
+  AssetChange asset_change = 2;
+}
+
+// AssetChangeState describes an actor-private asset create/update lifecycle.
+enum AssetChangeState {
+  // Unknown, never a conforming state.
+  ASSET_CHANGE_STATE_UNSPECIFIED = 0;
+  // Recorded, no catalog entry/head change yet.
+  ASSET_CHANGE_STATE_PENDING = 1;
+  // Claimed; cancellation cannot promise rollback.
+  ASSET_CHANGE_STATE_PROCESSING = 2;
+  // Original catalog write committed, not current head/visibility proof.
+  ASSET_CHANGE_STATE_SUCCEEDED = 3;
+  // Durably fenced without catalog changes.
+  ASSET_CHANGE_STATE_FAILED = 4;
+  // Cancellation durably prevented catalog changes.
+  ASSET_CHANGE_STATE_CANCELED = 5;
+}
+
+// AssetChangeFailure is a bounded terminal category, not raw diagnostics.
+enum AssetChangeFailure {
+  // Required unless FAILED.
+  ASSET_CHANGE_FAILURE_UNSPECIFIED = 0;
+  // Main or supplied preview/thumbnail failed validation.
+  ASSET_CHANGE_FAILURE_INVALID_MEDIA = 1;
+  // Current ownership/authority or file access failed.
+  ASSET_CHANGE_FAILURE_NOT_AUTHORIZED = 2;
+  // Original expected_version or other precondition failed.
+  ASSET_CHANGE_FAILURE_PRECONDITION = 3;
+  // Domain/resource bound exceeded.
+  ASSET_CHANGE_FAILURE_RESOURCE_LIMIT = 4;
+  // Processing failed and later effects are fenced.
+  ASSET_CHANGE_FAILURE_PROCESSING = 5;
+}
+
+// AssetChange applies MediaValidation's lifecycle, exact-byte binding and final
+// authorization/CAS rules. One actor/request_id binds method and original asset
+// scope; it cannot be reused for another create or update. Full outcomes last at
+// least 30 days; successful accepted identities remain queryable after expiry or
+// deletion. Deduplication never permits ID reuse. No pack membership is changed.
+message AssetChange {
+  // Original actor-scoped create/update request UUID.
+  string request_id = 1;
+  // Original update locator only; required for updates, absent for creates even
+  // after acceptance. The accepted identity below is separate from this selector.
+  optional int64 asset_id = 2;
+  // Explicit durable state, independent of current asset head/body disclosure.
+  AssetChangeState state = 3;
+  // Positive state revision, initially 1, not an asset/representation revision.
+  uint64 revision = 4;
+  // Nonzero if and only if FAILED.
+  AssetChangeFailure failure = 5;
+  // Original exact committed ID/version, only for disclosed SUCCEEDED receipts.
+  // For updates its asset_id equals the original selector, never a new head.
+  AssetReference accepted = 6;
+  // Required only for SUCCEEDED: false requires accepted, true omits it. Recheck
+  // identity policy every response; ordinary deletion does not erase the receipt.
+  optional bool reference_withheld = 7;
+  // Fixed terminal full-outcome deadline, at least 30 days from termination.
+  google.protobuf.Timestamp retain_until = 8;
+}
+
+// GetAssetChangeRequest selects an original create/update, never a head lookup.
+message GetAssetChangeRequest {
+  // Original canonical actor-scoped UUID; unknown/foreign report NOT_FOUND alike.
+  string request_id = 1;
+  // Original positive asset ID for update; absent for create. Mismatch is NOT_FOUND.
+  optional int64 asset_id = 2;
+}
+
+// GetAssetChangeResponse separates historical acceptance from current body access.
+// Only SUCCEEDED can have a body; require current authorization and the original
+// matching head/version. Omit deleted/superseded/inaccessible bodies; never replace
+// with a newer head or resurrect old source data. Newer representations of the
+// exact original main/version may hydrate; GetStickerAssets reconciles current data.
+message GetAssetChangeResponse {
+  // Required actor-private durable snapshot, regardless of body disclosure.
+  AssetChange asset_change = 1;
+  // Authorized original matching current head/version only, absent otherwise.
+  StickerView asset = 2;
+}
+
+// CancelAssetChangeRequest selects original work, not an asset deletion.
+message CancelAssetChangeRequest {
+  // Original canonical actor-scoped request UUID.
+  string request_id = 1;
+  // Original positive update asset ID; absent for creates.
+  optional int64 asset_id = 2;
+}
+
+// CancelAssetChangeResponse reports the actual durable outcome. Only CANCELED
+// proves fencing; PROCESSING requires lookup and may complete. Never undo a
+// committed create/head advance, alter packs or abort the independent upload.
+message CancelAssetChangeResponse {
+  // Required snapshot with current identity-disclosure policy applied.
+  AssetChange asset_change = 1;
+}
+
+// AssetChangeChanged is an actor-only hint to query GetAssetChange, not a receipt.
+// May duplicate/reorder/disappear; query on reconnect and after an in-flight hint.
+// Stopping observation never cancels an asset change.
+message AssetChangeChanged {
+  // Original actor-scoped request UUID.
+  string request_id = 1;
+  // Original update selector only; absent for creates.
+  optional int64 asset_id = 2;
+  // Positive hinted status revision; the source query may be newer.
+  uint64 revision = 3;
+}
+
+// StickerAssetRepresentationChanged is a visibility-filtered hint, not a grant.
+// Fetch exact GetStickerAssets on startup/reconnect and after hints (again when
+// in-flight). Match exact version/main; replace complete sets, never assume head.
+message StickerAssetRepresentationChanged {
+  // Exact immutable asset ID/version, not a current head substitution.
+  AssetReference asset = 1;
+  // Exact immutable main file ID.
+  int64 main_file_id = 2;
+  // Positive independent hinted output-set revision.
+  uint64 representation_revision = 3;
 }
 
 // DeleteStickerAssetRequest removes an owned asset; pack membership must be empty.
@@ -657,6 +795,8 @@ message ReorderPackAssetsResponse {
 }
 
 // PublishPackRequest validates all current members before atomic publication.
+// Validated assets need no optional thumbnail to publish a pack. Pack pins are
+// not message captures; enrichment never changes authored version/pack revision.
 message PublishPackRequest {
   // Positive owned pack ID. Empty packs fail; publishing never advances asset
   // references to head. Already-published is a no-op only at a matching revision.

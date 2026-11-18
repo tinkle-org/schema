@@ -159,14 +159,14 @@ message SendPhotoRequest {
     // File ID of an uploaded, completed photo file (legacy scalar form).
     int64 photo = 2;
     // Typed photo source: the completed file plus client-asserted
-    // metadata and uploaded variants.
-    PhotoSource photo_source = 8;
+    // metadata and an optional uploaded thumbnail.
+    PhotoSource photo_source = 3;
   }
-  optional string caption = 3;
-  optional string parse_mode = 4;
-  optional int64 reply_to_message_id = 5;
-  optional InlineKeyboardMarkup reply_markup = 6;
-  optional bool disable_notification = 7;
+  optional string caption = 4;
+  optional string parse_mode = 5;
+  optional int64 reply_to_message_id = 6;
+  optional InlineKeyboardMarkup reply_markup = 7;
+  optional bool disable_notification = 8;
 }
 
 // SendDocumentRequest sends a document message.
@@ -179,14 +179,14 @@ message SendDocumentRequest {
     // form).
     int64 document = 2;
     // Typed document source: the completed file plus composable
-    // attributes and uploaded variants.
-    DocumentSource document_source = 8;
+    // attributes and an optional uploaded thumbnail.
+    DocumentSource document_source = 3;
   }
-  optional string caption = 3;
-  optional string parse_mode = 4;
-  optional int64 reply_to_message_id = 5;
-  optional InlineKeyboardMarkup reply_markup = 6;
-  optional bool disable_notification = 7;
+  optional string caption = 4;
+  optional string parse_mode = 5;
+  optional int64 reply_to_message_id = 6;
+  optional InlineKeyboardMarkup reply_markup = 7;
+  optional bool disable_notification = 8;
 }
 
 // SendVideoRequest sends a video message.
@@ -200,16 +200,16 @@ message SendVideoRequest {
     // Typed video source: the completed file plus client-asserted video
     // metadata and uploaded covers. When supplied, the legacy
     // duration/width/height fields are ignored.
-    VideoSource video_source = 11;
+    VideoSource video_source = 3;
   }
-  optional string caption = 3;
-  optional string parse_mode = 4;
-  optional int32 duration = 5;
-  optional int32 width = 6;
-  optional int32 height = 7;
-  optional int64 reply_to_message_id = 8;
-  optional InlineKeyboardMarkup reply_markup = 9;
-  optional bool disable_notification = 10;
+  optional string caption = 4;
+  optional string parse_mode = 5;
+  optional int32 duration = 6;
+  optional int32 width = 7;
+  optional int32 height = 8;
+  optional int64 reply_to_message_id = 9;
+  optional InlineKeyboardMarkup reply_markup = 10;
+  optional bool disable_notification = 11;
 }
 
 // SendAudioRequest sends an audio message.
@@ -223,16 +223,16 @@ message SendAudioRequest {
     // Typed audio source: the completed file plus client-asserted audio
     // metadata and uploaded covers. When supplied, the legacy
     // duration/performer/title fields are ignored.
-    AudioSource audio_source = 11;
+    AudioSource audio_source = 3;
   }
-  optional string caption = 3;
-  optional string parse_mode = 4;
-  optional int32 duration = 5;
-  optional string performer = 6;
-  optional string title = 7;
-  optional int64 reply_to_message_id = 8;
-  optional InlineKeyboardMarkup reply_markup = 9;
-  optional bool disable_notification = 10;
+  optional string caption = 4;
+  optional string parse_mode = 5;
+  optional int32 duration = 6;
+  optional string performer = 7;
+  optional string title = 8;
+  optional int64 reply_to_message_id = 9;
+  optional InlineKeyboardMarkup reply_markup = 10;
+  optional bool disable_notification = 11;
 }
 
 // SendVoiceRequest sends a voice message.
@@ -246,14 +246,14 @@ message SendVoiceRequest {
     int64 voice = 2;
     // Typed voice source: the completed file plus duration and waveform.
     // When supplied, the legacy duration field is ignored.
-    VoiceSource voice_source = 9;
+    VoiceSource voice_source = 3;
   }
-  optional string caption = 3;
-  optional string parse_mode = 4;
-  optional int32 duration = 5;
-  optional int64 reply_to_message_id = 6;
-  optional InlineKeyboardMarkup reply_markup = 7;
-  optional bool disable_notification = 8;
+  optional string caption = 4;
+  optional string parse_mode = 5;
+  optional int32 duration = 6;
+  optional int64 reply_to_message_id = 7;
+  optional InlineKeyboardMarkup reply_markup = 8;
+  optional bool disable_notification = 9;
 }
 
 // SendStickerRequest sends a sticker message.
@@ -267,11 +267,11 @@ message SendStickerRequest {
     int64 sticker = 2;
     // Typed sticker source: the completed file plus client-asserted
     // sticker metadata and uploaded thumbnails.
-    StickerSource sticker_source = 6;
+    StickerSource sticker_source = 3;
   }
-  optional int64 reply_to_message_id = 3;
-  optional InlineKeyboardMarkup reply_markup = 4;
-  optional bool disable_notification = 5;
+  optional int64 reply_to_message_id = 4;
+  optional InlineKeyboardMarkup reply_markup = 5;
+  optional bool disable_notification = 6;
 }
 
 // SendLocationRequest sends a location message.
@@ -425,9 +425,9 @@ message EditMessageMediaRequest {
     // Legacy string-discriminated media envelope.
     BotMediaSource media = 3;
     // Typed media source carrying the completed file and its metadata.
-    MediaSource source = 5;
+    MediaSource source = 4;
   }
-  optional InlineKeyboardMarkup reply_markup = 4;
+  optional InlineKeyboardMarkup reply_markup = 5;
 }
 
 // EditMessageReplyMarkupRequest edits the reply markup of a message.

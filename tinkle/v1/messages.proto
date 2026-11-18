@@ -38,7 +38,7 @@ service MessagesService {
   // DeleteMessages deletes specific messages by ID.
   rpc DeleteMessages(DeleteMessagesRequest) returns (DeleteMessagesResponse);
 
-  // ---- Chat Creation & Structure (6 RPCs) ----
+  // ---- Chat Creation & Structure (8 RPCs) ----
 
   // CreateChat creates a new group chat with initial participants.
   rpc CreateChat(CreateChatRequest) returns (CreateChatResponse);
@@ -46,6 +46,10 @@ service MessagesService {
   rpc EditChatTitle(EditChatTitleRequest) returns (EditChatTitleResponse);
   // EditChatPhoto updates or removes a chat's photo.
   rpc EditChatPhoto(EditChatPhotoRequest) returns (EditChatPhotoResponse);
+  // GetChatPhotoUpdate recovers the caller's exact numeric photo retry key.
+  rpc GetChatPhotoUpdate(GetChatPhotoUpdateRequest) returns (GetChatPhotoUpdateResponse);
+  // CancelChatPhotoUpdate reports the durable outcome, never assumed rollback.
+  rpc CancelChatPhotoUpdate(CancelChatPhotoUpdateRequest) returns (CancelChatPhotoUpdateResponse);
   // UpdateChatDescription updates a chat's description.
   rpc UpdateChatDescription(UpdateChatDescriptionRequest) returns (UpdateChatDescriptionResponse);
   // GetChats returns basic info for multiple chats by ID.
@@ -77,7 +81,7 @@ service MessagesService {
   // CancelScheduledMessages cancels pending owned jobs; any album item selects its whole group.
   rpc CancelScheduledMessages(CancelScheduledMessagesRequest) returns (CancelScheduledMessagesResponse);
 
-  // ---- Sending & Editing (6 RPCs) ----
+  // ---- Sending & Editing (8 RPCs) ----
 
   // SendMessage sends a text message to a conversation.
   rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
@@ -85,6 +89,10 @@ service MessagesService {
   rpc SendMedia(SendMediaRequest) returns (SendMediaResponse);
   // SendAlbum sends an album of multiple media items.
   rpc SendAlbum(SendAlbumRequest) returns (SendAlbumResponse);
+  // GetSendStatus recovers a single send or the complete album via any member key.
+  rpc GetSendStatus(GetSendStatusRequest) returns (GetSendStatusResponse);
+  // CancelSend races acceptance of the complete send/album, not history deletion.
+  rpc CancelSend(CancelSendRequest) returns (CancelSendResponse);
   // EditMessage edits an existing message's content or media.
   rpc EditMessage(EditMessageRequest) returns (EditMessageResponse);
   // SetTyping broadcasts a typing indicator to conversation participants.
@@ -356,6 +364,9 @@ enum TargetChangeKind {
   // Private acknowledgement metadata changed for this viewer only. Disclose the
   // marker/body only to that viewer, never to other conversation participants.
   TARGET_CHANGE_KIND_ACK = 7;
+  // Attachment output membership changed, not an authored edit. Hydrate the
+  // current body and compare representation_revision independently; no edit_date.
+  TARGET_CHANGE_KIND_REPRESENTATION = 8;
 }
 
 // MessageScheduledState distinguishes queued delivery from visible messages.
@@ -508,7 +519,8 @@ message Chat {
 }
 
 // ChatPhoto describes the current chat photo and its immutable completed files.
-// A nonempty photo reports all three file/metadata/variant fields. File reads use
+// A nonempty photo reports its main and metadata; the thumbnail may be absent.
+// File reads use
 // ChatPhotoReference with this chat and photo_id, rechecking visibility and exact
 // membership on each call. Replacement/removal invalidates that reference.
 message ChatPhoto {
@@ -518,10 +530,14 @@ message ChatPhoto {
   bool has_video = 2;
   // Canonical main image file; zero only when there is no current photo.
   int64 file_id = 3;
-  // Server-measured image facts and IMAGE version 1 validation result.
+  // Server-measured image facts and IMAGE version 1 physical validation result.
   ImageMetadata metadata = 4;
-  // Completed server-published variants, ready with the main photo.
-  repeated MediaVariant variants = 5;
+  // Optional accepted presentation hint; absent is valid.
+  InlinePreview inline_preview = 5;
+  // Positive independent representation revision; absent means older/frozen.
+  optional uint64 representation_revision = 6;
+  // Optional explicitly linked thumbnail; enrichment may add it later.
+  Thumbnail thumbnail = 7;
 }
 
 // ChatDetails contains full chat details.
@@ -619,8 +635,12 @@ message Photo {
   int64 file_id = 5;
   // Server-published image metadata, when available.
   optional ImageMetadata metadata = 6;
-  // Stored variants (thumbnails/previews); access-checked like the parent.
-  repeated MediaVariant variants = 7;
+  // Optional accepted presentation hint, never main-image validation authority.
+  InlinePreview inline_preview = 7;
+  // Positive independent output-set revision; absent means older/frozen.
+  optional uint64 representation_revision = 8;
+  // Optional stored thumbnail; access-checked like the parent.
+  Thumbnail thumbnail = 9;
 }
 
 // Document represents a file/document attachment.
@@ -637,8 +657,13 @@ message Document {
   int64 file_id = 6;
   // Server-published typed attributes of the document, when available.
   repeated MediaAttribute attributes = 7;
-  // Stored variants (thumbnails/previews); access-checked like the parent.
-  repeated MediaVariant variants = 8;
+  // Optional preview, including returned video frames and explicit raw-document
+  // previews. Never inferred as a typed purpose from raw document bytes.
+  InlinePreview inline_preview = 8;
+  // Positive independent output-set revision; absent means older/frozen.
+  optional uint64 representation_revision = 9;
+  // Optional stored thumbnail; absent for voice, access-checked like the parent.
+  Thumbnail thumbnail = 10;
 }
 
 // GeoPoint represents a geographic location.
@@ -721,8 +746,8 @@ message MissingInvitee {
 // never a server response object. File-backed sources reference an
 // uploaded, completed Tinkle file — never a local path, URL, or unfinished
 // upload. Clients process and upload the main file for the explicit source
-// purpose; servers validate bytes and generate required thumbnails before
-// publication as specified by MediaValidation. Metadata and variant references
+// purpose; servers validate main bytes independently of optional thumbnails.
+// Metadata and thumbnail references
 // supplied by clients are untrusted inputs, never validation authority.
 message MediaSource {
   oneof media {
@@ -744,11 +769,13 @@ message PhotoSource {
   // Canonical file ID of an uploaded, completed image file.
   int64 file_id = 1;
   // Optional claims; if supplied, must match server-measured bytes and IMAGE
-  // version 1. Omission does not bypass validation or thumbnail generation.
+  // version 1. Omission does not bypass main validation.
   optional ImageMetadata metadata = 2;
-  // Optional completed caller-owned variant inputs under MediaVariantSource
-  // rules; required published thumbnails are generated by the server.
-  repeated MediaVariantSource variants = 3;
+  // Optional bounded preview, validated before acceptance.
+  InlinePreview inline_preview = 3;
+  // Optional completed caller-owned thumbnail under ThumbnailSource rules.
+  // Omission never blocks main acceptance; chat photos use the 160x160 bound.
+  ThumbnailSource thumbnail = 4;
 }
 
 // DocumentSource defines a document attachment built from a completed file.
@@ -764,8 +791,12 @@ message DocumentSource {
   int64 file_id = 1;
   // Explicit typed purpose claims; empty selects raw-document handling.
   repeated MediaAttribute attributes = 2;
-  // Optional variant inputs; raw-document thumbnails are optional, never inferred.
-  repeated MediaVariantSource variants = 3;
+  // Optional explicit preview; does not classify or validate the main bytes.
+  // Voice-purpose documents reject previews and thumbnails.
+  InlinePreview inline_preview = 3;
+  // Optional explicit thumbnail, never inferred for raw documents; no voice input.
+  // The selected purpose's ThumbnailSource bounds apply.
+  ThumbnailSource thumbnail = 4;
 }
 
 // VideoSource defines a video attachment satisfying VIDEO version 1.
@@ -774,8 +805,10 @@ message VideoSource {
   int64 file_id = 1;
   // Optional claims, verified against measured bytes and VIDEO version 1.
   optional VideoMetadata metadata = 2;
-  // Optional variant inputs; a required video thumbnail is server-generated.
-  repeated MediaVariantSource variants = 3;
+  // Optional representative-frame JPEG hint, validated before acceptance.
+  InlinePreview inline_preview = 3;
+  // Optional completed thumbnail input; omission never blocks main acceptance.
+  ThumbnailSource thumbnail = 4;
 }
 
 // AudioSource defines an audio attachment satisfying AUDIO version 1.
@@ -784,8 +817,10 @@ message AudioSource {
   int64 file_id = 1;
   // Optional claims, verified against measured bytes; voice_message must be false.
   optional AudioMetadata metadata = 2;
-  // Optional completed cover inputs; audio does not require a thumbnail.
-  repeated MediaVariantSource variants = 3;
+  // Optional explicit cover hint, validated without an audio worker.
+  InlinePreview inline_preview = 3;
+  // Optional completed explicit cover; audio does not require a thumbnail.
+  ThumbnailSource thumbnail = 4;
 }
 
 // VoiceSource defines a voice message built from a completed file.
@@ -802,30 +837,33 @@ message VoiceSource {
 }
 
 // StickerSource defines a sticker attachment built from a completed file.
-// Without asset_id the main and variant files must be uploader-owned. With
+// Without asset_id the main and thumbnail files must be uploader-owned. With
 // asset_id, require its exact asset_version to be owned or pinned in a currently
-// published pack, with matching main file/variants/metadata; reject CUSTOM_EMOJI
+// published pack, with matching main file/thumbnail/metadata; reject CUSTOM_EMOJI
 // assets here. A message-context read grant alone cannot authorize a new send.
 // Accepted messages retain these exact files independently of pack withdrawal,
 // but message visibility is rechecked on each later read.
 // Direct file sources use STRICT_LOSSLESS version 1 and StickerAssetSource's
-// STICKER bounds, including required metadata. An asset reference reuses its
-// validated generated thumbnail rather than replacing its exact files.
+// STICKER bounds, including required metadata. An asset reference captures its
+// exact validated representations, never replacing the main or importing all
+// processing children. Missing thumbnails never block acceptance.
 message StickerSource {
   // Canonical file ID of an uploaded, completed sticker image.
   int64 file_id = 1;
   // Required STRICT_LOSSLESS declaration and physical claims; when asset_id is
   // present these must exactly match that stored version's metadata.
   optional StickerMetadata metadata = 2;
-  // Optional completed thumbnail inputs; STRICT_LOSSLESS bounds apply and the
-  // required published thumbnail is server-generated.
-  repeated MediaVariantSource variants = 3;
   // Positive StickerView.id when sending an authored asset, not a file ID.
   // Omit only when constructing a sticker directly from caller-owned files.
-  optional int64 asset_id = 4;
+  optional int64 asset_id = 3;
   // Required positive exact version when asset_id is present; absent otherwise.
   // Never resolve an ID to a different catalog head during acceptance.
-  optional uint64 asset_version = 5;
+  optional uint64 asset_version = 4;
+  // Optional hint. With asset_id it must match that exact asset's preview;
+  // it cannot override a catalog version's authored presentation.
+  InlinePreview inline_preview = 5;
+  // Optional completed thumbnail input; STRICT_LOSSLESS sticker bounds apply.
+  ThumbnailSource thumbnail = 6;
 }
 
 // GeoPointSource supplies geographic coordinates for sending.
@@ -875,14 +913,14 @@ message ReplyInput {
 
 // ChatPhotoSource selects the photo for chat photo operations: it either
 // references a completed file directly, removes the current photo, or
-// supplies a full PhotoSource with metadata and variants.
+// supplies a full PhotoSource with metadata and an optional thumbnail.
 message ChatPhotoSource {
   oneof input {
     // Canonical file ID of an uploaded, completed image file.
     int64 file_id = 1;
     // Remove the current photo.
     bool empty = 2;
-    // Full photo source with client-asserted metadata and variants.
+    // Full photo source with client-asserted metadata and optional thumbnail.
     PhotoSource photo = 3;
   }
 }
@@ -1041,7 +1079,7 @@ message ListMessageChangesRequest {
 // ListMessageChangesResponse carries one page of retained conversation mutations.
 message ListMessageChangesResponse {
   // Authorized markers ordered ascending by mutation accept_seq. EDITED, PIN,
-  // REACTION, POLL and viewer-only ACK hydrate the currently visible body;
+  // REACTION, POLL, REPRESENTATION and viewer-only ACK hydrate the currently visible body;
   // DELETED/REVOKED never disclose a removed body. Recheck current authorization
   // for markers and hydration; ACK state is never disclosed to another viewer.
   // Positions need not be contiguous: authorization filtering, retention and
@@ -1074,7 +1112,7 @@ message TargetChange {
   int64 message_id = 1;
   // Body/metadata change or removal; ACK is disclosed only to its own viewer.
   TargetChangeKind kind = 2;
-  // Authorized hydrated current body for EDITED, PIN, REACTION, POLL or ACK,
+  // Authorized hydrated current body for EDITED, PIN, REACTION, POLL, REPRESENTATION or ACK,
   // unless body_invalidated explicitly reports authorized identity-only invalidation;
   // never a body for DELETED/REVOKED. Recheck current visibility before hydration.
   // Its body_revision may be newer than this marker's message_revision; do not
@@ -1103,6 +1141,11 @@ message TargetChange {
   // not permission proof. An absent message without true body_invalidated does
   // not establish invalidation or removal.
   bool body_invalidated = 6;
+  // Positive exact representation revision for REPRESENTATION markers, absent
+  // otherwise. message_revision still identifies the unchanged authored body.
+  // Hydration may be newer; if its authored body/main changed, do not label its
+  // representations with this event's revision or merge across the replacement.
+  optional uint64 representation_revision = 7;
 }
 
 // MessageChanged is a typed notification payload, not a transport envelope,
@@ -1133,6 +1176,9 @@ message MessageChanged {
   // positive body_revision and nonterminal change_kind; no reaction_effect or
   // body content accompanies it. Only current-source authorization permits hydration.
   bool body_invalidated = 6;
+  // Positive revision on REPRESENTATION hints only. The hint is not membership
+  // authority: use GetMessages/ListMessageChanges and current authorization.
+  optional uint64 representation_revision = 7;
 }
 
 // ReactionEffect is presentation metadata, never a message or asset access grant.
@@ -1292,12 +1338,18 @@ message EditChatPhotoRequest {
   // Positive retry key scoped to the authenticated actor. Required for publishing
   // a new photo; reuse with different input is rejected. Retry after a timeout
   // with the same key: cancellation does not prove rollback.
+  // Removal uses zero and returns no photo_update; it does not cancel pending work.
+  // A new photo captures the current photo generation at binding and must fail
+  // PRECONDITION rather than overwrite an intervening replacement/removal.
   int64 operation_id = 3;
 }
 
 // EditChatPhotoResponse confirms the photo update.
 message EditChatPhotoResponse {
+  // True only after the photo mutation committed, never for PENDING/FAILED/CANCELED.
   bool success = 1;
+  // Required for a new photo, including immediate success; absent for removal.
+  ChatPhotoUpdate photo_update = 2;
 }
 
 // UpdateChatDescriptionRequest updates a chat's description.
@@ -1482,7 +1534,8 @@ message SendMediaRequest {
   MediaSource media = 2;
   optional string message = 3;
   // Nonzero client-generated key scoped to principal and target; identical
-  // retained retries return the original message, conflicting content is rejected.
+  // retained retries recover the original outcome under current disclosure rules,
+  // never another message. Conflicting content is rejected.
   int64 idempotency_key = 4;
   optional ReplyInput reply_to = 5;
   // Sender-selected silent notification preference, not a peer read acknowledgement.
@@ -1502,16 +1555,24 @@ message SendMediaRequest {
   optional int64 clear_draft_revision = 12;
 }
 
-// SendMediaResponse is the response for SendMedia.
+// SendMediaResponse is the response for SendMedia. For immediate file-backed
+// sends, apply GetSendStatusResponse's current original-body disclosure rules on
+// every response/retry; omit related users/chats whenever the body is withheld.
+// A successful status without a body is not permission to send under a fresh key.
 message SendMediaResponse {
+  // Currently authorized original matching body only; may be absent after success.
   Message message = 1;
   repeated User users = 2;
   repeated Chat chats = 3;
+  // Required for immediate file-backed sends, even immediate success; absent for
+  // non-file sources and scheduled sends. Non-success has no message/users/chats.
+  SendStatus send_status = 4;
 }
 
 // SendAlbumRequest sends 2..10 photo/video/document items as one album.
 // Every idempotency_key must be nonzero and distinct; retries of the exact same
-// principal/target/idempotency_key tuple return the original items, not another album.
+// principal/target/idempotency_key tuple recover the original outcome under current
+// disclosure rules, not another album.
 // Conflicting content for a retained idempotency_key is rejected. Polls, contacts,
 // geo points, voice messages, and stickers are not album items.
 message SendAlbumRequest {
@@ -1534,11 +1595,274 @@ message SendAlbumRequest {
   optional int64 clear_draft_revision = 9;
 }
 
-// SendAlbumResponse is the response for SendAlbum.
+// SendAlbumResponse is the response for SendAlbum. Immediate albums apply
+// GetSendStatusResponse's current original-body disclosure rules on every retry:
+// complete matching bodies/related entities or none, never a partial album.
 message SendAlbumResponse {
+  // Complete currently authorized original matching album, otherwise empty.
   repeated Message messages = 1;
   repeated User users = 2;
   repeated Chat chats = 3;
+  // Required for immediate albums, including immediate success. Non-success has
+  // no messages/users/chats. Scheduled albums retain their existing job contract.
+  SendStatus send_status = 4;
+}
+
+// SendState is the durable lifecycle of an ordinary immediate file send/album.
+enum SendState {
+  // Unknown; never a conforming status.
+  SEND_STATE_UNSPECIFIED = 0;
+  // Recorded privately, no history acceptance or draft clear.
+  SEND_STATE_PENDING = 1;
+  // Claimed work; cancellation cannot promise rollback.
+  SEND_STATE_PROCESSING = 2;
+  // Atomic send/album acceptance committed, not proof of peer receipt.
+  SEND_STATE_SUCCEEDED = 3;
+  // Durably fenced without acceptance; inspect failure.
+  SEND_STATE_FAILED = 4;
+  // Durable cancellation won; no later acceptance is possible.
+  SEND_STATE_CANCELED = 5;
+}
+
+// SendFailure is a bounded terminal category, not raw diagnostics.
+enum SendFailure {
+  // Required unless state is FAILED.
+  SEND_FAILURE_UNSPECIFIED = 0;
+  // Main or supplied preview/thumbnail failed validation.
+  SEND_FAILURE_INVALID_MEDIA = 1;
+  // Current sender authority or file/reference access failed.
+  SEND_FAILURE_NOT_AUTHORIZED = 2;
+  // Original reply/catalog or other domain precondition failed.
+  SEND_FAILURE_PRECONDITION = 3;
+  // Domain/resource limits prevented acceptance.
+  SEND_FAILURE_RESOURCE_LIMIT = 4;
+  // Processing failed and all later acceptance was durably fenced.
+  SEND_FAILURE_PROCESSING = 5;
+}
+
+// SendReceipt is an immutable accepted identity, never a body or file-read grant.
+// Ordinary edits/removal do not erase it. Recheck identity disclosure per response:
+// explicit false requires message_id (and album_id for an album); true omits both.
+// Keep every original slot/key even when withheld. Absence of the decision is
+// unknown/nonconforming, never evidence that retry under a fresh key is safe.
+message SendReceipt {
+  // Original nonzero signed key, not a worker-generated replacement.
+  int64 idempotency_key = 1;
+  // Original positive accepted message ID in SendStatus.target, when disclosed.
+  optional int64 message_id = 2;
+  // Original shared positive album ID, only for disclosed album entries.
+  optional int64 album_id = 3;
+  // Required explicit per-call identity-disclosure decision, not body visibility.
+  optional bool reference_withheld = 4;
+}
+
+// SendStatus is actor-private and uses the original send keys, no additional ID.
+// Apply MediaValidation's pending lifecycle, retention, exact-byte retry and final
+// authorization/atomicity rules. All album member keys bind the complete ordered
+// request; reusing any member in another send/album conflicts, even after removal.
+// Querying any bound member returns this same complete status. Successful receipts
+// remain queryable beyond at least 30 days of full outcomes; deduplication never
+// expires into permission to send again. Status is independent of body disclosure.
+message SendStatus {
+  // Exact original conversation, never an implicit global lookup.
+  Target target = 1;
+  // Original single key, or first album member key, stable for the whole group.
+  int64 idempotency_key = 2;
+  // Explicit durable state; unknown values are not acceptance.
+  SendState state = 3;
+  // Positive snapshot revision, initially 1; increments only on state transition.
+  uint64 revision = 4;
+  // Nonzero if and only if FAILED; internal retries stay nonterminal.
+  SendFailure failure = 5;
+  // Only for SUCCEEDED: one single-send receipt or 2..10 album receipts in original
+  // item order, complete even after an item edit/removal or identity withholding.
+  repeated SendReceipt accepted = 6;
+  // Fixed full-outcome deadline, only terminal; at least 30 days after termination.
+  google.protobuf.Timestamp retain_until = 7;
+}
+
+// GetSendStatusRequest selects the original actor/target/key binding only.
+message GetSendStatusRequest {
+  // Exact original target; wrong, foreign and unknown bindings report NOT_FOUND.
+  Target target = 1;
+  // Nonzero original single key or any one bound album member key.
+  int64 idempotency_key = 2;
+}
+
+// GetSendStatusResponse separates acceptance receipts from current original bodies.
+// Recheck current authorization on every call. Only SUCCEEDED may have bodies;
+// return the complete original matching authored send/album or none, including
+// users/chats. Never return stale prepared bodies, edited replacements or a partial
+// album. Later representations of the same original main may hydrate. Use receipt
+// IDs with GetMessages for current edited bodies; missing bodies never undo success.
+message GetSendStatusResponse {
+  // Required private durable snapshot, even when all bodies are withheld.
+  SendStatus send_status = 1;
+  // Complete original matching bodies in receipt order, otherwise empty.
+  repeated Message messages = 2;
+  // Currently authorized related users, only with the complete body result.
+  repeated User users = 3;
+  // Currently authorized related chats, only with the complete body result.
+  repeated Chat chats = 4;
+}
+
+// CancelSendRequest selects the original private send, not a new submission.
+message CancelSendRequest {
+  // Exact original conversation.
+  Target target = 1;
+  // Nonzero original key; any album member selects the entire atomic group.
+  int64 idempotency_key = 2;
+}
+
+// CancelSendResponse reports the actual durable race outcome. Only CANCELED proves
+// cancellation fenced acceptance; PROCESSING requires lookup, SUCCEEDED is never
+// rolled back. Does not delete history, clear drafts or abort the upload.
+message CancelSendResponse {
+  // Required status with the same receipt disclosure policy as GetSendStatus.
+  SendStatus send_status = 1;
+}
+
+// SendStatusChanged is an actor-only refresh hint, not a receipt or durable feed.
+// Hints can duplicate, coalesce, reorder or disappear. Query GetSendStatus with
+// the original target and key on startup, reconnect and receipt of a hint. Query
+// again if a hint arrives during a query. Delivery rechecks the original actor's
+// active authorization; stopping observation cancels no send.
+// While connected, schedule a fallback query 30 seconds after an ambiguous
+// mutation response or a nonterminal status, even if no hint arrives. Restart
+// the 30-second timer after each query that leaves the outcome unresolved. Keep
+// at most one status query in flight per operation and stop the timer once a
+// terminal outcome is known.
+message SendStatusChanged {
+  // Original conversation, not permission to read its history.
+  Target target = 1;
+  // Original single or first album member key.
+  int64 idempotency_key = 2;
+  // Positive hinted status revision; the query may already be newer.
+  uint64 revision = 3;
+}
+
+// ChatPhotoUpdateState describes the durable numeric-key photo mutation.
+enum ChatPhotoUpdateState {
+  // Unknown, never a conforming state.
+  CHAT_PHOTO_UPDATE_STATE_UNSPECIFIED = 0;
+  // Private recorded intent, current photo unchanged.
+  CHAT_PHOTO_UPDATE_STATE_PENDING = 1;
+  // Claimed; cancellation cannot promise rollback.
+  CHAT_PHOTO_UPDATE_STATE_PROCESSING = 2;
+  // Photo commit succeeded, independently of current photo disclosure.
+  CHAT_PHOTO_UPDATE_STATE_SUCCEEDED = 3;
+  // Fenced without a photo change.
+  CHAT_PHOTO_UPDATE_STATE_FAILED = 4;
+  // Cancellation durably prevented a photo change.
+  CHAT_PHOTO_UPDATE_STATE_CANCELED = 5;
+}
+
+// ChatPhotoUpdateFailure is a bounded terminal failure category.
+enum ChatPhotoUpdateFailure {
+  // Required unless FAILED.
+  CHAT_PHOTO_UPDATE_FAILURE_UNSPECIFIED = 0;
+  // Main or supplied preview/thumbnail failed validation.
+  CHAT_PHOTO_UPDATE_FAILURE_INVALID_MEDIA = 1;
+  // Current authority or file access failed.
+  CHAT_PHOTO_UPDATE_FAILURE_NOT_AUTHORIZED = 2;
+  // Original domain precondition failed.
+  CHAT_PHOTO_UPDATE_FAILURE_PRECONDITION = 3;
+  // Domain/resource bound exceeded.
+  CHAT_PHOTO_UPDATE_FAILURE_RESOURCE_LIMIT = 4;
+  // Processing failed and later effects are fenced.
+  CHAT_PHOTO_UPDATE_FAILURE_PROCESSING = 5;
+}
+
+// ChatPhotoUpdate is actor-private; the existing positive numeric operation_id
+// binds one original chat/request permanently, with no extra UUID. Apply the
+// lifecycle, retention and final authorization rules on MediaValidation. Retain
+// successful identity receipts after full-outcome expiry and replacement/removal.
+// This snapshot never authorizes reading the old photo or selecting it again.
+message ChatPhotoUpdate {
+  // Exact original group chat ID.
+  int64 chat_id = 1;
+  // Original EditChatPhotoRequest numeric retry key.
+  int64 operation_id = 2;
+  // Explicit durable state.
+  ChatPhotoUpdateState state = 3;
+  // Positive state revision, initially 1; no increment for disclosure changes.
+  uint64 revision = 4;
+  // Nonzero if and only if FAILED.
+  ChatPhotoUpdateFailure failure = 5;
+  // Original positive committed photo ID, only for disclosed SUCCEEDED receipts.
+  optional int64 photo_id = 6;
+  // Required only for SUCCEEDED: true omits photo_id, false requires it.
+  optional bool reference_withheld = 7;
+  // Fixed terminal full-outcome deadline, at least 30 days from termination.
+  google.protobuf.Timestamp retain_until = 8;
+}
+
+// GetChatPhotoUpdateRequest selects one actor-owned numeric retry binding.
+message GetChatPhotoUpdateRequest {
+  // Exact original group chat ID; mismatches/foreign/unknown report NOT_FOUND alike.
+  int64 chat_id = 1;
+  // Positive original numeric operation ID.
+  int64 operation_id = 2;
+}
+
+// GetChatPhotoUpdateResponse never resurrects a replaced/removed photo. The optional
+// body requires SUCCEEDED, current visibility and the original matching photo/main;
+// representation enrichment may be newer. Use GetChats for current replacements.
+message GetChatPhotoUpdateResponse {
+  // Required actor-private durable snapshot, independent of body visibility.
+  ChatPhotoUpdate photo_update = 1;
+  // Current authorized original matching photo only; absent otherwise.
+  ChatPhoto photo = 2;
+}
+
+// CancelChatPhotoUpdateRequest selects the original intent, not photo removal.
+message CancelChatPhotoUpdateRequest {
+  // Exact original group chat ID.
+  int64 chat_id = 1;
+  // Positive original numeric operation ID.
+  int64 operation_id = 2;
+}
+
+// CancelChatPhotoUpdateResponse reports the durable state, never assumed rollback.
+// CANCELED fences later work; claimed PROCESSING may still complete. Uploads and
+// already committed photos are unchanged; query to resolve a nonterminal outcome.
+message CancelChatPhotoUpdateResponse {
+  // Required state with current identity-disclosure policy applied.
+  ChatPhotoUpdate photo_update = 1;
+}
+
+// ChatPhotoUpdateChanged hints only to the initiating actor to query the owner.
+// Hints can duplicate, reorder or disappear. Query GetChatPhotoUpdate with the
+// original chat_id and operation_id on startup, reconnect and receipt of a hint.
+// Query again if a hint arrives during a query.
+// While connected, schedule a fallback query 30 seconds after an ambiguous
+// mutation response or a nonterminal status, even if no hint arrives. Restart
+// the 30-second timer after each query that leaves the outcome unresolved. Keep
+// at most one status query in flight per operation and stop the timer once a
+// terminal outcome is known.
+message ChatPhotoUpdateChanged {
+  // Exact original group chat ID.
+  int64 chat_id = 1;
+  // Original numeric operation ID.
+  int64 operation_id = 2;
+  // Positive hinted status revision, never a durable receipt.
+  uint64 revision = 3;
+}
+
+// ChatPhotoRepresentationChanged is a visibility-filtered hint for a current
+// group OR channel photo, using the shared Chat.chat_id namespace explicitly.
+// Fetch GetChats/GetChannels and recheck current photo_id/main before replacing a
+// complete representation set. Never patch caches from hints or grant file reads.
+// Query on startup/reconnect without hints; a hint during fetch requires refetch.
+message ChatPhotoRepresentationChanged {
+  // Exact group or channel Chat.chat_id; no implicit target-kind discriminator.
+  int64 chat_id = 1;
+  // Exact positive current photo identity, not a replacement.
+  int64 photo_id = 2;
+  // Exact immutable main file ID.
+  int64 main_file_id = 3;
+  // Positive independent hinted output-set revision.
+  uint64 representation_revision = 4;
 }
 
 // EditMessageRequest edits an existing message's content or media.
