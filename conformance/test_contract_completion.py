@@ -4,9 +4,10 @@ import json
 import unittest
 
 import test_files_schema as files
+from test_thumbnail_schema import THUMBNAILS
 
 
-# Exact public method/type spelling changes; field tags remain independently checked.
+# Exact public method/type spelling changes; compact tags are checked separately.
 RPC_NAMES = {
     "SendMultiMedia": "SendAlbum",
     "GetChatComplete": "GetChatDetails",
@@ -39,8 +40,8 @@ class ContractCompletionTests(files.BufSchemaTestCase):
             self.assertIn("  // " + title + "\n", text)
         self.assertIn("  // One-way grant; no revocation RPC exists.\n", text)
 
-    def test_exact_renames_preserve_field_tags_and_types(self):
-        """Compare every owned field with its explicitly named replacement."""
+    def test_exact_renames_preserve_field_types_and_presence(self):
+        """Compare owned renames/retirements, allowing the intentional global tag reset."""
         baseline = json.loads(files.run_buf(
             "build", ".git#branch=origin/main", "--exclude-source-info",
             "--as-file-descriptor-set", "-o", "-#format=json",
@@ -65,12 +66,31 @@ class ContractCompletionTests(files.BufSchemaTestCase):
                                         ("CancelScheduledMessages", "GetScheduledMessages"),
                                         ("ClosePoll", "GetPollResults")):
                         if name not in expected:
-                            expected.insert(expected.index(after) + 1, name)
+                             expected.insert(expected.index(after) + 1, name)
+                additions = {
+                    "MessagesService": [("GetChatPhotoUpdate", "EditChatPhoto"),
+                                        ("CancelChatPhotoUpdate", "GetChatPhotoUpdate"),
+                                        ("GetSendStatus", "SendAlbum"), ("CancelSend", "GetSendStatus")],
+                    "ChannelsService": [("GetPhotoUpdate", "EditPhoto"), ("CancelPhotoUpdate", "GetPhotoUpdate")],
+                    "AccountService": [("GetProfilePhotoUpdate", "SetProfilePhoto"),
+                                       ("CancelProfilePhotoUpdate", "GetProfilePhotoUpdate")],
+                    "StickersService": [("GetAssetChange", "UpdateStickerAsset"),
+                                        ("CancelAssetChange", "GetAssetChange")],
+                }
+                for name, after in additions.get(service["name"], []):
+                    if name not in expected:
+                        expected.insert(expected.index(after) + 1, name)
                 self.assertEqual(expected, [m["name"] for m in methods], service["name"])
             for message in file.get("messageType", []):
                 name = types.get(message["name"], message["name"])
+                if name in ("MediaVariant", "MediaVariantSource"):
+                    continue
                 current = {f["name"]: f for f in self.descriptor(name).get("field", [])}
                 for old in message.get("field", []):
+                    if name in THUMBNAILS and (old["name"], old["number"]) == ("variants", THUMBNAILS[name][0]):
+                        continue
+                    if name == "StickerView" and (old["name"], old["number"]) == ("thumb_file_id", 3):
+                        continue
                     if file["name"] == files.FILES_FILE and old["name"] == "encrypted":
                         continue
                     field_name = FIELD_NAMES.get(old["name"], old["name"])
@@ -81,7 +101,7 @@ class ContractCompletionTests(files.BufSchemaTestCase):
                     with self.subTest(message=name, field=field_name):
                         self.assertIn(field_name, current)
                         field = current[field_name]
-                        for key in ("number", "label", "proto3Optional"):
+                        for key in ("label", "proto3Optional"):
                             expected = old.get(key)
                             if key == "proto3Optional" and name == "Dialog" and field_name == "read_outbox_max_id":
                                 expected = True
@@ -145,11 +165,13 @@ class ContractCompletionTests(files.BufSchemaTestCase):
             ("has_video", 2, "BOOL", "", False, False),
             ("file_id", 3, "INT64", "", False, False),
             ("metadata", 4, "MESSAGE", "ImageMetadata", False, False),
-            ("variants", 5, "MESSAGE", "MediaVariant", True, False),
+            ("inline_preview", 5, "MESSAGE", "InlinePreview", False, False),
+            ("representation_revision", 6, "UINT64", "", False, True),
+            ("thumbnail", 7, "MESSAGE", "Thumbnail", False, False),
         ])
         fixture = {"photoId": "9", "fileId": "9007199254740993",
-                   "metadata": {"width": 512, "height": 512}, "variants": [
-                       {"fileId": "10", "role": "MEDIA_VARIANT_ROLE_THUMBNAIL", "width": 160, "height": 160}]}
+                   "metadata": {"width": 512, "height": 512}, "thumbnail":
+                       {"fileId": "10", "width": 160, "height": 160}}
         self.assertEqual(fixture, self.round_trip(fixture, "ChatPhoto"))
 
     def test_chat_details_and_description_names(self):
@@ -183,13 +205,13 @@ class ContractCompletionTests(files.BufSchemaTestCase):
                     (("TEXT", 13), ("PHOTO", 14), ("VIDEO", 15), ("AUDIO", 16), ("VOICE", 17), ("DOCUMENT", 18))]
         self.assertEqual(expected, [(v["name"], v["number"]) for v in values][-6:])
 
-    def test_files_reserve_unavailable_option(self):
-        """Prevent file-level encryption fields and reuse of their numeric slot."""
+    def test_files_remove_unavailable_option(self):
+        """Keep file-level encryption absent without a reserved placeholder."""
         for name in ("BeginUploadRequest", "FileInfo"):
             descriptor = self.descriptor(name)
             self.assertNotIn("encrypted", [f["name"] for f in descriptor["field"]])
-            self.assertEqual([{"start": 6, "end": 7}], descriptor["reservedRange"])
-            self.assertEqual(["encrypted"], descriptor["reservedName"])
+            self.assertFalse(descriptor.get("reservedRange"))
+            self.assertFalse(descriptor.get("reservedName"))
 
     def test_general_validation_profiles(self):
         """Keep general media profiles versioned and separate from asset validation."""
@@ -246,13 +268,13 @@ class ContractCompletionTests(files.BufSchemaTestCase):
         media = (files.REPO_ROOT / files.MEDIA_FILE).read_text()
         messages = (files.REPO_ROOT / "tinkle/v1/messages.proto").read_text()
         for phrase in ("10,000,000", "10,000", "H.264", "8-bit", "4:2:0", "AAC-LC",
-                       "1920", "1080", "frame rate", "audio-only", "before publication",
+                       "1920", "1080", "frame rate", "audio-only", "before acceptance",
                        "server-measured", "without upscaling", "explicit still",
                        "Automatic main-image resizing", "final resized pixels"):
             self.assertIn(phrase, media)
-        for phrase in ("Message photo/video: required", "Chat/profile photo: required",
-                       "Sticker: required", "custom emoji: optional", "voice: none",
-                       "Raw documents are not", "1-pixel main"):
+        for phrase in ("every thumbnail is optional", "Message photo/video", "Chat/profile photo",
+                       "Sticker/custom emoji", "Voice: no thumbnail", "never audio/voice",
+                       "1-pixel main", "produces no video output", "no recipient-visible"):
             self.assertIn(phrase, media)
         account = (files.REPO_ROOT / "tinkle/v1/account.proto").read_text()
         stickers = (files.REPO_ROOT / "tinkle/v1/stickers.proto").read_text()

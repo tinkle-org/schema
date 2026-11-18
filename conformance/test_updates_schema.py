@@ -15,6 +15,8 @@ import tempfile
 import unittest
 
 from test_contract_completion import FIELD_NAMES, RPC_NAMES
+from test_files_schema import reset_descriptor_numbers
+from test_thumbnail_schema import THUMBNAILS
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -23,7 +25,7 @@ UPDATES_FILE = "tinkle/v1/updates.proto"
 # because the in-flight branch stack intentionally changes them. updates.proto
 # is file-level (full retirement rewrite; pinned by the tests below). files.proto
 # and media.proto are file-level additions of the file-transfer contract
-# (FilesService plus shared media metadata/attributes/variants). The
+# (FilesService plus shared media metadata/attributes/thumbnails). The
 # declaration sets cover (1) the reconciliation additions, (2) the
 # PeerInput → Target rename touching common/messages/contacts, and (3) the
 # *Source media-construction renames touching messages/bot_api/channels plus
@@ -32,7 +34,7 @@ UPDATES_FILE = "tinkle/v1/updates.proto"
 # entries on branches that touch other files, and drop entries once included
 # in origin/main.
 # connection.proto and auth.proto are independently pinned by
-# test_connection_schema.py, including sign-in's intentional field reservation
+# test_connection_schema.py, including sign-in's compact reset numbering
 # and the recoverable enrollment replacement. Other account fields stay covered.
 CHANGED_FILES = {
     "tinkle/v1/updates.proto", "tinkle/v1/files.proto", "tinkle/v1/media.proto",
@@ -113,7 +115,7 @@ CHANGED_DECLARATIONS = {
     "tinkle.v1.BotMediaSource",
     "tinkle.v1.MediaAttribute",
     "tinkle.v1.AnimatedAttribute",
-    # Additive canonical file references, metadata, variants, and typed bot
+    # Canonical file references, metadata, thumbnails, and typed bot
     # alternatives extending the declarations below.
     "tinkle.v1.Photo",
     "tinkle.v1.Document",
@@ -215,6 +217,22 @@ CHANGED_DECLARATIONS.update({"tinkle.v1." + name for name in (
     "ScheduleState", "ScheduledMessage", "GetScheduledMessagesRequest", "GetScheduledMessagesResponse",
     "CancelScheduledMessagesRequest", "CancelScheduledMessagesResponse", "ClosePollRequest", "ClosePollResponse",
 )})
+
+# Domain pending additions are pinned, including baseline field preservation, by
+# test_async_media_schema.py. Do not exempt unrelated declarations in these files.
+CHANGED_DECLARATIONS.update({"tinkle.v1." + name for name in (
+    "SendMediaResponse", "EditChatPhotoResponse", "EditPhotoResponse", "ChannelsService",
+    "SendStatus", "SendReceipt", "SendState", "SendFailure", "SendStatusChanged",
+    "ChatPhotoRepresentationChanged", "ProfilePhotoRepresentationChanged", "StickerAssetRepresentationChanged",
+)})
+CHANGED_DECLARATIONS.update({"tinkle.v1." + family + suffix
+    for family in ("ChatPhotoUpdate", "ChannelPhotoUpdate", "ProfilePhotoUpdate", "AssetChange")
+    for suffix in ("", "State", "Failure", "Changed")})
+CHANGED_DECLARATIONS.update({"tinkle.v1." + method + suffix
+    for method in ("GetSendStatus", "CancelSend", "GetChatPhotoUpdate", "CancelChatPhotoUpdate",
+                   "GetPhotoUpdate", "CancelPhotoUpdate", "GetProfilePhotoUpdate", "CancelProfilePhotoUpdate",
+                   "GetAssetChange", "CancelAssetChange")
+    for suffix in ("Request", "Response")})
 
 # Message type names rebinded by the *Source renames; a baseline field's
 # typeName is mapped through this table before comparison so renames do not
@@ -327,7 +345,8 @@ class ConnectivitySchemaTests(unittest.TestCase):
 
     def test_unrelated_contracts_are_unchanged(self):
         for kind in self.baseline:
-            baseline = {n: d for n, d in self.baseline[kind].items()
+            baseline = {n: (d[0], reset_descriptor_numbers(d[1]))
+                        for n, d in self.baseline[kind].items()
                         if d[0] not in REPLACED_FILES | CHANGED_FILES
                         and n not in CHANGED_DECLARATIONS}
             current = {n: d for n, d in self.current[kind].items()
@@ -336,13 +355,13 @@ class ConnectivitySchemaTests(unittest.TestCase):
             self.assertEqual(baseline, current, kind)
 
     def test_excluded_messages_keep_their_baseline_fields(self):
-        """Excluded messages that survive must keep every baseline field.
+        """Keep baseline field contracts except pinned retirements and tag reset.
 
         The name exclusion above disables whole-message comparison; this
         closes the gap: each baseline field of an excluded message that
-        exists in both images must still appear unchanged (number, type,
-        mapped typeName, label, presence), so a tag renumber fails the
-        suite. Renamed-away and branch-introduced names are skipped.
+        exists in both images must still appear unchanged (type, mapped
+        typeName, label, presence). Compact tags are checked globally;
+        renamed-away and branch-introduced names are skipped.
         Message scope: excluded enums and services are untouched here.
         """
         for name in sorted(CHANGED_DECLARATIONS):
@@ -354,6 +373,12 @@ class ConnectivitySchemaTests(unittest.TestCase):
                 for f in self.current["message"][name][1].get("field", [])
             }
             for field in self.baseline["message"][name][1].get("field", []):
+                short_name = name.removeprefix("tinkle.v1.")
+                if short_name in THUMBNAILS and (field["name"], field["number"]) == (
+                        "variants", THUMBNAILS[short_name][0]):
+                    continue
+                if short_name == "StickerView" and (field["name"], field["number"]) == ("thumb_file_id", 3):
+                    continue
                 field_name = FIELD_NAMES.get(field["name"], field["name"])
                 # The custom-emoji rename preserves Reaction's tag and wire type.
                 if name == "tinkle.v1.Reaction" and field_name == "document_id":
@@ -362,7 +387,6 @@ class ConnectivitySchemaTests(unittest.TestCase):
                     self.fail(name + "." + field_name + " field was removed")
                 current = current_fields[field_name]
                 label = name + "." + field_name
-                self.assertEqual(field["number"], current["number"], label)
                 if field["name"] == "pm_oneside":
                     self.assertEqual("TYPE_ENUM", current["type"], label)
                     self.assertEqual(".tinkle.v1.PinScope", current["typeName"], label)
@@ -422,9 +446,7 @@ class ConnectivitySchemaTests(unittest.TestCase):
                 self.assertEqual(field["name"], field["jsonName"])
 
     def test_no_transport_or_opaque_internal_payloads(self):
-        # The retired file carried Timestamp and Message hydration imports for
-        # the removed envelope; the surviving surface declares nothing.
-        self.assertEqual(set(), set(self.updates.get("dependency", [])))
+        self.assertFalse(self.updates.get("dependency"))
         forbidden = {"connection_id", "request_id", "handshake", "version", "error", "type"}
         for message in self.updates["messageType"]:
             for field in message.get("field", []):

@@ -24,9 +24,17 @@ labels.
 and release tags.
 
 The [schema reference](/schema/reference) is produced from the protobuf
-descriptor set, including source comments, deprecations, and reserved
-definitions, on every site build. Edit `.proto` doc comments to change the
+descriptor set, including source comments, deprecations, oneofs and field
+presence, on every site build. Edit `.proto` doc comments to change the
 reference and `website/content/` for schema overview pages.
+
+The current pre-release contract is a global wire-breaking reset: all nonempty
+messages use consecutive declaration-order field numbers from 1, including
+oneof members; nested messages restart their own sequence. Reserved numbers,
+reserved names and retired-slot placeholders are removed. Empty messages remain
+empty, and enums keep `UNSPECIFIED = 0`. Consumers must regenerate against the
+same schema and explicitly migrate or reset old encoded payloads/caches; this
+is not a compatibility layer or evidence of runtime deployment.
 
 ## Schema scope
 
@@ -64,10 +72,9 @@ defines `FilesService` — resumable upload sessions, authoritative status,
 atomic completion, and byte-range downloads — with the shared media
 vocabulary in `media.proto`; see [File Transfers](/schema/file-transfers).
 [`updates.proto`](https://github.com/tinkle-org/schema/blob/main/tinkle/v1/updates.proto)
-defines `UpdatesService`, now streaming only ephemeral privacy-filtered
-per-user `ConnectivityChanged` observations through `ObserveConnectivity`;
-durable replay and watch (the former `ReadUpdates` and `FollowUpdates`) have
-been retired from the public contract and remain implementation-internal.
+defines `UpdatesService`. Its only method, `ObserveConnectivity`, streams
+ephemeral, privacy-filtered per-user presence. The former `ReadUpdates` and
+`FollowUpdates` methods remain retired.
 `messages.proto` carries reconciliation primitives for clients without a
 durable feed: `GetMessages` batch-fetches messages by ID, `Message.accept_seq`
 orders and dedups per conversation, `ListMessageChanges` lists authorized retained
@@ -186,9 +193,7 @@ starts a search without reusing a continuation.
 See the [reference](/schema/reference) for the contract details.
 
 This repository documents the transport-independent schema. Runtime transport
-bindings belong in their implementation repositories. Public UpdatesService
-bindings are not implemented in Chorus; internal replay, watch, and presence
-capabilities exist.
+bindings and deployment availability belong in their implementation repositories.
 
 ## Repository layout
 

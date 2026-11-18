@@ -83,6 +83,10 @@ service ChannelsService {
 
   // EditPhoto updates the channel photo via the storage service.
   rpc EditPhoto(EditPhotoRequest) returns (EditPhotoResponse);
+  // GetPhotoUpdate recovers the caller's exact channel photo request.
+  rpc GetPhotoUpdate(GetPhotoUpdateRequest) returns (GetPhotoUpdateResponse);
+  // CancelPhotoUpdate reports the actual durable race outcome, not rollback.
+  rpc CancelPhotoUpdate(CancelPhotoUpdateRequest) returns (CancelPhotoUpdateResponse);
 
   // ToggleSlowMode enables or disables slow mode. seconds=0 disables.
   // Max 86400 seconds (24 hours).
@@ -525,19 +529,129 @@ message EditTitleResponse {
   bool success = 1;
 }
 
-// EditPhotoRequest specifies the new channel photo.
+// EditPhotoRequest specifies the new channel photo. Capture the current photo
+// generation with the durable request binding; fail PRECONDITION rather than
+// overwrite an intervening replacement/removal when deferred validation completes.
 message EditPhotoRequest {
   // Channel ID.
   int64 channel_id = 1;
   // Photo source: a completed file reference, a removal, or a full
-  // PhotoSource with metadata and variants.
+  // PhotoSource with metadata and an optional thumbnail.
   ChatPhotoSource photo = 2;
+  // Required canonical lowercase nonzero UUID for a new photo (file_id or photo).
+  // Persist before calling; actor-scoped and bound to channel/exact bytes. Removal
+  // is synchronous and omits this field; it does not cancel an earlier update.
+  string request_id = 3;
 }
 
 // EditPhotoResponse indicates success.
 message EditPhotoResponse {
-  // true if the photo was updated.
+  // True only after the photo mutation committed, never while pending/processing.
   bool success = 1;
+  // Required for new photos, even immediate success; absent for removal.
+  ChannelPhotoUpdate photo_update = 2;
+}
+
+// ChannelPhotoUpdateState describes an actor-private channel photo change.
+enum ChannelPhotoUpdateState {
+  // Unknown, never a conforming state.
+  CHANNEL_PHOTO_UPDATE_STATE_UNSPECIFIED = 0;
+  // Recorded, current channel photo unchanged.
+  CHANNEL_PHOTO_UPDATE_STATE_PENDING = 1;
+  // Claimed; cancellation cannot promise rollback.
+  CHANNEL_PHOTO_UPDATE_STATE_PROCESSING = 2;
+  // Original photo commit succeeded, not proof of current visibility.
+  CHANNEL_PHOTO_UPDATE_STATE_SUCCEEDED = 3;
+  // Fenced without changing the photo.
+  CHANNEL_PHOTO_UPDATE_STATE_FAILED = 4;
+  // Cancellation durably prevented the mutation.
+  CHANNEL_PHOTO_UPDATE_STATE_CANCELED = 5;
+}
+
+// ChannelPhotoUpdateFailure is a bounded terminal category, not raw diagnostics.
+enum ChannelPhotoUpdateFailure {
+  // Required unless FAILED.
+  CHANNEL_PHOTO_UPDATE_FAILURE_UNSPECIFIED = 0;
+  // Main or supplied preview/thumbnail failed validation.
+  CHANNEL_PHOTO_UPDATE_FAILURE_INVALID_MEDIA = 1;
+  // Current channel authority or file access failed.
+  CHANNEL_PHOTO_UPDATE_FAILURE_NOT_AUTHORIZED = 2;
+  // Original domain precondition failed.
+  CHANNEL_PHOTO_UPDATE_FAILURE_PRECONDITION = 3;
+  // Domain/resource bound exceeded.
+  CHANNEL_PHOTO_UPDATE_FAILURE_RESOURCE_LIMIT = 4;
+  // Processing failed and later effects are fenced.
+  CHANNEL_PHOTO_UPDATE_FAILURE_PROCESSING = 5;
+}
+
+// ChannelPhotoUpdate applies MediaValidation's pending lifecycle and final
+// authorization rules. Request IDs permanently bind actor/method/channel/exact
+// bytes. Full outcomes last at least 30 days; successful identity receipts remain
+// queryable after replacement/removal and body expiry. Keys never become reusable.
+message ChannelPhotoUpdate {
+  // Exact original channel ID, not an implicit global operation scope.
+  int64 channel_id = 1;
+  // Original EditPhotoRequest.request_id.
+  string request_id = 2;
+  // Explicit durable state, independent of current photo disclosure.
+  ChannelPhotoUpdateState state = 3;
+  // Positive state revision, initially 1; no increment for disclosure changes.
+  uint64 revision = 4;
+  // Nonzero if and only if FAILED.
+  ChannelPhotoUpdateFailure failure = 5;
+  // Original positive committed photo ID, only for disclosed SUCCEEDED receipts.
+  optional int64 photo_id = 6;
+  // Required only for SUCCEEDED: false requires photo_id, true omits it.
+  optional bool reference_withheld = 7;
+  // Fixed terminal full-outcome deadline, at least 30 days from termination.
+  google.protobuf.Timestamp retain_until = 8;
+}
+
+// GetPhotoUpdateRequest selects one original actor-owned channel photo change.
+message GetPhotoUpdateRequest {
+  // Exact original channel; foreign/mismatched/unknown report NOT_FOUND alike.
+  int64 channel_id = 1;
+  // Original canonical request UUID.
+  string request_id = 2;
+}
+
+// GetPhotoUpdateResponse withholds replaced/removed or unauthorized photos; never
+// resurrect an obsolete photo or substitute a new one. Only SUCCEEDED may return
+// the current original matching photo/main, with newer representations allowed.
+message GetPhotoUpdateResponse {
+  // Required actor-private state, independent of body disclosure.
+  ChannelPhotoUpdate photo_update = 1;
+  // Authorized original matching current photo only; use GetChannels to reconcile.
+  ChatPhoto photo = 2;
+}
+
+// CancelPhotoUpdateRequest selects the original change, not photo removal.
+message CancelPhotoUpdateRequest {
+  // Exact original channel ID.
+  int64 channel_id = 1;
+  // Original canonical actor-scoped UUID.
+  string request_id = 2;
+}
+
+// CancelPhotoUpdateResponse reports durable cancellation only when CANCELED. A
+// claimed PROCESSING outcome requires lookup; SUCCEEDED is never rolled back.
+// Does not abort uploads or remove committed photos.
+message CancelPhotoUpdateResponse {
+  // Required snapshot with current identity-disclosure policy applied.
+  ChannelPhotoUpdate photo_update = 1;
+}
+
+// ChannelPhotoUpdateChanged is an actor-only hint to query GetPhotoUpdate.
+// May duplicate/reorder/disappear; query on reconnect and after an in-flight hint.
+// Representation hints use ChatPhotoRepresentationChanged with this channel's
+// exact Chat.chat_id/photo_id/main; delivery rechecks current channel visibility.
+message ChannelPhotoUpdateChanged {
+  // Exact original channel ID.
+  int64 channel_id = 1;
+  // Original canonical actor-scoped request UUID.
+  string request_id = 2;
+  // Positive hinted status revision, not a durable receipt.
+  uint64 revision = 3;
 }
 
 // ToggleSlowModeRequest specifies slow mode duration.

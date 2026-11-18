@@ -30,12 +30,15 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
         """Pin every new asset/pack request and response without generated code."""
         self.assert_manifest({
             "StickerAssetSource": [("file_id", 1, "int64"), ("metadata", 2, "StickerMetadata"),
-                                   ("variants", 3, "repeated MediaVariantSource")],
+                                   ("inline_preview", 3, "InlinePreview"),
+                                   ("thumbnail", 4, "ThumbnailSource")],
             "CreateStickerAssetRequest": [("kind", 1, "StickerKind"), ("source", 2, "StickerAssetSource"),
-                                          ("fallback_text", 3, "string")],
+                                          ("fallback_text", 3, "string"),
+                                          ("request_id", 4, "string")],
             "UpdateStickerAssetRequest": [("asset_id", 1, "int64"), ("source", 2, "StickerAssetSource"),
                                           ("fallback_text", 3, "optional string"),
-                                          ("expected_version", 4, "uint64")],
+                                          ("expected_version", 4, "uint64"),
+                                          ("request_id", 5, "string")],
             "DeleteStickerAssetRequest": [("asset_id", 1, "int64"), ("expected_version", 2, "uint64")],
             "DeleteStickerAssetResponse": [("deleted", 1, "bool")],
             "GetStickerAssetsRequest": [("asset_ids", 1, "repeated int64"), ("kind", 2, "StickerKind"),
@@ -70,7 +73,8 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
                                   ("pack_revision", 10, "uint64")],
         })
         for method in ("CreateStickerAsset", "UpdateStickerAsset"):
-            self.assert_manifest({method + "Response": [("asset", 1, "StickerView")]})
+            self.assert_manifest({method + "Response": [("asset", 1, "StickerView"),
+                ("asset_change", 2, "AssetChange")]})
         for method in ("CreatePack", "UpdatePack", "AddPackAsset", "RemovePackAsset",
                        "ReorderPackAssets", "PublishPack", "UnpublishPack"):
             self.assert_manifest({method + "Response": [("pack", 1, "StickerPackDetail")]})
@@ -79,12 +83,18 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
         """Pin completed-file sources, bounded-gallery projections and selection."""
         self.assert_manifest({
             "ProfilePhotoSource": [("file_id", 1, "int64"), ("metadata", 2, "ImageMetadata"),
-                                   ("variants", 3, "repeated MediaVariantSource")],
+                                   ("inline_preview", 3, "InlinePreview"),
+                                   ("thumbnail", 4, "ThumbnailSource")],
             "ProfilePhoto": [("photo_id", 1, "int64"), ("user_id", 2, "int64"), ("file_id", 3, "int64"),
-                             ("metadata", 4, "ImageMetadata"), ("variants", 5, "repeated MediaVariant"),
-                             ("created_at", 6, ".google.protobuf.Timestamp")],
-            "SetProfilePhotoRequest": [("source", 1, "ProfilePhotoSource"), ("expected_revision", 2, "uint64")],
-            "SetProfilePhotoResponse": [("photo", 1, "ProfilePhoto"), ("gallery_revision", 2, "uint64")],
+                             ("metadata", 4, "ImageMetadata"),
+                             ("created_at", 5, ".google.protobuf.Timestamp"),
+                             ("inline_preview", 6, "InlinePreview"),
+                             ("representation_revision", 7, "optional uint64"),
+                             ("thumbnail", 8, "Thumbnail")],
+            "SetProfilePhotoRequest": [("source", 1, "ProfilePhotoSource"), ("expected_revision", 2, "uint64"),
+                                       ("request_id", 3, "string")],
+            "SetProfilePhotoResponse": [("photo", 1, "ProfilePhoto"), ("gallery_revision", 2, "uint64"),
+                                        ("photo_update", 3, "ProfilePhotoUpdate")],
             "GetProfilePhotosRequest": [("user_id", 1, "optional int64")],
             "GetProfilePhotosResponse": [("photos", 1, "repeated ProfilePhoto"),
                                          ("selected_photo_id", 2, "optional int64"),
@@ -96,17 +106,17 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
                                            ("gallery_revision", 3, "uint64")],
         })
 
-    def test_messages_service_has_43_unary_methods(self):
+    def test_messages_service_has_47_unary_methods(self):
         """Pin the complete messaging surface, including explicit jobs and poll closure."""
         methods = self.declarations["service"]["tinkle.v1.MessagesService"][1]["method"]
         self.assertEqual([
             "GetDialogs", "GetHistory", "GetMessages", "ListMessageChanges",
             "MarkHistoryRead", "DeleteHistory", "DeleteMessages", "CreateChat",
-            "EditChatTitle", "EditChatPhoto", "UpdateChatDescription", "GetChats",
+            "EditChatTitle", "EditChatPhoto", "GetChatPhotoUpdate", "CancelChatPhotoUpdate", "UpdateChatDescription", "GetChats",
             "GetChatDetails", "AddChatParticipant", "RemoveChatParticipant",
             "EditChatAdmin", "EditChatRestrictedScopes", "SetHistoryTTL",
             "SetMessagePin", "UnpinAllMessages", "GetScheduledMessages", "CancelScheduledMessages", "SendMessage", "SendMedia",
-            "SendAlbum", "EditMessage", "SetTyping", "StartBot", "Search",
+            "SendAlbum", "GetSendStatus", "CancelSend", "EditMessage", "SetTyping", "StartBot", "Search",
             "BatchGetMessageReactions", "ListMessageReactions", "SendReaction",
             "GetRecentReactions",
             "GetUnreadMentions", "ReadMentions", "GetUnreadReactions",
@@ -193,10 +203,11 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
         """Expose unified assets/packs and profile-photo lifecycle operations."""
         expected = {
             "StickersService": ["CreateStickerAsset", "UpdateStickerAsset",
+                                "GetAssetChange", "CancelAssetChange",
                                 "DeleteStickerAsset", "GetStickerAssets", "GetOwnedPacks",
                                 "CreatePack", "UpdatePack", "DeletePack", "AddPackAsset",
                                 "RemovePackAsset", "ReorderPackAssets", "PublishPack", "UnpublishPack"],
-            "AccountService": ["SetProfilePhoto", "GetProfilePhotos",
+            "AccountService": ["SetProfilePhoto", "GetProfilePhotoUpdate", "CancelProfilePhotoUpdate", "GetProfilePhotos",
                                "SelectProfilePhoto", "DeleteProfilePhoto"],
         }
         for service, additions in expected.items():
@@ -231,7 +242,7 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
             self.assertEqual(list(range(len(values))), [v["number"] for v in descriptor["value"]])
         for name in ("StickerAssetSource", "ProfilePhotoSource"):
             fields = self.descriptor(name)["field"]
-            self.assertEqual(["file_id", "metadata", "variants"], [f["name"] for f in fields])
+            self.assertEqual(["file_id", "metadata", "inline_preview", "thumbnail"], [f["name"] for f in fields])
             self.assertFalse(any(f["name"] in ("url", "data", "path") for f in fields))
 
     def test_messaging_round_trips(self):
@@ -264,7 +275,7 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
                 self.assertNotEqual(0, self.convert(conflict, "FileAccessContext", check=False).returncode)
 
     def test_asset_and_profile_round_trips(self):
-        """Preserve animated WebP metadata, lossless policy, variants, and fallback."""
+        """Preserve animated WebP metadata, lossless policy, thumbnail, and fallback."""
         validation = {"profile": "MEDIA_VALIDATION_PROFILE_STRICT_LOSSLESS", "version": 1}
         source = {"fileId": "9007199254740993", "metadata": {
             "width": 128, "height": 128, "format": "STICKER_FORMAT_WEBP",
@@ -273,7 +284,7 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
         self.assertEqual(fixture, self.round_trip(fixture, "CreateStickerAssetRequest"))
         photo = {"fileId": "9007199254740993", "metadata": {"width": 512, "height": 512,
                  "format": "IMAGE_FORMAT_PNG", "validation": validation},
-                 "variants": [{"fileId": "8", "role": "MEDIA_VARIANT_ROLE_THUMBNAIL", "width": 128, "height": 128}]}
+                 "thumbnail": {"fileId": "8", "width": 128, "height": 128}}
         request = {"source": photo, "expectedRevision": "1"}
         self.assertEqual(request, self.round_trip(request, "SetProfilePhotoRequest"))
         assets = {"assets": [{"id": "9007199254740993", "fileId": "8",
@@ -341,14 +352,16 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
             self.assertEqual(fixture, self.round_trip(fixture, name))
 
     def test_revision_and_exact_reference_contract(self):
-        """Pin exact asset identity and mandatory CAS tokens without widening old tags."""
+        """Pin exact asset identity and mandatory CAS tokens at compact reset tags."""
         self.assert_manifest({"AssetReference": [("asset_id", 1, "int64"),
                                                   ("asset_version", 2, "uint64")]})
         additions = {
-            "StickerView": [("asset_version", 10, "TYPE_UINT64")],
+            "StickerView": [("asset_version", 8, "TYPE_UINT64"), ("inline_preview", 9, "TYPE_MESSAGE"),
+                            ("representation_revision", 10, "TYPE_UINT64"), ("thumbnail", 11, "TYPE_MESSAGE")],
             "StickerPackPreview": [("pack_revision", 9, "TYPE_UINT64")],
             "StickerPackDetail": [("pack_revision", 10, "TYPE_UINT64")],
-            "UpdateStickerAssetRequest": [("expected_version", 4, "TYPE_UINT64")],
+            "UpdateStickerAssetRequest": [("expected_version", 4, "TYPE_UINT64"),
+                                          ("request_id", 5, "TYPE_STRING")],
             "DeleteStickerAssetRequest": [("expected_version", 2, "TYPE_UINT64")],
             "UpdatePackRequest": [("expected_revision", 4, "TYPE_UINT64")],
             "DeletePackRequest": [("expected_revision", 2, "TYPE_UINT64")],
@@ -358,14 +371,17 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
             "ReorderPackAssetsRequest": [("expected_revision", 3, "TYPE_UINT64")],
             "PublishPackRequest": [("expected_revision", 2, "TYPE_UINT64")],
             "UnpublishPackRequest": [("expected_revision", 2, "TYPE_UINT64")],
-            "SetProfilePhotoRequest": [("expected_revision", 2, "TYPE_UINT64")],
+            "SetProfilePhotoRequest": [("expected_revision", 2, "TYPE_UINT64"),
+                                       ("request_id", 3, "TYPE_STRING")],
             "SelectProfilePhotoRequest": [("expected_revision", 2, "TYPE_UINT64")],
             "DeleteProfilePhotoRequest": [("expected_revision", 2, "TYPE_UINT64")],
-            "SetProfilePhotoResponse": [("gallery_revision", 2, "TYPE_UINT64")],
+            "SetProfilePhotoResponse": [("gallery_revision", 2, "TYPE_UINT64"),
+                                        ("photo_update", 3, "TYPE_MESSAGE")],
             "SelectProfilePhotoResponse": [("gallery_revision", 2, "TYPE_UINT64")],
             "DeleteProfilePhotoResponse": [("gallery_revision", 3, "TYPE_UINT64")],
             "GetProfilePhotosResponse": [("gallery_revision", 3, "TYPE_UINT64")],
-            "StickerSource": [("asset_version", 5, "TYPE_UINT64")],
+            "StickerSource": [("asset_version", 4, "TYPE_UINT64"), ("inline_preview", 5, "TYPE_MESSAGE"),
+                              ("thumbnail", 6, "TYPE_MESSAGE")],
             "StickerAssetReference": [("asset_version", 2, "TYPE_UINT64")],
             "Entity": [("asset_version", 9, "TYPE_UINT64")],
             "Reaction": [("asset_version", 3, "TYPE_UINT64")],
@@ -429,6 +445,7 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
             ("TARGET_CHANGE_KIND_DELETED", 2), ("TARGET_CHANGE_KIND_REVOKED", 3),
             ("TARGET_CHANGE_KIND_PIN", 4), ("TARGET_CHANGE_KIND_REACTION", 5),
             ("TARGET_CHANGE_KIND_POLL", 6), ("TARGET_CHANGE_KIND_ACK", 7),
+            ("TARGET_CHANGE_KIND_REPRESENTATION", 8),
         ], [(value["name"], value["number"]) for value in descriptor["value"]])
         for name, field, tag in (("Message", "body_revision", 18),
                                  ("TargetChange", "message_revision", 5)):
@@ -439,12 +456,13 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
         self.assert_manifest({
             "MessageChanged": [("target", 1, "Target"), ("message_id", 2, "int64"),
                                ("body_revision", 3, "int64"), ("change_kind", 4, "TargetChangeKind"),
-                               ("reaction_effect", 5, "ReactionEffect"), ("body_invalidated", 6, "bool")],
+                               ("reaction_effect", 5, "ReactionEffect"), ("body_invalidated", 6, "bool"),
+                               ("representation_revision", 7, "optional uint64")],
             "TypingChanged": [("target", 1, "Target"), ("actor_id", 2, "int64"),
                               ("action", 3, "TypingAction"), ("expires_at", 4, ".google.protobuf.Timestamp"),
                               ("thread_root_id", 5, "optional int64")],
         })
-        # Data messages do not add an RPC or extend the connectivity-only service.
+        # Conversation hints do not add a generic replay RPC.
         methods = self.declarations["service"]["tinkle.v1.UpdatesService"][1]["method"]
         self.assertEqual(["ObserveConnectivity"], [method["name"] for method in methods])
 

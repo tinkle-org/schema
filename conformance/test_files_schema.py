@@ -12,6 +12,7 @@ durable part commits, authorization, terminal-state races, snapshot
 isolation, or garbage collection live in the server implementations.
 """
 
+import copy
 import json
 from pathlib import Path
 import subprocess
@@ -35,6 +36,31 @@ def run_buf(*arguments, input_bytes=None, check=True):
     )
     if check and result.returncode:
         raise RuntimeError(result.stderr.decode("utf-8", errors="replace"))
+    return result
+
+
+def reset_descriptor_numbers(descriptor):
+    """Normalize only the authorized tag/reservation reset in an old descriptor.
+
+    Names, types, oneof membership, presence, options and methods stay intact.
+    Nested/map messages and enum reservations receive the same reset.
+    """
+    result = copy.deepcopy(descriptor)
+
+    def reset(value):
+        """Walk descriptor dictionaries, not source text or generated bindings."""
+        if isinstance(value, dict):
+            value.pop("reservedRange", None)
+            value.pop("reservedName", None)
+            for number, field in enumerate(value.get("field", []), 1):
+                field["number"] = number
+            for child in value.values():
+                reset(child)
+        elif isinstance(value, list):
+            for child in value:
+                reset(child)
+
+    reset(result)
     return result
 
 
@@ -195,6 +221,7 @@ class FilesSchemaTests(BufSchemaTestCase):
             ("file_name", 3, "STRING", "", False, True),
             ("mime_type", 4, "STRING", "", False, True),
             ("sha256", 5, "BYTES", "", False, True),
+            ("processing_intent", 6, "ENUM", "MediaProcessingIntent", False, True),
         ], FILES_FILE)
         self.assert_fields("BeginUploadResponse", [
             ("upload_id", 1, "STRING", "", False, False),
@@ -267,7 +294,7 @@ class FilesSchemaTests(BufSchemaTestCase):
             ("sha256", 3, "BYTES", "", False, False),
             ("mime_type", 4, "STRING", "", False, True),
             ("file_name", 5, "STRING", "", False, True),
-            ("created_at", 7, "MESSAGE", ".google.protobuf.Timestamp",
+            ("created_at", 6, "MESSAGE", ".google.protobuf.Timestamp",
              False, False),
         ], FILES_FILE)
         self.assert_fields("GetFileInfoRequest", [
@@ -306,18 +333,12 @@ class FilesSchemaTests(BufSchemaTestCase):
         self.assertEqual({
             "ImageMetadata", "VideoMetadata", "AudioMetadata",
             "StickerMetadata", "MediaAttribute",
-            "MediaVariant", "MediaVariantSource",
+            "Thumbnail", "ThumbnailSource",
             "MediaValidation",
-            "AssetReference",
+            "AssetReference", "InlinePreview",
         }, names)
 
     def test_media_enums(self):
-        self.assert_enum_values("MediaVariantRole", [
-            "MEDIA_VARIANT_ROLE_UNSPECIFIED",
-            "MEDIA_VARIANT_ROLE_THUMBNAIL",
-            "MEDIA_VARIANT_ROLE_PREVIEW",
-            "MEDIA_VARIANT_ROLE_FULL",
-        ], MEDIA_FILE)
         self.assert_enum_values("StickerFormat", [
             "STICKER_FORMAT_UNSPECIFIED",
             "STICKER_FORMAT_WEBP",
@@ -362,7 +383,8 @@ class FilesSchemaTests(BufSchemaTestCase):
             ("validation", 8, "MESSAGE", "MediaValidation", False, False),
         ], MEDIA_FILE)
 
-    def test_attribute_and_variant_shapes(self):
+    def test_attribute_and_thumbnail_shapes(self):
+        """Keep typed purpose attributes and the singular thumbnail value shapes."""
         self.assert_fields("MediaAttribute", [
             ("image", 1, "MESSAGE", "ImageMetadata", False, False),
             ("video", 2, "MESSAGE", "VideoMetadata", False, False),
@@ -371,17 +393,15 @@ class FilesSchemaTests(BufSchemaTestCase):
         ], MEDIA_FILE)
         self.assert_oneof("MediaAttribute", "kind",
                           ["image", "video", "audio", "sticker"], MEDIA_FILE)
-        self.assert_fields("MediaVariant", [
-            ("role", 1, "ENUM", "MediaVariantRole", False, False),
-            ("file_id", 2, "INT64", "", False, False),
-            ("width", 3, "UINT32", "", False, True),
-            ("height", 4, "UINT32", "", False, True),
-        ], MEDIA_FILE)
-        self.assert_fields("MediaVariantSource", [
+        self.assert_fields("Thumbnail", [
             ("file_id", 1, "INT64", "", False, False),
-            ("role", 2, "ENUM", "MediaVariantRole", False, False),
-            ("width", 3, "UINT32", "", False, True),
-            ("height", 4, "UINT32", "", False, True),
+            ("width", 2, "UINT32", "", False, False),
+            ("height", 3, "UINT32", "", False, False),
+        ], MEDIA_FILE)
+        self.assert_fields("ThumbnailSource", [
+            ("file_id", 1, "INT64", "", False, False),
+            ("width", 2, "UINT32", "", False, False),
+            ("height", 3, "UINT32", "", False, False),
         ], MEDIA_FILE)
 
     # ------------------------------------------------------------------
@@ -406,25 +426,30 @@ class FilesSchemaTests(BufSchemaTestCase):
         ], "tinkle/v1/messages.proto")
 
     def test_source_shapes(self):
+        """Pin file-backed source fields after retiring thumbnail collections."""
         self.assert_fields("PhotoSource", [
             ("file_id", 1, "INT64", "", False, False),
             ("metadata", 2, "MESSAGE", "ImageMetadata", False, True),
-            ("variants", 3, "MESSAGE", "MediaVariantSource", True, False),
+            ("inline_preview", 3, "MESSAGE", "InlinePreview", False, False),
+            ("thumbnail", 4, "MESSAGE", "ThumbnailSource", False, False),
         ], "tinkle/v1/messages.proto")
         self.assert_fields("DocumentSource", [
             ("file_id", 1, "INT64", "", False, False),
             ("attributes", 2, "MESSAGE", "MediaAttribute", True, False),
-            ("variants", 3, "MESSAGE", "MediaVariantSource", True, False),
+            ("inline_preview", 3, "MESSAGE", "InlinePreview", False, False),
+            ("thumbnail", 4, "MESSAGE", "ThumbnailSource", False, False),
         ], "tinkle/v1/messages.proto")
         self.assert_fields("VideoSource", [
             ("file_id", 1, "INT64", "", False, False),
             ("metadata", 2, "MESSAGE", "VideoMetadata", False, True),
-            ("variants", 3, "MESSAGE", "MediaVariantSource", True, False),
+            ("inline_preview", 3, "MESSAGE", "InlinePreview", False, False),
+            ("thumbnail", 4, "MESSAGE", "ThumbnailSource", False, False),
         ], "tinkle/v1/messages.proto")
         self.assert_fields("AudioSource", [
             ("file_id", 1, "INT64", "", False, False),
             ("metadata", 2, "MESSAGE", "AudioMetadata", False, True),
-            ("variants", 3, "MESSAGE", "MediaVariantSource", True, False),
+            ("inline_preview", 3, "MESSAGE", "InlinePreview", False, False),
+            ("thumbnail", 4, "MESSAGE", "ThumbnailSource", False, False),
         ], "tinkle/v1/messages.proto")
         self.assert_fields("VoiceSource", [
             ("file_id", 1, "INT64", "", False, False),
@@ -434,9 +459,10 @@ class FilesSchemaTests(BufSchemaTestCase):
         self.assert_fields("StickerSource", [
             ("file_id", 1, "INT64", "", False, False),
             ("metadata", 2, "MESSAGE", "StickerMetadata", False, True),
-            ("variants", 3, "MESSAGE", "MediaVariantSource", True, False),
-            ("asset_id", 4, "INT64", "", False, True),
-            ("asset_version", 5, "UINT64", "", False, True),
+            ("asset_id", 3, "INT64", "", False, True),
+            ("asset_version", 4, "UINT64", "", False, True),
+            ("inline_preview", 5, "MESSAGE", "InlinePreview", False, False),
+            ("thumbnail", 6, "MESSAGE", "ThumbnailSource", False, False),
         ], "tinkle/v1/messages.proto")
         self.assert_fields("GeoPointSource", [
             ("lat", 1, "DOUBLE", "", False, False),
@@ -459,9 +485,8 @@ class FilesSchemaTests(BufSchemaTestCase):
                           ["file_id", "empty", "photo"],
                           "tinkle/v1/messages.proto")
 
-    def test_additive_media_attachment_fields(self):
-        # Legacy wire fields (tags 1-4 / 1-5) are unchanged; new canonical
-        # references, metadata, and variants extend the messages additively.
+    def test_media_attachment_fields(self):
+        """Preserve main/preview/revision shapes and pin compact thumbnail slots."""
         self.assert_fields("Photo", [
             ("id", 1, "INT64", "", False, False),
             ("access_hash", 2, "INT64", "", False, False),
@@ -469,7 +494,9 @@ class FilesSchemaTests(BufSchemaTestCase):
             ("height", 4, "INT32", "", False, False),
             ("file_id", 5, "INT64", "", False, False),
             ("metadata", 6, "MESSAGE", "ImageMetadata", False, True),
-            ("variants", 7, "MESSAGE", "MediaVariant", True, False),
+            ("inline_preview", 7, "MESSAGE", "InlinePreview", False, False),
+            ("representation_revision", 8, "UINT64", "", False, True),
+            ("thumbnail", 9, "MESSAGE", "Thumbnail", False, False),
         ], "tinkle/v1/messages.proto")
         self.assert_fields("Document", [
             ("id", 1, "INT64", "", False, False),
@@ -479,26 +506,32 @@ class FilesSchemaTests(BufSchemaTestCase):
             ("file_name", 5, "STRING", "", False, False),
             ("file_id", 6, "INT64", "", False, False),
             ("attributes", 7, "MESSAGE", "MediaAttribute", True, False),
-            ("variants", 8, "MESSAGE", "MediaVariant", True, False),
+            ("inline_preview", 8, "MESSAGE", "InlinePreview", False, False),
+            ("representation_revision", 9, "UINT64", "", False, True),
+            ("thumbnail", 10, "MESSAGE", "Thumbnail", False, False),
         ], "tinkle/v1/messages.proto")
 
-    def test_additive_user_photo_and_sticker_fields(self):
+    def test_user_photo_and_sticker_fields(self):
+        """Expose exactly one thumbnail, never a duplicate sticker thumbnail ID."""
         self.assert_fields("UserPhoto", [
             ("file_id", 1, "INT64", "", False, False),
-            ("variants", 2, "MESSAGE", "MediaVariant", True, False),
-            ("photo_id", 3, "INT64", "", False, False),
+            ("photo_id", 2, "INT64", "", False, False),
+            ("inline_preview", 3, "MESSAGE", "InlinePreview", False, False),
+            ("representation_revision", 4, "UINT64", "", False, True),
+            ("thumbnail", 5, "MESSAGE", "Thumbnail", False, False),
         ], "tinkle/v1/common.proto")
         self.assert_fields("StickerView", [
             ("id", 1, "INT64", "", False, False),
             ("file_id", 2, "INT64", "", False, False),
-            ("thumb_file_id", 3, "INT64", "", False, False),
-            ("is_premium", 4, "BOOL", "", False, False),
-            ("metadata", 5, "MESSAGE", "StickerMetadata", False, True),
-            ("kind", 6, "ENUM", "StickerKind", False, False),
-            ("owner_id", 7, "INT64", "", False, False),
-            ("fallback_text", 8, "STRING", "", False, False),
-            ("variants", 9, "MESSAGE", "MediaVariant", True, False),
-            ("asset_version", 10, "UINT64", "", False, False),
+            ("is_premium", 3, "BOOL", "", False, False),
+            ("metadata", 4, "MESSAGE", "StickerMetadata", False, True),
+            ("kind", 5, "ENUM", "StickerKind", False, False),
+            ("owner_id", 6, "INT64", "", False, False),
+            ("fallback_text", 7, "STRING", "", False, False),
+            ("asset_version", 8, "UINT64", "", False, False),
+            ("inline_preview", 9, "MESSAGE", "InlinePreview", False, False),
+            ("representation_revision", 10, "UINT64", "", False, True),
+            ("thumbnail", 11, "MESSAGE", "Thumbnail", False, False),
         ], "tinkle/v1/stickers.proto")
 
     def test_send_requests_use_source_types(self):
@@ -529,19 +562,18 @@ class FilesSchemaTests(BufSchemaTestCase):
             ("caption", 3, "STRING", "", False, True),
             ("parse_mode", 4, "STRING", "", False, True),
         ], "tinkle/v1/bot_api.proto")
-        # Legacy scalars keep their original tags; the oneof now enforces
-        # the mutual exclusivity the comments promise. Field order follows
-        # declaration order: the oneof sits before the caption fields.
+        # Scalars and typed sources remain mutually exclusive. Tags follow
+        # declaration order through the oneof and then the caption fields.
         self.assert_fields("SendPhotoRequest", [
             ("chat_id", 1, "INT64", "", False, False),
             ("photo", 2, "INT64", "", False, False),
-            ("photo_source", 8, "MESSAGE", "PhotoSource", False, False),
-            ("caption", 3, "STRING", "", False, True),
-            ("parse_mode", 4, "STRING", "", False, True),
-            ("reply_to_message_id", 5, "INT64", "", False, True),
-            ("reply_markup", 6, "MESSAGE", "InlineKeyboardMarkup",
+            ("photo_source", 3, "MESSAGE", "PhotoSource", False, False),
+            ("caption", 4, "STRING", "", False, True),
+            ("parse_mode", 5, "STRING", "", False, True),
+            ("reply_to_message_id", 6, "INT64", "", False, True),
+            ("reply_markup", 7, "MESSAGE", "InlineKeyboardMarkup",
              False, True),
-            ("disable_notification", 7, "BOOL", "", False, True),
+            ("disable_notification", 8, "BOOL", "", False, True),
         ], "tinkle/v1/bot_api.proto")
         self.assert_oneof("SendPhotoRequest", "photo_form",
                           ["photo", "photo_source"], "tinkle/v1/bot_api.proto")
@@ -625,6 +657,18 @@ class FilesSchemaTests(BufSchemaTestCase):
     def test_upload_part_round_trip(self):
         fixture = {"partIndex": "7", "alreadyPresent": True}
         self.assertEqual(fixture, self.round_trip(fixture, "UploadPartResponse"))
+
+    def test_allowed_part_sizes_and_final_short_part_shapes(self):
+        """Encode every allowed negotiation and a final short part; no runtime validation."""
+        for size in (65536, 131072, 262144, 524288):
+            begin = {"uploadId": "up-123", "status": "UPLOAD_STATUS_ACTIVE",
+                     "partSizeBytes": str(size), "maxParallelParts": 1}
+            self.assertEqual(begin, self.round_trip(begin, "BeginUploadResponse"))
+            status = {"status": "UPLOAD_STATUS_ACTIVE", "partSizeBytes": str(size),
+                      "sizeBytes": str(size + 1), "receivedRanges": [{"endIndex": "1"}]}
+            self.assertEqual(status, self.round_trip(status, "GetUploadStatusResponse"))
+            final = {"uploadId": "up-123", "partIndex": "1", "data": "eA=="}
+            self.assertEqual(final, self.round_trip(final, "UploadPartRequest"))
 
     def test_status_active_snapshot_round_trip(self):
         fixture = {
@@ -765,25 +809,24 @@ class FilesSchemaTests(BufSchemaTestCase):
         self.assertEqual({}, self.round_trip({}, "AbortUploadResponse"))
 
     def test_source_round_trips(self):
+        """Preserve singular thumbnail IDs/dimensions through the real codec."""
         photo = {
             "fileId": "9007199254740993",
             "metadata": {"width": 1920, "height": 1080},
-            "variants": [{
+            "thumbnail": {
                 "fileId": "7",
-                "role": "MEDIA_VARIANT_ROLE_THUMBNAIL",
                 "width": 160,
                 "height": 90,
-            }],
+            },
         }
         decoded = self.round_trip(photo, "PhotoSource")
         self.assertEqual("9007199254740993", decoded["fileId"])
         self.assertEqual({"width": 1920, "height": 1080}, decoded["metadata"])
-        self.assertEqual([{
+        self.assertEqual({
             "fileId": "7",
-            "role": "MEDIA_VARIANT_ROLE_THUMBNAIL",
             "width": 160,
             "height": 90,
-        }], decoded["variants"])
+        }, decoded["thumbnail"])
 
         document = {
             "fileId": "5",
@@ -871,16 +914,10 @@ class FilesSchemaTests(BufSchemaTestCase):
             if file_name not in (FILES_FILE, MEDIA_FILE):
                 continue
             fields = message.get("field", [])
-            reserved = [tag for interval in message.get("reservedRange", [])
-                        for tag in range(interval["start"], interval["end"])]
             tags = [f["number"] for f in fields]
-            self.assertEqual(list(range(1, len(fields) + len(reserved) + 1)),
-                             sorted(tags + reserved), name)
-            if name in ("tinkle.v1.BeginUploadRequest", "tinkle.v1.FileInfo"):
-                self.assertEqual([6], reserved, name)
-                self.assertEqual(["encrypted"], message.get("reservedName"), name)
-            else:
-                self.assertFalse(reserved, name)
+            self.assertEqual(list(range(1, len(fields) + 1)), tags, name)
+            self.assertFalse(message.get("reservedRange"), name)
+            self.assertFalse(message.get("reservedName"), name)
             for field in fields:
                 # Standard protojson canonical name (camelCase) is computed
                 # for every field, keeping JSON round trips deterministic.

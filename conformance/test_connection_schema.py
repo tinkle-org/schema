@@ -163,7 +163,7 @@ class ConnectionSchemaTests(unittest.TestCase):
         ], [f["jsonName"] for f in self.messages["ClientInfo"]["field"]])
 
     def test_auth_enrollment_surface(self):
-        """Pin the recoverable enrollment RPCs and retained sign-in field tags."""
+        """Pin recoverable enrollment RPCs and compact sign-in field tags."""
         service = self.files["tinkle/v1/auth.proto"]["service"][0]
         self.assertEqual([
             "SendCode", "SignIn", "ResumeEnrollment", "ActivateEnrollment",
@@ -190,12 +190,13 @@ class ConnectionSchemaTests(unittest.TestCase):
         ])
         self.assert_fields("SignInResponse", [
             ("user", 1, "MESSAGE", ".tinkle.v1.User"),
-            ("is_new_user", 3, "BOOL", None),
-            ("enrollment", 4, "MESSAGE", ".tinkle.v1.DeviceEnrollment"),
+            ("is_new_user", 2, "BOOL", None),
+            ("enrollment", 3, "MESSAGE", ".tinkle.v1.DeviceEnrollment"),
         ])
         response = self.messages["SignInResponse"]
-        self.assertEqual([{"start": 2, "end": 3}], response["reservedRange"])
-        self.assertEqual(["session_token"], response["reservedName"])
+        self.assertFalse(response.get("reservedRange"))
+        self.assertFalse(response.get("reservedName"))
+        self.assertNotIn("session_token", [f["name"] for f in response["field"]])
 
     def test_enrollment_disposition_is_exact_and_negative_only(self):
         """Disposition exposes one retired-binding fact, not account authority."""

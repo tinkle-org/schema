@@ -27,12 +27,13 @@
 //      that file_id, with client-declared metadata and variant references.
 //   3. Send or edit the application object (message, profile photo,
 //      sticker, ...) that carries the attachment. Servers validate the typed
-//      media and generate required lower-pixel thumbnails before publishing the
-//      owning object, as specified by MediaValidation. Raw documents stay raw.
+//      media. Ordinary owning methods can return durable pending image/video
+//      validation, then accept the main and later enrich optional thumbnails.
+//      Raw documents stay raw; audio/voice do not use the asynchronous worker.
 //
-// BeginUpload deliberately carries no media-specific metadata: attachment
-// semantics belong to the *Source types, and FileInfo stays limited to
-// immutable storage facts. Everything clients declare — MIME types, file
+// BeginUpload carries only an optional generic processing intent, no physical
+// media metadata: attachment semantics belong to the *Source types, and FileInfo
+// stays limited to immutable storage facts. Everything clients declare — MIME types, file
 // names, dimensions, durations and codecs — is a non-authoritative claim.
 // Typed authoring measures physical facts from the bytes; file names and MIME
 // declarations do not select a media purpose. File-level encryption is not
@@ -48,6 +49,7 @@ package tinkle.v1;
 
 import "google/protobuf/timestamp.proto";
 import "tinkle/v1/common.proto";
+import "tinkle/v1/media.proto";
 
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
@@ -62,7 +64,9 @@ service FilesService {
   // to its empty value are different parameters. The negotiated part size
   // is chosen to fit the deployment's maximum transport message size,
   // protobuf framing and envelopes included, and is persisted for the
-  // session's lifetime — it is never renegotiated mid-session.
+  // session's lifetime — it is never renegotiated mid-session. New sessions use
+  // exactly 64, 128, 256 or 512 KiB (65536, 131072, 262144 or 524288 bytes),
+  // uniformly for all media types. If none fits, reject session creation.
   //
   // Zero-byte uploads (size_bytes 0) have no parts and complete
   // immediately: the response reports UPLOAD_STATUS_COMPLETED with the
@@ -190,9 +194,6 @@ enum UploadStatus {
 // must be known upfront so the server can derive the part count and verify
 // completion exactly.
 message BeginUploadRequest {
-  reserved 6;
-  reserved "encrypted";
-
   // Client-generated idempotency key, scoped to the authenticated
   // principal. Two BeginUpload calls with the same key and identical
   // parameters return the same session; differing parameters are rejected.
@@ -212,6 +213,18 @@ message BeginUploadRequest {
   // declaration before completing: a digest other than the SHA-256 of
   // the empty byte sequence is rejected at creation.
   optional bytes sha256 = 5;
+  // Optional explicit asynchronous processing intent, fixed for this session and
+  // its completed file. Exact idempotency compares presence AND enum value along
+  // with all other parameters; reject UNSPECIFIED/unknown values before binding
+  // the key. Changing IMAGE to VIDEO, or omission to a present value, conflicts.
+  // Work may start only after durable completion. CompleteUpload still returns
+  // immutable storage facts, never waits for media inspection or generated sizes,
+  // and does not promise that the file satisfies an owning purpose. New typed
+  // image/video main authoring requires matching IMAGE/VIDEO intent; raw/audio/voice
+  // authoring requires omission. Capturing an already validated exact catalog
+  // asset version does not require re-uploading it with intent. Intent never
+  // grants access or selects a domain.
+  optional MediaProcessingIntent processing_intent = 6;
 }
 
 // BeginUploadResponse carries either the negotiated configuration of a new
@@ -229,6 +242,7 @@ message BeginUploadResponse {
   // must be exactly this size. Present if and only if status is
   // UPLOAD_STATUS_ACTIVE: the size is negotiated once at session creation,
   // persisted for the session's lifetime, and never renegotiated.
+  // New sessions select exactly 65536, 131072, 262144 or 524288 bytes.
   optional int64 part_size_bytes = 2;
   // Maximum number of parts the client may upload in parallel; at least
   // one. Present if and only if status is UPLOAD_STATUS_ACTIVE.
@@ -410,9 +424,6 @@ message AbortUploadResponse {
 // client declarations. Media-specific attributes are kept out of this
 // message and live with the media contracts.
 message FileInfo {
-  reserved 6;
-  reserved "encrypted";
-
   // Canonical, stable identifier of the committed file. Globally unique,
   // opaque, and never reassigned; its numeric value exposes nothing about
   // storage internals, and authorization never relies on possessing it.
@@ -427,7 +438,7 @@ message FileInfo {
   // Original file name, if declared; client-provided and not verified.
   optional string file_name = 5;
   // When the file was committed.
-  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp created_at = 6;
 }
 
 // FileAccessContext identifies the application reference authorizing a read.
@@ -439,21 +450,24 @@ message FileInfo {
 // files/versions, never new catalog sends or unrelated asset versions.
 // Never search for some other object to authorize a mismatched context. Unknown,
 // removed, inaccessible and mismatched references/files all report not found.
+// Grants include only explicitly linked, durably ready output IDs of the exact
+// owner/version. Parent/processing relationships never grant all generated child
+// files; older message captures remain frozen even if a catalog asset enriches.
 message FileAccessContext {
   oneof reference {
-    // A currently visible message attachment or one of its variants.
+    // A currently visible message attachment or its linked thumbnail.
     MessageFileReference message = 1;
-    // A current, privacy-visible profile-gallery entry or one of its variants.
+    // A current, privacy-visible profile-gallery entry or its linked thumbnail.
     ProfilePhotoReference profile_photo = 2;
     // An owned asset, or an asset currently in a published pack.
     StickerAssetReference sticker_asset = 3;
-    // A currently visible chat's current photo or one of its stored variants.
+    // A currently visible chat's current photo or its linked thumbnail.
     ChatPhotoReference chat_photo = 4;
   }
 }
 
 // MessageFileReference locates a message under the caller's history visibility,
-// including its exact captured custom-emoji/reaction versions and variants.
+// including its exact captured custom-emoji/reaction versions and thumbnails.
 // Deletion/revocation/visibility changes remove this grant on the next read.
 message MessageFileReference {
   // Required conversation; cannot be global or an empty Target.

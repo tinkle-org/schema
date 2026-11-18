@@ -174,15 +174,12 @@ message SignInRequest {
 
 // SignInResponse delivers the account and a staged key over a protected channel.
 message SignInResponse {
-  reserved 2;
-  reserved "session_token";
-
   // Resolved user projection; profile availability does not activate the device.
   User user = 1;
   // True if the initial operation created the account; retained on retries.
-  bool is_new_user = 3;
+  bool is_new_user = 2;
   // Secret-bearing enrollment. Persist securely before acknowledging activation.
-  DeviceEnrollment enrollment = 4;
+  DeviceEnrollment enrollment = 3;
 }
 
 // DeviceKeyScope separates keys by their permitted application use. The scope

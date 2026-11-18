@@ -1,21 +1,12 @@
 // Ephemeral connectivity observations, independent of delivery transport.
-// Durable update data and queries are retired from this public contract; the
-// former replay and watch surface (ReadUpdates, FollowUpdates, the Update
-// envelope, MessageRefresh, SendAttemptFailed, ContentOmitted,
-// ReadStateInvalidated, ReadUpdatesRequest, ReadUpdatesResponse,
-// FollowUpdatesRequest, FollowUpdatesResponse, and RebuildNeeded) is removed,
-// and those names are not reintroduced in tinkle.v1. Replay, watch, and
-// presence remain implementation-internal capabilities.
 syntax = "proto3";
 
 package tinkle.v1;
 
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
-// UpdatesService exposes privacy-filtered connectivity observations.
-// Callers must be authenticated. The implementation backs observations with
-// its presence backend; no observation is durable and no method retains or
-// replays history.
+// UpdatesService exposes privacy-filtered connectivity to authenticated callers.
+// No observation is durable, and the service does not retain or replay history.
 service UpdatesService {
   // ObserveConnectivity returns current privacy-filtered connectivity, then changes.
   // A revision-only change need not emit an observation. There is no retained replay.

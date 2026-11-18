@@ -31,6 +31,7 @@ class MessagingOptionsSchemaTests(files.BufSchemaTestCase):
             ("change_kind", 4, "ENUM", "TargetChangeKind", False, False),
             ("reaction_effect", 5, "MESSAGE", "ReactionEffect", False, False),
             ("body_invalidated", 6, "BOOL", "", False, False),
+            ("representation_revision", 7, "UINT64", "", False, True),
         ])
         for name in ("Message", "TargetChange"):
             self.assertNotIn("reaction_effect", [f["name"] for f in self.descriptor(name)["field"]])
@@ -39,8 +40,8 @@ class MessagingOptionsSchemaTests(files.BufSchemaTestCase):
         """The empty request cannot select a different account or follow asset heads."""
         services = self.declarations["service"]
         self.assertEqual(13, len(services))
-        self.assertEqual(207, sum(len(service[1]["method"]) for service in services.values()))
-        self.assertEqual(43, len(services["tinkle.v1.MessagesService"][1]["method"]))
+        self.assertEqual(217, sum(len(service[1]["method"]) for service in services.values()))
+        self.assertEqual(47, len(services["tinkle.v1.MessagesService"][1]["method"]))
         self.assert_fields("GetRecentReactionsRequest", [])
         self.assert_fields("GetRecentReactionsResponse", [
             ("reactions", 1, "MESSAGE", "Reaction", True, False),
@@ -268,6 +269,7 @@ class MessagingOptionsSchemaTests(files.BufSchemaTestCase):
             ("accept_seq", 4, "INT64", "", False, False),
             ("message_revision", 5, "INT64", "", False, True),
             ("body_invalidated", 6, "BOOL", "", False, False),
+            ("representation_revision", 7, "UINT64", "", False, True),
         ])
         for name, fixture in (
             ("TargetChange", {"messageId": "9007199254740993", "kind": "TARGET_CHANGE_KIND_REACTION",
