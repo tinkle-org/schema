@@ -1723,9 +1723,15 @@ message CancelSendResponse {
 }
 
 // SendStatusChanged is an actor-only refresh hint, not a receipt or durable feed.
-// Hints can duplicate, coalesce, reorder or disappear. Query GetSendStatus on
-// startup/reconnect and again if a hint arrives during a query. Delivery rechecks
-// the original actor's active authorization; stopping observation cancels no send.
+// Hints can duplicate, coalesce, reorder or disappear. Query GetSendStatus with
+// the original target and key on startup, reconnect and receipt of a hint. Query
+// again if a hint arrives during a query. Delivery rechecks the original actor's
+// active authorization; stopping observation cancels no send.
+// While connected, schedule a fallback query 30 seconds after an ambiguous
+// mutation response or a nonterminal status, even if no hint arrives. Restart
+// the 30-second timer after each query that leaves the outcome unresolved. Keep
+// at most one status query in flight per operation and stop the timer once a
+// terminal outcome is known.
 message SendStatusChanged {
   // Original conversation, not permission to read its history.
   Target target = 1;
@@ -1826,7 +1832,14 @@ message CancelChatPhotoUpdateResponse {
 }
 
 // ChatPhotoUpdateChanged hints only to the initiating actor to query the owner.
-// May duplicate/reorder/disappear; query on reconnect and after an in-flight hint.
+// Hints can duplicate, reorder or disappear. Query GetChatPhotoUpdate with the
+// original chat_id and operation_id on startup, reconnect and receipt of a hint.
+// Query again if a hint arrives during a query.
+// While connected, schedule a fallback query 30 seconds after an ambiguous
+// mutation response or a nonterminal status, even if no hint arrives. Restart
+// the 30-second timer after each query that leaves the outcome unresolved. Keep
+// at most one status query in flight per operation and stop the timer once a
+// terminal outcome is known.
 message ChatPhotoUpdateChanged {
   // Exact original group chat ID.
   int64 chat_id = 1;

@@ -524,9 +524,17 @@ observation does not cancel pending work.
 For immediate file-backed sends and albums, `SendStatusChanged` is an actor-only
 hint to refresh with `MessagesService.GetSendStatus`. It can arrive out of order
 or be missed. Recover unresolved sends on startup and reconnect using the
-original target and key (any original member key for an album). Missing status
-after an ambiguous send does not prove failure or permit a fresh key. The hint
-does not grant body or file access.
+original target and key (any original member key for an album). Query again if a
+hint arrives during a fetch. Missing status after an ambiguous send does not
+prove failure or permit a fresh key. The hint does not grant body or file access.
+
+For both sends and chat-photo updates, while connected, schedule a fallback query
+30 seconds after an ambiguous mutation response or a nonterminal status, even
+if no hint arrives. Use the original binding: `GetSendStatus` for sends and
+`GetChatPhotoUpdate` with the original `chat_id` and `operation_id` for chat photos.
+Restart the 30-second timer after each query that leaves the outcome unresolved.
+Keep at most one status query in flight per operation and stop the timer once a
+terminal outcome is known.
 
 ## Authorization
 
