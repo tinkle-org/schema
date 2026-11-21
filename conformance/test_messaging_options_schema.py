@@ -40,8 +40,7 @@ class MessagingOptionsSchemaTests(files.BufSchemaTestCase):
         """The empty request cannot select a different account or follow asset heads."""
         services = self.declarations["service"]
         self.assertEqual(13, len(services))
-        self.assertEqual(217, sum(len(service[1]["method"]) for service in services.values()))
-        self.assertEqual(47, len(services["tinkle.v1.MessagesService"][1]["method"]))
+        self.assertEqual(219, sum(len(service[1]["method"]) for service in services.values()))
         self.assert_fields("GetRecentReactionsRequest", [])
         self.assert_fields("GetRecentReactionsResponse", [
             ("reactions", 1, "MESSAGE", "Reaction", True, False),

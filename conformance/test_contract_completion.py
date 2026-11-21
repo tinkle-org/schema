@@ -70,6 +70,8 @@ class ContractCompletionTests(files.BufSchemaTestCase):
                 additions = {
                     "MessagesService": [("GetChatPhotoUpdate", "EditChatPhoto"),
                                         ("CancelChatPhotoUpdate", "GetChatPhotoUpdate"),
+                                        ("GetRoomMembers", "GetChatDetails"),
+                                        ("GetRoomOnlineCount", "GetRoomMembers"),
                                         ("GetSendStatus", "SendAlbum"), ("CancelSend", "GetSendStatus")],
                     "ChannelsService": [("GetPhotoUpdate", "EditPhoto"), ("CancelPhotoUpdate", "GetPhotoUpdate")],
                     "AccountService": [("GetProfilePhotoUpdate", "SetProfilePhoto"),

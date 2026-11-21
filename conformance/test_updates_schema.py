@@ -218,6 +218,11 @@ CHANGED_DECLARATIONS.update({"tinkle.v1." + name for name in (
     "CancelScheduledMessagesRequest", "CancelScheduledMessagesResponse", "ClosePollRequest", "ClosePollResponse",
 )})
 
+# Room-query declarations are pinned by test_messaging_media_schema.py.
+CHANGED_DECLARATIONS.update({"tinkle.v1." + name for name in (
+    "RoomQueryTarget", "GetRoomMembersRequest", "GetRoomMembersResponse",
+    "GetRoomOnlineCountRequest", "GetRoomOnlineCountResponse", "RoomOnlineCountSample",
+)})
 # Domain pending additions are pinned, including baseline field preservation, by
 # test_async_media_schema.py. Do not exempt unrelated declarations in these files.
 CHANGED_DECLARATIONS.update({"tinkle.v1." + name for name in (

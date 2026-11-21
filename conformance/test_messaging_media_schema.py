@@ -106,14 +106,15 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
                                            ("gallery_revision", 3, "uint64")],
         })
 
-    def test_messages_service_has_47_unary_methods(self):
-        """Pin the complete messaging surface, including explicit jobs and poll closure."""
+    def test_messages_service_unary_methods(self):
+        """Pin the complete messaging surface and each method's signature."""
         methods = self.declarations["service"]["tinkle.v1.MessagesService"][1]["method"]
         self.assertEqual([
             "GetDialogs", "GetHistory", "GetMessages", "ListMessageChanges",
             "MarkHistoryRead", "DeleteHistory", "DeleteMessages", "CreateChat",
             "EditChatTitle", "EditChatPhoto", "GetChatPhotoUpdate", "CancelChatPhotoUpdate", "UpdateChatDescription", "GetChats",
-            "GetChatDetails", "AddChatParticipant", "RemoveChatParticipant",
+            "GetChatDetails", "GetRoomMembers", "GetRoomOnlineCount",
+            "AddChatParticipant", "RemoveChatParticipant",
             "EditChatAdmin", "EditChatRestrictedScopes", "SetHistoryTTL",
             "SetMessagePin", "UnpinAllMessages", "GetScheduledMessages", "CancelScheduledMessages", "SendMessage", "SendMedia",
             "SendAlbum", "GetSendStatus", "CancelSend", "EditMessage", "SetTyping", "StartBot", "Search",
@@ -128,6 +129,33 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
             self.assertFalse(method.get("serverStreaming", False))
             self.assertEqual(".tinkle.v1." + method["name"] + "Request", method["inputType"])
             self.assertEqual(".tinkle.v1." + method["name"] + "Response", method["outputType"])
+
+    def test_room_query_shapes(self):
+        self.assert_manifest({
+            "RoomQueryTarget": [("chat_id", 1, "int64"), ("channel_id", 2, "int64")],
+            "GetRoomMembersRequest": [("target", 1, "RoomQueryTarget"),
+                                      ("after_user_id", 2, "int64"), ("limit", 3, "int32")],
+            "GetRoomMembersResponse": [("members", 1, "repeated Participant"),
+                                       ("next_after_user_id", 2, "int64")],
+            "GetRoomOnlineCountRequest": [("target", 1, "RoomQueryTarget")],
+            "GetRoomOnlineCountResponse": [("sample", 1, "RoomOnlineCountSample")],
+            "RoomOnlineCountSample": [("count", 1, "int32"),
+                                      ("sampled_at", 2, ".google.protobuf.Timestamp")],
+        })
+        self.assert_oneof("RoomQueryTarget", "room", ["chat_id", "channel_id"])
+
+    def test_room_query_round_trips(self):
+        """Keep large cursors lossless and unavailable samples distinct from zero."""
+        large = "9007199254740993"
+        for name, fixture in (
+            ("GetRoomMembersRequest", {"target": {"chatId": large}, "afterUserId": large, "limit": 200}),
+            ("GetRoomMembersResponse", {"members": [{"userId": large}], "nextAfterUserId": large}),
+            ("GetRoomOnlineCountRequest", {"target": {"channelId": large}}),
+            ("GetRoomOnlineCountResponse", {}),
+            ("GetRoomOnlineCountResponse", {"sample": {"sampledAt": "2026-11-21T04:00:00Z"}}),
+        ):
+            with self.subTest(name=name, fixture=fixture):
+                self.assertEqual(fixture, self.round_trip(fixture, name))
 
     def test_reply_album_schedule_search_and_poll_tags(self):
         """Pin additive messaging fields, types, and explicit presence."""

@@ -178,7 +178,17 @@ buf build
 ```
 
 These are the same checks the `buf-ci.yaml` action runs on every PR.
-There is no local `buf generate` step for SDKs. For the docs site:
+There is no local `buf generate` step for SDKs.
+
+Also run the conformance suite from the repository root. Use the Buf version
+pinned in [`.github/workflows/conformance.yaml`](.github/workflows/conformance.yaml);
+the suite uses `origin/main` as a baseline.
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s conformance -p 'test_*.py' -v
+```
+
+For the docs site:
 
 ```bash
 cd website && npm run generate && npm run check   # content + link validation
