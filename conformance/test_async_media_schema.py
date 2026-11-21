@@ -9,9 +9,10 @@ import test_files_schema as files
 from test_thumbnail_schema import THUMBNAILS
 
 
-# Exact domain RPC additions, in owning service order; no generic operation API.
+# Exact RPC additions since the pinned baseline, in owning service order.
 METHODS = {
-    "MessagesService": ["GetChatPhotoUpdate", "CancelChatPhotoUpdate", "GetSendStatus", "CancelSend"],
+    "MessagesService": ["GetChatPhotoUpdate", "CancelChatPhotoUpdate", "GetRoomMembers",
+                        "GetRoomOnlineCount", "GetSendStatus", "CancelSend"],
     "ChannelsService": ["GetPhotoUpdate", "CancelPhotoUpdate"],
     "AccountService": ["GetProfilePhotoUpdate", "CancelProfilePhotoUpdate"],
     "StickersService": ["GetAssetChange", "CancelAssetChange"],
