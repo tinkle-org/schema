@@ -57,8 +57,16 @@ service MessagesService {
   // GetChatDetails returns full chat details including participants, admins, and invite links.
   rpc GetChatDetails(GetChatDetailsRequest) returns (GetChatDetailsResponse);
 
-  // ---- Participants & Scopes (4 RPCs) ----
+  // ---- Participants & Scopes ----
 
+  // GetRoomMembers returns one page of current members. The caller must be a
+  // current member and authorized to list members on each request.
+  // Missing or inaccessible rooms and withheld rosters return NOT_FOUND.
+  rpc GetRoomMembers(GetRoomMembersRequest) returns (GetRoomMembersResponse);
+  // GetRoomOnlineCount returns a sampled aggregate to a current member who is
+  // authorized to see it. It exposes no per-user presence or last-seen data.
+  // Missing and inaccessible rooms return NOT_FOUND.
+  rpc GetRoomOnlineCount(GetRoomOnlineCountRequest) returns (GetRoomOnlineCountResponse);
   // AddChatParticipant adds a user to a group chat.
   rpc AddChatParticipant(AddChatParticipantRequest) returns (AddChatParticipantResponse);
   // RemoveChatParticipant removes a user from a group chat.
@@ -1388,6 +1396,57 @@ message GetChatDetailsResponse {
 // =============================================================================
 // Participants & Scopes RPC messages
 // =============================================================================
+
+// RoomQueryTarget identifies a group chat or channel for a room query.
+message RoomQueryTarget {
+  // Exactly one room must be selected, and its ID must be positive.
+  oneof room {
+    // Group chat ID.
+    int64 chat_id = 1;
+    // Channel ID.
+    int64 channel_id = 2;
+  }
+}
+
+// GetRoomMembersRequest selects a page from the room's current membership.
+message GetRoomMembersRequest {
+  // Required room target. The selector does not grant access.
+  RoomQueryTarget target = 1;
+  // Exclusive user ID cursor. Zero starts at the beginning; negative values
+  // are invalid. Continue with next_after_user_id for the same target.
+  int64 after_user_id = 2;
+  // Maximum members per page: 1..200, or zero to use the default of 50.
+  int32 limit = 3;
+}
+
+// GetRoomMembersResponse describes one page, not a snapshot across requests.
+message GetRoomMembersResponse {
+  // Current members the caller may see, in ascending user ID order.
+  repeated Participant members = 1;
+  // Last returned user ID if more members are available, or zero at the end.
+  int64 next_after_user_id = 2;
+}
+
+// GetRoomOnlineCountRequest selects a room for a sampled aggregate.
+message GetRoomOnlineCountRequest {
+  // Required room target. The selector does not grant access.
+  RoomQueryTarget target = 1;
+}
+
+// GetRoomOnlineCountResponse carries a sample only when it can be disclosed reliably.
+message GetRoomOnlineCountResponse {
+  // Absent when the count is unavailable or withheld. This is not a zero count.
+  RoomOnlineCountSample sample = 1;
+}
+
+// RoomOnlineCountSample reports connectivity at a sampled time, not room viewing.
+message RoomOnlineCountSample {
+  // Number of distinct current members with an authenticated live connection
+  // whose presence the caller is permitted to see.
+  int32 count = 1;
+  // Observation time, not response time or anyone's last-seen time.
+  google.protobuf.Timestamp sampled_at = 2;
+}
 
 // AddChatParticipantRequest adds a user to a group chat.
 message AddChatParticipantRequest {
