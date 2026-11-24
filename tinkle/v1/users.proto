@@ -18,6 +18,8 @@ service UsersService {
   // GetUsers retrieves data for multiple users in a single request.
   // Returns User (oneof Empty/UserData) for each requested user ID.
   // Non-existent or unavailable users return Empty variant with ID only.
+  // Use this read to refresh a user projection after a change hint; the
+  // hint does not entitle its recipient to any profile field.
   // Maximum batch size: 100 users.
   rpc GetUsers(GetUsersRequest) returns (GetUsersResponse);
 

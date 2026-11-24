@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "tinkle/v1/common.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Refresh the recipient's privacy-filtered GetUsers/GetUserComplete projection.
+// Covers visible selected-photo changes, never private gallery edits.
+// Does not disclose which field changed or whether a hidden field exists.
+message UserChanged {
+  // Account whose visible profile should be refreshed.
+  int64 user_id = 1;
+}
+
+// Owner-only invalidation of GetNotificationSettings.
+message NotificationSettingsChanged {
+  // Affected scopes. An empty list requests a refresh of all settings.
+  repeated NotificationScope scopes = 1;
+}
+
+// Owner-only invalidation of GetPrivacy. Never include exception targets.
+message PrivacyChanged {
+  // Kind to pass to GetPrivacy.
+  PrivacyKind kind = 1;
+}
+
+// Owner-only invalidation of GetContentSettings; refetch, do not toggle locally.
+message ContentSettingsChanged {}
+
+// Owner-only invalidation of the complete GetProfilePhotos gallery and selection.
+// For other viewers, use UserChanged only for currently visible profile changes.
+message ProfilePhotosChanged {
+  // Account whose private gallery should be refreshed; must be the recipient.
+  int64 user_id = 1;
+}
+
+// SessionChanged is a refresh hint after committed activation of a new device
+// session, confirmation, revocation, or expiry. Recheck recipient authorization
+// at delivery; only authorized sessions of the same account may receive it.
+// Key rotation and enrollment retries do not create another login review;
+// activity-only changes need not notify.
+// Notifications may duplicate, coalesce, arrive late, or be missed while offline.
+// Call GetSessions for current review and lifecycle state; never create a prompt
+// or restore a session from this hint alone. Fetch on startup, foreground, and
+// reconnect even without a hint. If a hint arrives during a fetch, refresh again
+// afterwards so that an in-flight snapshot cannot swallow a subsequent change.
+message SessionChanged {
+  // Required neutral UUID of the changed session, not a credential or proof of
+  // current activity. It may no longer appear in GetSessions after revocation
+  // or expiry. A hint about one's own session does not replace authorization.
+  string session_id = 1;
+}
+
+// ProfilePhotoUpdateChanged is an actor-only hint to query GetProfilePhotoUpdate.
+// May duplicate/reorder/disappear; query on reconnect and after an in-flight hint.
+// Stopping observation does not cancel work; a hint is not a receipt/access grant.
+message ProfilePhotoUpdateChanged {
+  // Original actor-scoped request UUID.
+  string request_id = 1;
+  // Positive hinted status revision; the source query may be newer.
+  uint64 revision = 2;
+}
+
+// ProfilePhotoRepresentationChanged is a privacy-filtered hint, not a file grant.
+// Fetch GetProfilePhotos on startup/reconnect and after hints (again if in-flight).
+// Match exact entry/main and replace complete sets; never restore from this hint.
+message ProfilePhotoRepresentationChanged {
+  // Exact account whose gallery entry changed; delivery rechecks photo privacy.
+  int64 user_id = 1;
+  // Exact retained entry, not a new selection or replacement.
+  int64 photo_id = 2;
+  // Immutable main file identity.
+  int64 main_file_id = 3;
+  // Positive independent hinted output-set revision.
+  uint64 representation_revision = 4;
+}

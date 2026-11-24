@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// BotCommandScope defines the context in which commands are visible.
+message BotCommandScope {
+  // Scope variant — determines where commands are visible.
+  oneof scope {
+    // Commands visible in all chats (fallback default).
+    BotCommandScopeDefault scope_default = 1;
+    // Commands visible in all private chats with the bot.
+    BotCommandScopeAllPrivateChats all_private_chats = 2;
+    // Commands visible in all group chats.
+    BotCommandScopeAllGroupChats all_group_chats = 3;
+    // Commands visible to all group/channel administrators.
+    BotCommandScopeAllChatAdministrators all_chat_administrators = 4;
+    // Commands visible in a specific chat.
+    BotCommandScopeChat chat = 5;
+    // Commands visible to a specific user in a specific chat.
+    BotCommandScopeChatParticipant chat_participant = 6;
+  }
+}
+
+// BotCommandScopeDefault targets all chats as the default fallback.
+message BotCommandScopeDefault {}
+
+// BotCommandScopeAllPrivateChats targets all private chats with the bot.
+message BotCommandScopeAllPrivateChats {}
+
+// BotCommandScopeAllGroupChats targets all group chats.
+message BotCommandScopeAllGroupChats {}
+
+// BotCommandScopeAllChatAdministrators targets all chat administrators.
+message BotCommandScopeAllChatAdministrators {}
+
+// BotCommandScopeChat targets a specific chat by ID.
+message BotCommandScopeChat {
+  // The chat to scope commands to. Must be > 0.
+  int64 chat_id = 1;
+}
+
+// BotCommandScopeChatParticipant targets a specific user in a specific chat.
+message BotCommandScopeChatParticipant {
+  // The chat to scope commands to. Must be > 0.
+  int64 chat_id = 1;
+  // The user to scope commands to. Must be > 0.
+  int64 user_id = 2;
+}

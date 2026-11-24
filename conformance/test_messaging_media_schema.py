@@ -7,6 +7,7 @@ No generated SDKs, external services, or third-party Python modules are used.
 import unittest
 
 import test_files_schema as files
+from update_contract import UPDATE_RESPONSES, current_filename
 
 
 class MessagingMediaSchemaTests(files.BufSchemaTestCase):
@@ -24,6 +25,8 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
                 elif field.get("proto3Optional", False):
                     kind = "optional " + kind
                 actual.append((field["name"], field["number"], kind))
+            if name in UPDATE_RESPONSES:
+                expected = [*expected, ("updates", len(expected) + 1, "repeated Update")]
             self.assertEqual(expected, actual, name)
 
     def test_authoring_field_manifest(self):
@@ -110,7 +113,7 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
         """Pin the complete messaging surface and each method's signature."""
         methods = self.declarations["service"]["tinkle.v1.MessagesService"][1]["method"]
         self.assertEqual([
-            "GetDialogs", "GetHistory", "GetMessages", "ListMessageChanges",
+            "GetDialogs", "SetDraft", "SetDialogPin", "MoveDialogToSpace", "GetHistory", "GetMessages", "ListMessageChanges",
             "MarkHistoryRead", "DeleteHistory", "DeleteMessages", "CreateChat",
             "EditChatTitle", "EditChatPhoto", "GetChatPhotoUpdate", "CancelChatPhotoUpdate", "UpdateChatDescription", "GetChats",
             "GetChatDetails", "GetRoomMembers", "GetRoomOnlineCount",
@@ -260,10 +263,10 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
         ])
         for name, prefix, values, filename in (
             ("StickerKind", "STICKER_KIND_", ["UNSPECIFIED", "STICKER", "CUSTOM_EMOJI"], files.MEDIA_FILE),
-            ("PackKind", "PACK_KIND_", ["UNSPECIFIED", "STICKER", "CUSTOM_EMOJI"], "tinkle/v1/stickers.proto"),
+            ("PackKind", "PACK_KIND_", ["UNSPECIFIED", "STICKER", "CUSTOM_EMOJI"], "tinkle/v1/sticker_types.proto"),
             ("MediaValidationProfile", "MEDIA_VALIDATION_PROFILE_", ["UNSPECIFIED", "STRICT_LOSSLESS", "IMAGE", "VIDEO", "AUDIO", "VOICE"], files.MEDIA_FILE),
             ("ImageFormat", "IMAGE_FORMAT_", ["UNSPECIFIED", "PNG", "WEBP"], files.MEDIA_FILE),
-            ("MessageScheduledState", "MESSAGE_SCHEDULED_STATE_", ["UNSPECIFIED", "NOT_SCHEDULED", "PENDING", "SENT"], "tinkle/v1/messages.proto"),
+            ("MessageScheduledState", "MESSAGE_SCHEDULED_STATE_", ["UNSPECIFIED", "NOT_SCHEDULED", "PENDING", "SENT"], files.MESSAGE_TYPES_FILE),
         ):
             self.assert_enum_values(name, [prefix + v for v in values], filename)
             descriptor = self.declarations["enum"]["tinkle.v1." + name][1]
@@ -404,9 +407,9 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
             "SelectProfilePhotoRequest": [("expected_revision", 2, "TYPE_UINT64")],
             "DeleteProfilePhotoRequest": [("expected_revision", 2, "TYPE_UINT64")],
             "SetProfilePhotoResponse": [("gallery_revision", 2, "TYPE_UINT64"),
-                                        ("photo_update", 3, "TYPE_MESSAGE")],
-            "SelectProfilePhotoResponse": [("gallery_revision", 2, "TYPE_UINT64")],
-            "DeleteProfilePhotoResponse": [("gallery_revision", 3, "TYPE_UINT64")],
+                                        ("photo_update", 3, "TYPE_MESSAGE"), ("updates", 4, "TYPE_MESSAGE")],
+            "SelectProfilePhotoResponse": [("gallery_revision", 2, "TYPE_UINT64"), ("updates", 3, "TYPE_MESSAGE")],
+            "DeleteProfilePhotoResponse": [("gallery_revision", 3, "TYPE_UINT64"), ("updates", 4, "TYPE_MESSAGE")],
             "GetProfilePhotosResponse": [("gallery_revision", 3, "TYPE_UINT64")],
             "StickerSource": [("asset_version", 4, "TYPE_UINT64"), ("inline_preview", 5, "TYPE_MESSAGE"),
                               ("thumbnail", 6, "TYPE_MESSAGE")],
@@ -466,7 +469,7 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
     def test_metadata_change_revisions_and_notification_descriptors(self):
         """Pin metadata kinds, independent revisions and transport-neutral hint data."""
         for name in ("MessageChanged", "TypingChanged"):
-            self.descriptor(name, "tinkle/v1/messages.proto")
+            self.descriptor(name, current_filename(files.MESSAGES_FILE, name))
         descriptor = self.declarations["enum"]["tinkle.v1.TargetChangeKind"][1]
         self.assertEqual([
             ("TARGET_CHANGE_KIND_UNSPECIFIED", 0), ("TARGET_CHANGE_KIND_EDITED", 1),

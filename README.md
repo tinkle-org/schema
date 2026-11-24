@@ -79,8 +79,9 @@ cargo add --registry buf tinkle-org_schema_bufbuild_community_tonic-prost
 
 The BSR auto-versions each push. SDK versions are
 `{plugin-version}-{module-commit-timestamp}-{module-commit-id}.{plugin-revision}`
-(e.g. `v1.36.11-20260617120000-abc123def456.1`). Pin with
-`@vX.Y.Z-…`, `@<commit-id>`, or `@<label>`.
+for the generated Go modules. After publication, record the actual BSR module
+commit and its generated SDK versions in the consuming repositories. A moving
+`main` label is useful for testing, not a reproducible source pin.
 
 ### Go
 
@@ -166,7 +167,7 @@ the PR (Issues → Labels in the repo settings); the action checks for
 the label and skips the breaking step. For permanent breaks, add a new
 package path (`tinkle/v2/`) rather than mutating `tinkle/v1/`.
 
-The current pre-release cutover intentionally resets the entire public schema:
+The pre-release tag reset intentionally changed the entire public schema:
 every nonempty message uses consecutive field numbers starting at 1 in declaration
 order, including fields inside oneofs; nested messages start their own sequence.
 All reserved numbers/names and retired-slot placeholders are removed. Empty
@@ -196,7 +197,8 @@ npm run check      # internal /schema/... links resolve + structure is sane
 
 Hand-written pages live in `website/content/` (`index.mdx`,
 `introduction.mdx`, [Connection Initialization](website/content/connection-initialization.mdx),
-[Device Enrollment](website/content/device-enrollment.mdx), and `file-transfers.mdx`)
+[Device Enrollment](website/content/device-enrollment.mdx),
+[Applying updates](website/content/applying-updates.mdx), and `file-transfers.mdx`)
 and are committed; generated
 output (`website/content/reference/`) is
 git-ignored. To preview the rendered site, run the website repo locally —
@@ -337,6 +339,13 @@ See the [generated reference](https://tinkle.me/schema/reference) for field and
 method semantics. Runtime bindings and availability are documented in their
 implementation repositories.
 
+`tinkle/v1/update.proto` defines one recipient-specific `Update` with 57 cases.
+A live delivery can carry one `Update` under an explicitly selected current wire
+contract; 102 command reply types carry `repeated Update updates` directly.
+Reads keep their domain contracts. See [Applying updates](website/content/applying-updates.mdx)
+for reply handling, ordering changes, and recovering a command outcome separately
+from current visible state. The catalog defines no delivery service.
+
 To support clients reconciling without a durable feed,
 [`messages.proto`](tinkle/v1/messages.proto) defines `GetMessages` batch fetch by
 message ID, a per-conversation ordering and dedup token on
@@ -360,7 +369,7 @@ floor; reject stale/unknown held responses. A fresh currently authorized body at
 the same or newer revision may hydrate. This is not viewer deletion or permission
 proof. `MessageChanged.body_invalidated=6` is only a non-authoritative hint:
 reconcile with the current source before applying an invalidation or floor.
-The 47-method `MessagesService` also carries explicit thread roots in `ReplyInput`,
+`MessagesService` also carries explicit thread roots in `ReplyInput`,
 album identity and scheduling state on returned messages, quiz answer definitions
 and caller-relative poll aggregates, and opaque search continuation with an
 explicit `more_available` report. An omitted search target means global search

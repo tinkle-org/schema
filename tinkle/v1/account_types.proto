@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "tinkle/v1/common.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// NotificationSetting represents preferences for a notification scope.
+message NotificationSetting {
+  // Scope (USERS, GROUPS, CHANNELS).
+  NotificationScope scope = 1;
+  // Whether notifications are enabled (optional to distinguish false from unset).
+  optional bool enabled = 2;
+  // Whether message previews are shown (optional to distinguish false from unset).
+  optional bool preview = 3;
+  // Custom notification sound (empty = default).
+  string sound = 4;
+}

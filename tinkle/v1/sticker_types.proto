@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// PackKind fixes the kind of every member; mixed-kind packs are rejected.
+enum PackKind {
+  // No filter on list/search requests; invalid when creating a pack.
+  PACK_KIND_UNSPECIFIED = 0;
+  // Members must have STICKER_KIND_STICKER.
+  PACK_KIND_STICKER = 1;
+  // Members must have STICKER_KIND_CUSTOM_EMOJI.
+  PACK_KIND_CUSTOM_EMOJI = 2;
+}

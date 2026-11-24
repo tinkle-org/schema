@@ -1,0 +1,177 @@
+// Message projections and sender-private outcomes. Build each for its current
+// recipient; a body or receipt cannot advance the ListMessageChanges cursor.
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "google/protobuf/timestamp.proto";
+import "tinkle/v1/common.proto";
+import "tinkle/v1/message_types.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Accepted history visible to this recipient, never a pending send or job.
+message MessageAdded {
+  Message message = 1;
+}
+
+// Merge the current authorized body by body_revision, even if the add is late.
+message MessageEdited {
+  Message message = 1;
+}
+
+// Who lost this message. Scope is per item: a single delete can mix both.
+enum MessageRemovalScope {
+  // Unknown; never infer a shared revocation.
+  MESSAGE_REMOVAL_SCOPE_UNSPECIFIED = 0;
+  // Only this recipient's copy was removed.
+  MESSAGE_REMOVAL_SCOPE_PERSONAL = 1;
+  // The source revoked this message for all participants.
+  MESSAGE_REMOVAL_SCOPE_EVERYONE = 2;
+}
+
+// Committed terminal removal of one disclosed identity, without a body.
+message MessageRemoval {
+  // Positive ID in the enclosing target.
+  int64 message_id = 1;
+  // Required non-UNSPECIFIED removal scope.
+  MessageRemovalScope scope = 2;
+  // Exact positive removal revision when known, not a journal position.
+  optional int64 message_revision = 3;
+}
+
+// Drop these bodies and file references for this recipient. A delayed add or
+// edit cannot resurrect a terminally removed message. Never include rejected,
+// invisible or merely requested IDs; do not derive operation progress here.
+message MessagesRemoved {
+  Target target = 1;
+  // Up to 100 distinct committed removals. Use HistoryChanged for bulk repair.
+  repeated MessageRemoval removals = 2;
+}
+
+// Refresh visible history for this target after broad or partial changes.
+// Resume ListMessageChanges from the saved cursor and use GetHistory for
+// current bodies; the hint proves neither a deletion range nor completion.
+message HistoryChanged {
+  Target target = 1;
+}
+
+// Sender-only acceptance of the original command. Emit only for a disclosed
+// accepted identity. Settle the key even if a newer body is already cached;
+// acceptance proves neither peer delivery nor a read.
+message MessageAccepted {
+  Target target = 1;
+  int64 idempotency_key = 2;
+  int64 message_id = 3;
+}
+
+// Refresh pin state for this recipient. Send personal pin changes only to their
+// owner. Current bodies distinguish shared pins from the owner's personal pins.
+message MessagePinsChanged {
+  Target target = 1;
+  // Positive root for changes limited to one thread; otherwise absent.
+  optional int64 thread_root_id = 2;
+  // Up to 100 distinct visible IDs for GetMessages. Empty means refresh the
+  // scoped pins, not that every message was unpinned.
+  repeated int64 message_ids = 3;
+}
+
+// Complete authorized body, ordered by this viewer's body_revision. Updating
+// reaction state does not replay an animation or imply a user content edit.
+message MessageReactionsChanged {
+  Message message = 1;
+}
+
+// Complete caller-relative poll body, with GetPollResults disclosure rules.
+// A vote or close never discloses anonymous voters or a withheld quiz answer.
+message PollChanged {
+  Message message = 1;
+}
+
+// Refresh this visible root and its ListThreadMessages page. Not a reply delta.
+message ThreadChanged {
+  Target target = 1;
+  // Positive message ID of the thread root in target.
+  int64 thread_root_id = 2;
+}
+
+// Owner-only job invalidation. Query GetScheduledMessages for explicit IDs (or
+// locally retained keys); a missing job never proves acceptance into history.
+message ScheduledMessagesChanged {
+  Target target = 1;
+  // Up to 100 distinct positive owned job IDs. Empty requests a refresh of
+  // already known jobs; never send an empty selector or enumerate all jobs.
+  repeated int64 message_ids = 2;
+}
+
+// Owner-only refresh of GetRecentReactions. Never reveal private choices to
+// other participants or treat a recent reaction as an asset access grant.
+message RecentReactionsChanged {}
+
+// MessageChanged is a typed notification payload, not a transport envelope,
+// journal cursor, delivery receipt or authoritative body/removal record. Runtime
+// bindings own routing and delivery. Hints may duplicate, coalesce, arrive late or
+// be missed; reconcile through authorized fetches/ListMessageChanges, including on
+// reconnect without a hint. Recheck recipient visibility at delivery. ACK hints
+// are private to the viewer whose acknowledgement metadata changed, never fanout
+// to other conversation participants. A hint grants no access or proof of receipt.
+message MessageChanged {
+  // Required conversation whose visibility must be checked for this recipient.
+  Target target = 1;
+  // Positive message ID within target, not a globally comparable position.
+  int64 message_id = 2;
+  // Positive revision associated with the hinted change; a fetch may be newer.
+  // Compare only within the same principal/target/message_id, never as a cursor.
+  int64 body_revision = 3;
+  // Disclosed body/metadata/removal kind; never UNSPECIFIED for a valid hint.
+  TargetChangeKind change_kind = 4;
+  // Optional expiring animation on a REACTION hint; absence requests no effect.
+  // Deduplicate actor_id/operation_id and discard after expiry, independently
+  // of reconciling the current reaction body.
+  ReactionEffect reaction_effect = 5;
+  // A non-authoritative hint of nonterminal body withholding for the source's
+  // canonical identity (caller, target, message_id). Reconcile with the current source
+  // before applying an authoritative invalidation or revision floor; this hint is
+  // not permission proof and does not establish a viewer deletion. Requires a
+  // positive body_revision and nonterminal change_kind; no reaction_effect or
+  // body content accompanies it. Only current-source authorization permits hydration.
+  bool body_invalidated = 6;
+  // Positive revision on REPRESENTATION hints only. The hint is not membership
+  // authority: use GetMessages/ListMessageChanges and current authorization.
+  optional uint64 representation_revision = 7;
+}
+
+// ReactionEffect is presentation metadata, never a message or asset access grant.
+// Recheck current recipient visibility before delivery; clients discard expired
+// effects. Never replay presentation from body hydration or durable change markers.
+// Render only source-validated metadata: positive authenticated actor_id, canonical
+// operation UUID and a finite unexpired deadline. Invalid metadata requests no effect.
+message ReactionEffect {
+  // Canonical caller-scoped UUID; never animate this actor_id/operation_id twice.
+  string operation_id = 1;
+  // Authenticated original reacting account.
+  int64 actor_id = 2;
+  // Original fixed deadline, never extended by delivery or reconnect.
+  google.protobuf.Timestamp expires_at = 3;
+  // Exact Unicode/custom-version choices, at most eight.
+  repeated Reaction reactions = 4;
+}
+
+// SendStatusChanged is an actor-only refresh hint, not a receipt or durable feed.
+// Hints can duplicate, coalesce, reorder or disappear. Query GetSendStatus with
+// the original target and key on startup, reconnect and receipt of a hint. Query
+// again if a hint arrives during a query. Delivery rechecks the original actor's
+// active authorization; stopping observation cancels no send.
+// While connected, schedule a fallback query 30 seconds after an ambiguous
+// mutation response or a nonterminal status, even if no hint arrives. Restart
+// the 30-second timer after each query that leaves the outcome unresolved. Keep
+// at most one status query in flight per operation and stop the timer once a
+// terminal outcome is known.
+message SendStatusChanged {
+  // Original conversation, not permission to read its history.
+  Target target = 1;
+  // Original single or first album member key.
+  int64 idempotency_key = 2;
+  // Positive hinted status revision; the query may already be newer.
+  uint64 revision = 3;
+}

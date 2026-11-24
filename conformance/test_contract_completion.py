@@ -68,7 +68,8 @@ class ContractCompletionTests(files.BufSchemaTestCase):
                         if name not in expected:
                              expected.insert(expected.index(after) + 1, name)
                 additions = {
-                    "MessagesService": [("GetChatPhotoUpdate", "EditChatPhoto"),
+                    "MessagesService": [("SetDraft", "GetDialogs"), ("SetDialogPin", "SetDraft"),
+                                        ("MoveDialogToSpace", "SetDialogPin"), ("GetChatPhotoUpdate", "EditChatPhoto"),
                                         ("CancelChatPhotoUpdate", "GetChatPhotoUpdate"),
                                         ("GetRoomMembers", "GetChatDetails"),
                                         ("GetRoomOnlineCount", "GetRoomMembers"),
@@ -231,7 +232,8 @@ class ContractCompletionTests(files.BufSchemaTestCase):
         for name, additions in {
             "DeleteHistoryRequest": [("operation_id", 6, "STRING", False)],
             "DeleteHistoryResponse": [("operation_id", 3, "STRING", False),
-                                      ("completed", 4, "BOOL", True), ("processed_count", 5, "UINT64", False)],
+                                      ("completed", 4, "BOOL", True), ("processed_count", 5, "UINT64", False),
+                                      ("updates", 6, "MESSAGE", False)],
         }.items():
             fields = [f for f in self.descriptor(name)["field"] if f["number"] >= additions[0][1]]
             self.assertEqual(additions, [(f["name"], f["number"], f["type"].removeprefix("TYPE_"),
@@ -254,6 +256,7 @@ class ContractCompletionTests(files.BufSchemaTestCase):
         ])
         self.assert_fields("DeleteMessagesResponse", [
             ("deleted_count", 1, "INT32", "", False, False),
+            ("updates", 2, "MESSAGE", "Update", True, False),
         ])
         fixture = {"target": {"chatId": "9"}, "messageIds": ["7", "8"], "revoke": False}
         self.assertEqual(fixture, self.round_trip(fixture, "DeleteMessagesRequest"))

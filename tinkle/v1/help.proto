@@ -10,6 +10,7 @@ package tinkle.v1;
 
 import "tinkle/v1/common.proto";
 import "tinkle/v1/entities.proto";
+import "tinkle/v1/update.proto";
 import "tinkle/v1/users.proto";
 
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
@@ -283,6 +284,8 @@ message EditUserInfoRequest {
 message EditUserInfoResponse {
   // Updated workforce user info.
   WorkforceUserInfo user_info = 1;
+  // Workforce-only changes; never send to the subject merely because they are named.
+  repeated Update updates = 2;
 }
 
 // WorkforceUserInfo contains user data for workforce administration.

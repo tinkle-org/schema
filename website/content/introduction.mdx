@@ -28,7 +28,7 @@ descriptor set, including source comments, deprecations, oneofs and field
 presence, on every site build. Edit `.proto` doc comments to change the
 reference and `website/content/` for schema overview pages.
 
-The current pre-release contract is a global wire-breaking reset: all nonempty
+The pre-release tag reset was wire-breaking: all nonempty
 messages use consecutive declaration-order field numbers from 1, including
 oneof members; nested messages restart their own sequence. Reserved numbers,
 reserved names and retired-slot placeholders are removed. Empty messages remain
@@ -75,6 +75,13 @@ vocabulary in `media.proto`; see [File Transfers](/schema/file-transfers).
 defines `UpdatesService`. Its only method, `ObserveConnectivity`, streams
 ephemeral, privacy-filtered per-user presence. The former `ReadUpdates` and
 `FollowUpdates` methods remain retired.
+
+`update.proto` defines `Update` for visible changes, private command outcomes,
+and refresh hints. A live delivery can carry one `Update` under the explicitly
+selected current contract; command replies can return several directly in
+`updates`. See [Applying updates](/schema/applying-updates) for how to merge
+them. The catalog adds no method to `UpdatesService` and promises no live delivery.
+
 `messages.proto` carries reconciliation primitives for clients without a
 durable feed: `GetMessages` batch-fetches messages by ID, `Message.accept_seq`
 orders and dedups per conversation, `ListMessageChanges` lists authorized retained
@@ -90,7 +97,7 @@ pending positions. `MessageChanged` and `TypingChanged` are typed notification
 payloads, not additional RPCs, durable cursors, receipts or transport bindings.
 Private ACK markers/hints are disclosed only to their own viewer.
 
-The 43-method `MessagesService` includes explicit actor-owned scheduled-message
+`MessagesService` includes explicit actor-owned scheduled-message
 lookup/cancellation and sender-owned poll closing. `GetScheduledMessages` requires
 exactly one nonempty set of 1..100 distinct positive message IDs or nonzero signed
 idempotency keys in one conversation; it does not discover a job list. Unknown,

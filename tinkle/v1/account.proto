@@ -8,8 +8,10 @@ syntax = "proto3";
 package tinkle.v1;
 
 import "google/protobuf/timestamp.proto";
+import "tinkle/v1/account_types.proto";
 import "tinkle/v1/common.proto";
 import "tinkle/v1/media.proto";
+import "tinkle/v1/update.proto";
 
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
@@ -142,18 +144,6 @@ message PushDevice {
   google.protobuf.Timestamp registered_at = 4;
 }
 
-// NotificationSetting represents preferences for a notification scope.
-message NotificationSetting {
-  // Scope (USERS, GROUPS, CHANNELS).
-  NotificationScope scope = 1;
-  // Whether notifications are enabled (optional to distinguish false from unset).
-  optional bool enabled = 2;
-  // Whether message previews are shown (optional to distinguish false from unset).
-  optional bool preview = 3;
-  // Custom notification sound (empty = default).
-  string sound = 4;
-}
-
 // PrivacySetting represents a privacy preference with optional rules.
 message PrivacySetting {
   // The privacy kind this setting applies to.
@@ -255,6 +245,8 @@ message UpdateNotificationSettingRequest {
 message UpdateNotificationSettingResponse {
   // The updated notification setting.
   NotificationSetting setting = 1;
+  // Owner-only changes to the affected notification scope.
+  repeated Update updates = 2;
 }
 
 // ResetNotificationSettingsRequest is empty - resets all for user.
@@ -264,6 +256,8 @@ message ResetNotificationSettingsRequest {}
 message ResetNotificationSettingsResponse {
   // The reset notification settings.
   repeated NotificationSetting settings = 1;
+  // Owner-only changes after reset.
+  repeated Update updates = 2;
 }
 
 // =============================================================================
@@ -296,6 +290,8 @@ message SetPrivacyRequest {
 message SetPrivacyResponse {
   // The updated privacy setting.
   PrivacySetting setting = 1;
+  // Owner-only changes; privacy rules are never sent to affected peers.
+  repeated Update updates = 2;
 }
 
 // =============================================================================
@@ -314,6 +310,8 @@ message UpdateProfileRequest {
 message UpdateProfileResponse {
   // The updated profile.
   Profile profile = 1;
+  // Changes projected for this caller, not for redistribution to peers.
+  repeated Update updates = 2;
 }
 
 // =============================================================================
@@ -346,6 +344,8 @@ message UpdateUsernameRequest {
 message UpdateUsernameResponse {
   // The assigned username.
   Username username = 1;
+  // Changes projected for this caller.
+  repeated Update updates = 2;
 }
 
 // =============================================================================
@@ -399,6 +399,8 @@ message ChangePhoneNumberRequest {
 message ChangePhoneNumberResponse {
   // New phone number (confirmed).
   string phone_number = 1;
+  // Caller-specific changes; never include the verification flow or code.
+  repeated Update updates = 2;
 }
 
 // =============================================================================
@@ -424,6 +426,8 @@ message SetContentSettingRequest {
 message SetContentSettingResponse {
   // The updated content settings.
   ContentSettings settings = 1;
+  // Owner-only content preference changes.
+  repeated Update updates = 2;
 }
 
 // =============================================================================
@@ -449,6 +453,8 @@ message RevokeSessionRequest {
 message RevokeSessionResponse {
   // True if the session was invalidated.
   bool revoked = 1;
+  // Refresh hints for the authorized caller's session list.
+  repeated Update updates = 2;
 }
 
 // RevokeSessionsRequest is empty; revoke other devices of the current account.
@@ -458,6 +464,8 @@ message RevokeSessionsRequest {}
 message RevokeSessionsResponse {
   // True once every other device session and its staged replacements are revoked.
   bool revoked = 1;
+  // Refresh hints for the authorized caller's session list.
+  repeated Update updates = 2;
 }
 
 // Session represents one active device session for an account. It contains no
@@ -522,25 +530,8 @@ message ConfirmSessionRequest {
 message ConfirmSessionResponse {
   // Required target projection with unconfirmed=false and current=false.
   Session session = 1;
-}
-
-// SessionChanged is a refresh hint carried by the runtime's general notification
-// mechanism, not an RPC response, subscription, or transport envelope. Publish
-// after committed activation of a new device session, confirmation, revocation,
-// or expiry, only to authorized sessions of the same account. Recheck recipient
-// authorization at delivery. Key rotation and enrollment retries do not create
-// another login review; activity-only changes need not notify.
-// Notifications may duplicate, coalesce, arrive late, or be missed while offline.
-// Call GetSessions for current review and lifecycle state; never create a prompt
-// or restore a session from this hint alone. Fetch on startup, foreground, and
-// reconnect even without a hint. If a hint arrives during a fetch, refresh again
-// afterwards so that an in-flight snapshot cannot swallow a subsequent change.
-// Routing, push delivery, and transport bindings belong to the implementation.
-message SessionChanged {
-  // Required neutral UUID of the changed session, not a credential or proof of
-  // current activity. It may no longer appear in GetSessions after revocation
-  // or expiry. A hint about one's own session does not replace authorization.
-  string session_id = 1;
+  // Same-account refresh hints; the projection above remains the commit result.
+  repeated Update updates = 2;
 }
 
 // ProfilePhotoSource defines a photo from completed uploader-owned files.
@@ -615,6 +606,8 @@ message SetProfilePhotoResponse {
   // Required even for immediate success; non-success has no photo and revision 0.
   // PENDING/PROCESSING have not inserted, selected or consumed gallery capacity.
   ProfilePhotoUpdate photo_update = 3;
+  // Actor-only work while pending; no gallery change until committed.
+  repeated Update updates = 4;
 }
 
 // ProfilePhotoUpdateState separates private work from gallery acceptance.
@@ -702,30 +695,8 @@ message CancelProfilePhotoUpdateRequest {
 message CancelProfilePhotoUpdateResponse {
   // Required snapshot with current identity-disclosure policy applied.
   ProfilePhotoUpdate photo_update = 1;
-}
-
-// ProfilePhotoUpdateChanged is an actor-only hint to query GetProfilePhotoUpdate.
-// May duplicate/reorder/disappear; query on reconnect and after an in-flight hint.
-// Stopping observation does not cancel work; a hint is not a receipt/access grant.
-message ProfilePhotoUpdateChanged {
-  // Original actor-scoped request UUID.
-  string request_id = 1;
-  // Positive hinted status revision; the source query may be newer.
-  uint64 revision = 2;
-}
-
-// ProfilePhotoRepresentationChanged is a privacy-filtered hint, not a file grant.
-// Fetch GetProfilePhotos on startup/reconnect and after hints (again if in-flight).
-// Match exact entry/main and replace complete sets; never restore from this hint.
-message ProfilePhotoRepresentationChanged {
-  // Exact account whose gallery entry changed; delivery rechecks photo privacy.
-  int64 user_id = 1;
-  // Exact retained entry, not a new selection or replacement.
-  int64 photo_id = 2;
-  // Immutable main file identity.
-  int64 main_file_id = 3;
-  // Positive independent hinted output-set revision.
-  uint64 representation_revision = 4;
+  // Caller-only updates. The durable outcome above determines whether work was fenced.
+  repeated Update updates = 2;
 }
 
 // GetProfilePhotosRequest chooses self or another user's privacy-filtered view.
@@ -764,6 +735,8 @@ message SelectProfilePhotoResponse {
   ProfilePhoto photo = 1;
   // Owner gallery revision from the same atomic selection result.
   uint64 gallery_revision = 2;
+  // Owner's changes for the committed selection.
+  repeated Update updates = 3;
 }
 
 // DeleteProfilePhotoRequest removes a gallery entry owned by the current account.
@@ -784,4 +757,6 @@ message DeleteProfilePhotoResponse {
   int64 selected_photo_id = 2;
   // Owner gallery revision atomically resulting from removal/selection clearing.
   uint64 gallery_revision = 3;
+  // Owner's changes for the committed removal.
+  repeated Update updates = 4;
 }

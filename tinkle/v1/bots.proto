@@ -3,7 +3,9 @@ syntax = "proto3";
 package tinkle.v1;
 
 import "google/protobuf/struct.proto";
+import "tinkle/v1/bot_types.proto";
 import "tinkle/v1/common.proto";
+import "tinkle/v1/update.proto";
 
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
@@ -111,51 +113,6 @@ message BotCommand {
   string description = 2;
 }
 
-// BotCommandScope defines the context in which commands are visible.
-message BotCommandScope {
-  // Scope variant — determines where commands are visible.
-  oneof scope {
-    // Commands visible in all chats (fallback default).
-    BotCommandScopeDefault scope_default = 1;
-    // Commands visible in all private chats with the bot.
-    BotCommandScopeAllPrivateChats all_private_chats = 2;
-    // Commands visible in all group chats.
-    BotCommandScopeAllGroupChats all_group_chats = 3;
-    // Commands visible to all group/channel administrators.
-    BotCommandScopeAllChatAdministrators all_chat_administrators = 4;
-    // Commands visible in a specific chat.
-    BotCommandScopeChat chat = 5;
-    // Commands visible to a specific user in a specific chat.
-    BotCommandScopeChatParticipant chat_participant = 6;
-  }
-}
-
-// BotCommandScopeDefault targets all chats as the default fallback.
-message BotCommandScopeDefault {}
-
-// BotCommandScopeAllPrivateChats targets all private chats with the bot.
-message BotCommandScopeAllPrivateChats {}
-
-// BotCommandScopeAllGroupChats targets all group chats.
-message BotCommandScopeAllGroupChats {}
-
-// BotCommandScopeAllChatAdministrators targets all chat administrators.
-message BotCommandScopeAllChatAdministrators {}
-
-// BotCommandScopeChat targets a specific chat by ID.
-message BotCommandScopeChat {
-  // The chat to scope commands to. Must be > 0.
-  int64 chat_id = 1;
-}
-
-// BotCommandScopeChatParticipant targets a specific user in a specific chat.
-message BotCommandScopeChatParticipant {
-  // The chat to scope commands to. Must be > 0.
-  int64 chat_id = 1;
-  // The user to scope commands to. Must be > 0.
-  int64 user_id = 2;
-}
-
 // BotMenuButton defines the bot's menu button configuration.
 message BotMenuButton {
   // Button type variant.
@@ -201,6 +158,8 @@ message OwnedBot {
   string name = 2;
   // Primary username (without @).
   string username = 3;
+  // All active usernames in display order, for owner recovery after a change.
+  repeated string active_usernames = 4;
 }
 
 // ============================================================================
@@ -223,6 +182,8 @@ message SetCommandsRequest {
 message SetCommandsResponse {
   // Whether the operation succeeded.
   bool success = 1;
+  // Changes for the committed scope and language.
+  repeated Update updates = 2;
 }
 
 // GetCommandsRequest retrieves commands for a bot in a given scope and language.
@@ -255,6 +216,8 @@ message ResetCommandsRequest {
 message ResetCommandsResponse {
   // Whether the operation succeeded.
   bool success = 1;
+  // Changes for the committed scope and language.
+  repeated Update updates = 2;
 }
 
 // ============================================================================
@@ -275,6 +238,8 @@ message SetMenuButtonRequest {
 message SetMenuButtonResponse {
   // Whether the operation succeeded.
   bool success = 1;
+  // Changes for the affected global or per-user menu.
+  repeated Update updates = 2;
 }
 
 // GetMenuButtonRequest retrieves the menu button configuration for a bot.
@@ -307,6 +272,8 @@ message SetGroupDefaultAdminScopesRequest {
 message SetGroupDefaultAdminScopesResponse {
   // Whether the operation succeeded.
   bool success = 1;
+  // Changes to requested defaults, not an admin grant.
+  repeated Update updates = 2;
 }
 
 // SetBroadcastDefaultAdminScopesRequest sets default admin scopes for broadcast channels.
@@ -321,6 +288,8 @@ message SetBroadcastDefaultAdminScopesRequest {
 message SetBroadcastDefaultAdminScopesResponse {
   // Whether the operation succeeded.
   bool success = 1;
+  // Changes to requested defaults, not an admin grant.
+  repeated Update updates = 2;
 }
 
 // ============================================================================
@@ -345,6 +314,8 @@ message SetInfoRequest {
 message SetInfoResponse {
   // Whether the operation succeeded.
   bool success = 1;
+  // Caller-visible changes to the bot's localized profile.
+  repeated Update updates = 2;
 }
 
 // GetInfoRequest retrieves bot info for a given language.
@@ -359,6 +330,11 @@ message GetInfoRequest {
 message GetInfoResponse {
   // Bot info for the requested language.
   BotInfo info = 1;
+  // Current group defaults for the authorized bot owner, independent of language.
+  // Present even when no scopes are requested; absence means unknown.
+  ChatAdminScopes group_default_admin_scopes = 2;
+  // Broadcast counterpart; neither set of defaults grants chat permissions.
+  ChatAdminScopes broadcast_default_admin_scopes = 3;
 }
 
 // ============================================================================
@@ -379,6 +355,8 @@ message ToggleUsernameRequest {
 message ToggleUsernameResponse {
   // Whether the operation succeeded.
   bool success = 1;
+  // Caller-visible changes to active usernames.
+  repeated Update updates = 2;
 }
 
 // ReorderUsernamesRequest reorders the active usernames of a bot.
@@ -393,6 +371,8 @@ message ReorderUsernamesRequest {
 message ReorderUsernamesResponse {
   // Whether the operation succeeded.
   bool success = 1;
+  // Caller-visible changes to active username order.
+  repeated Update updates = 2;
 }
 
 // ============================================================================
@@ -435,6 +415,8 @@ message AllowSendMessageRequest {
 message AllowSendMessageResponse {
   // Whether the operation succeeded.
   bool success = 1;
+  // Private to this user; check CanSendMessage for current permission.
+  repeated Update updates = 2;
 }
 
 // ============================================================================

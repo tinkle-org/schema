@@ -1,0 +1,66 @@
+---
+title: Applying updates
+description: Apply typed command replies, order recipient-specific changes, and recover visible state and private command outcomes separately.
+---
+
+# Applying updates
+
+`tinkle/v1/update.proto` defines a single `Update` for one recipient. Its `change` oneof has 57 cases. A live delivery can carry one `Update`; 102 command reply types declare `repeated Update updates` directly. Neither path uses a wrapper or a shared collection of related entities.
+
+Select the current wire contract explicitly before decoding a live `Update`. The retired replay-era `tinkle.v1.Update` has the same name but a different wire format. Never infer the contract from payload bytes or a successful parse, and never decode a stored legacy record as a current update.
+
+## Choose one path for a command reply
+
+On a reply that declares `updates`, use the number of entries. Protobuf does not distinguish an omitted repeated field from an empty list.
+
+| Reply | Client action |
+| --- | --- |
+| Empty or omitted | Use the method's existing result fields, if any. For a successful `SetDraft`, `SetDialogPin`, or `MoveDialogToSpace` with no updates, refresh `GetDialogs`. An empty list alone says nothing about whether the command succeeded. |
+| Nonempty | Merge recognized changes once. Keep the method-specific results and any authorized related entities the reply already returns. Do not apply the same changes again from legacy fields. |
+
+For example, `SendMessageResponse` keeps `message`, `users`, and `chats` at tags 1–3 and carries `updates` at tag 4. If `message_added` describes the same message as `message`, merge it only once; the reply's authorized `users` and `chats` still describe the related entities. Other methods retain results such as failed import items or operation progress.
+
+An unknown `change` case grants no access, settles no command, and advances no checkpoint. In binary Protobuf, skip it, process recognized siblings, and reconcile missing facts through the owning service. Even if all decoded entries have unknown cases, the list is nonempty: do not switch to the legacy handler. Strict ProtoJSON readers may reject the new `updates` field or an unknown case before applying any entry. Update those readers first or configure them to ignore unknown fields; do not enable new JSON fields for a strict reader that does not know them.
+
+After BSR publication, pin consumers to the schema commit and matching generated bindings. When recompiling your own `.proto` files, import the file that owns each type. For example, `Message`, `Chat`, and `DraftMessage` are in `tinkle/v1/message_types.proto`, and `ConnectivityChanged` is in `tinkle/v1/application_updates.proto`. Their `tinkle.v1` names and wire fields are unchanged; the old service files do not publicly re-export them.
+
+## What each recipient sees
+
+A command can produce both a change visible to others and a private outcome for its caller. Returning multiple changes does not make the command atomic: `ImportContacts`, for example, can change the owner's list even when some items need retry.
+
+See the [descriptor-generated reference](/schema/reference) for the payloads and the mutation replies that declare `updates`. Snapshot, detail, search, pagination, file transfer, and recovery reads keep their own result types and continuations. Neither authentication nor a transport acknowledgment goes through the message-cache reducer.
+
+| Domain | What the recipient does |
+| --- | --- |
+| Messages and dialogs | Merge `MessageAdded` and `MessageEdited` by body revision. `MessageAccepted` settles the sender's key without a body and proves neither delivery nor a read. `dialog_changed` (`DialogChanged`) requests `GetDialogs`; it does not report deletion, a counter delta, or a draft clear. |
+| Rooms and channels | After membership, rights, or moderation changes, refresh visible details through `GetChatDetails`, `GetFullChannel`, or the relevant participant or join-request read. On `ConversationAccessChanged`, stop using cached disclosures until the source reauthorizes access. |
+| Accounts and contacts | Refresh the viewer's permitted profile or selected photo. Settings, session review, the full gallery, contacts, and blocked peers are owner-scoped. For example, a block changes the caller's `GetBlocked` result; it does not notify the blocked user. |
+| Stickers and media | Distinguish changes to an asset or pack from the caller's installed, recent, or favorite lists. Resolve an exact asset version rather than substituting the latest head; a representation hint calls for a current read. |
+| Bots and application data | Refetch commands for the indicated bot, scope, and language. Bot owners recover admin defaults with `GetInfo` and active usernames with `GetOwnedBots`. Workforce notes remain staff-only. A configuration hint requests fresh configuration; it supplies no values. |
+
+Build each projection under current authorization, including related entities, on reply, retry, and any later disclosure. In a DM from Alice to Bob, Alice's target is Bob and Bob's target is Alice. Even with a shared room target, do not forward Alice's send key, receipt, personal pin, draft, private acknowledgments, or processing result to other members. No update grants later access to a body, asset, or file.
+
+## Order within the owning domain
+
+| State being merged | Comparison that is valid |
+| --- | --- |
+| Message | `accept_seq` orders accepted messages within one conversation. `body_revision` orders complete bodies for the same viewer, target, and message. Neither is a journal checkpoint. A viewer's terminal removal must not be undone by a delayed add. |
+| Dialog and draft | `SetDraft`, `SetDialogPin`, and `MoveDialogToSpace` change the owner's projection. Match `draft_dialog_id` before comparing `draft_revision`; preserve the original pair for a conditional clear. Refetch across spaces after a move. |
+| Asynchronous operation | Compare status revisions only for the same actor, family, and original operation key. A hinted revision is reason to query, not proof of a transition. Duplicate receipts settle the same command once. |
+| Photos, packs, and files | A gallery or pack revision orders that collection; `asset_version` identifies an immutable asset version. `representation_revision` orders the output set for the exact source and main file, independently of authored content. |
+| Ephemeral state | Drop typing at its original expiry and discard connectivity and room-online samples on disconnect. `known = false` retracts prior knowledge; it does not mean offline. Deduplicate reaction presentation by actor and operation UUID; recovery never replays an animation. |
+
+**MPSC example.** A client can enqueue RPC replies, independent updates, and recovery reads into one multiple-producer, single-consumer queue. The consumer owns the cache and pending-command map; queue order is arrival order, not freshness. Suppose Alice's send reply maps key `-7` to message `42` and carries body revision 2, while an edit for her view of `42` carries revision 3. In either arrival order, including duplicates, keep one row at revision 3 **and** settle `-7` once. Neither input advances the conversation cursor. If an invalidation arrives during a refresh, fetch again rather than letting the older response mark the cache clean.
+
+## Recover the missing fact
+
+| Missing fact | Authoritative recovery |
+| --- | --- |
+| Account-wide dialog state | Page through unfiltered `GetDialogs` with `hash=0`. Follow `next_cursor` even on an empty page. This is a live scan, not a frozen snapshot: a dialog missing from the scan is not proof of removal. |
+| Current visible message or retained conversation changes | Use `GetMessages` by ID, `GetHistory` for a page, and `ListMessageChanges` for retained changes. Advance only from the processed page's `last_accept_seq`. After a retention gap rebuild visible state; history cannot settle an unknown send key. |
+| Immediate text acceptance | Persist the request before submitting. Retry as the same sender with the same target, nonzero signed key, arguments, and draft tokens. Recover the retained binding under **current** disclosure; a withheld body does not undo acceptance. If unresolved, keep the outcome unknown rather than minting a fresh key. |
+| Scheduled job | Use `GetScheduledMessages` with the owner's original selectors. A pending job has no `accept_seq`; scheduling is not acceptance into history or peer delivery. |
+| Immediate file-backed send or album | Use `GetSendStatus` with the original target and key (any one member key recovers the ordered album mapping). Pending work is not a message. A successful identity receipt can outlive the visibility of the original body. |
+| Photo or asset mutation | Use `GetChatPhotoUpdate` with the original numeric operation ID, or `GetPhotoUpdate`, `GetProfilePhotoUpdate`, or `GetAssetChange` with the original request ID and required selectors. A status hint is not a receipt. Only durable `CANCELED` proves fencing; timeout, stopping observation, and requesting cancellation do not. See [File transfers](/schema/file-transfers) for retention and retry rules. |
+
+Recover unresolved commands on startup or reconnect even if neither reply nor update arrived. Refresh current state through its owner; do not infer an original outcome from a matching body, an absent row, or a transport acknowledgment. There is no durable update feed, global sequence, or replay cursor. `UpdatesService.ObserveConnectivity` is ephemeral presence only; `ReadUpdates` and `FollowUpdates` remain retired. Nothing in this schema guarantees runtime delivery.

@@ -17,6 +17,7 @@ import unittest
 from test_contract_completion import FIELD_NAMES, RPC_NAMES
 from test_files_schema import reset_descriptor_numbers
 from test_thumbnail_schema import THUMBNAILS
+from update_contract import APPLICATION_UPDATES_FILE, UPDATE_RESPONSES, CASE_FILES, current_filename
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -42,6 +43,11 @@ CHANGED_FILES = {
     "tinkle/v1/auth.proto",
 }
 CHANGED_DECLARATIONS = {
+    # Exact additive shapes and moved connectivity hint pinned by test_update_contract_schema.py.
+    "tinkle.v1.Update", "tinkle.v1.ConnectivityChanged",
+    "tinkle.v1.SetDraftRequest", "tinkle.v1.SetDialogPinRequest", "tinkle.v1.MoveDialogToSpaceRequest",
+    "tinkle.v1.OwnedBot", "tinkle.v1.GetInfoResponse",
+    "tinkle.v1.MessageRemoval", "tinkle.v1.MessageRemovalScope", "tinkle.v1.ReadScope",
     # Session review additions are pinned by test_account_schema.py; all other
     # account declarations remain in the baseline comparison.
     "tinkle.v1.AccountService",
@@ -209,6 +215,8 @@ CHANGED_DECLARATIONS.update({"tinkle.v1." + name for name in (
     "AlbumItem", "ChatPhoto", "ChatRestrictedScope", "PinScope", "ChatComplete", "ChatDetails",
     "DeleteHistoryResponse", "ToggleFavoriteStickerRequest",
 )})
+CHANGED_DECLARATIONS.update("tinkle.v1." + name for name in UPDATE_RESPONSES)
+CHANGED_DECLARATIONS.update("tinkle.v1." + name for name in CASE_FILES)
 
 # Exact option/collection additions are pinned by test_messaging_options_schema.py.
 CHANGED_DECLARATIONS.update({"tinkle.v1." + name for name in (
@@ -315,7 +323,7 @@ class ConnectivitySchemaTests(unittest.TestCase):
 
     def message(self, name):
         filename, descriptor = self.current["message"]["tinkle.v1." + name]
-        self.assertEqual(UPDATES_FILE, filename)
+        self.assertEqual(current_filename(UPDATES_FILE, "tinkle.v1." + name), filename)
         return descriptor
 
     def convert(self, fixture, message_type, source="json", target="binpb", check=True):
@@ -350,7 +358,7 @@ class ConnectivitySchemaTests(unittest.TestCase):
 
     def test_unrelated_contracts_are_unchanged(self):
         for kind in self.baseline:
-            baseline = {n: (d[0], reset_descriptor_numbers(d[1]))
+            baseline = {n: (current_filename(d[0], n), reset_descriptor_numbers(d[1]))
                         for n, d in self.baseline[kind].items()
                         if d[0] not in REPLACED_FILES | CHANGED_FILES
                         and n not in CHANGED_DECLARATIONS}
@@ -411,8 +419,7 @@ class ConnectivitySchemaTests(unittest.TestCase):
 
     def test_constructor_inventory(self):
         self.assertEqual({
-            "ConnectivityChanged", "ObserveConnectivityRequest",
-            "ObserveConnectivityResponse",
+            "ObserveConnectivityRequest", "ObserveConnectivityResponse",
         }, {m["name"] for m in self.updates["messageType"]})
         self.assertFalse(self.updates.get("enumType"), "no enum survives retirement")
 
@@ -443,7 +450,7 @@ class ConnectivitySchemaTests(unittest.TestCase):
         ])
 
     def test_sequential_tags_and_explicit_json_names(self):
-        for message in self.updates["messageType"]:
+        for message in [*self.updates["messageType"], self.message("ConnectivityChanged")]:
             fields = message.get("field", [])
             self.assertEqual(list(range(1, len(fields) + 1)), [f["number"] for f in fields])
             self.assertFalse(message.get("reservedRange"))
@@ -451,9 +458,9 @@ class ConnectivitySchemaTests(unittest.TestCase):
                 self.assertEqual(field["name"], field["jsonName"])
 
     def test_no_transport_or_opaque_internal_payloads(self):
-        self.assertFalse(self.updates.get("dependency"))
+        self.assertEqual([APPLICATION_UPDATES_FILE], self.updates.get("dependency"))
         forbidden = {"connection_id", "request_id", "handshake", "version", "error", "type"}
-        for message in self.updates["messageType"]:
+        for message in [*self.updates["messageType"], self.message("ConnectivityChanged")]:
             for field in message.get("field", []):
                 self.assertNotIn(field["name"], forbidden)
                 self.assertNotEqual("TYPE_BYTES", field["type"])
