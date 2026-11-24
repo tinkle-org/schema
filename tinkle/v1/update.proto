@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "tinkle/v1/account_updates.proto";
+import "tinkle/v1/application_updates.proto";
+import "tinkle/v1/bot_updates.proto";
+import "tinkle/v1/chat_updates.proto";
+import "tinkle/v1/contact_updates.proto";
+import "tinkle/v1/dialog_updates.proto";
+import "tinkle/v1/message_updates.proto";
+import "tinkle/v1/sticker_updates.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Update is one recipient-visible change, observation or refresh instruction.
+// Its identity and ordering are domain-specific. An unknown case cannot settle
+// a pending command, restore access, or advance any recovery checkpoint.
+// The retired tinkle.v1.Update used the same fully qualified name but is wire
+// incompatible. Use this type only on explicitly selected modern application
+// bindings; never try to distinguish the two types by decoding bytes.
+//
+// In a response, an empty updates list is indistinguishable from omission:
+// handle any original result fields as before. For a nonempty list, apply each
+// known update once, without repeating the same effect from a legacy field or
+// a live notification. Always consume method-specific results and read related
+// users and chats from the response's existing fields. In binary Protobuf, an
+// unknown or stale entry does not invalidate its siblings; reconcile unknown
+// cases via reads. Strict ProtoJSON decoders may reject unknown fields before
+// update processing; use a compatible schema or ignore unknown fields.
+message Update {
+  // change describes the affected data, independently of what caused it.
+  oneof change {
+    MessageAdded message_added = 1 [json_name = "message_added"];
+    MessageEdited message_edited = 2 [json_name = "message_edited"];
+    MessagesRemoved messages_removed = 3 [json_name = "messages_removed"];
+    HistoryChanged history_changed = 4 [json_name = "history_changed"];
+    MessageAccepted message_accepted = 5 [json_name = "message_accepted"];
+    MessagePinsChanged message_pins_changed = 6 [json_name = "message_pins_changed"];
+    MessageReactionsChanged message_reactions_changed = 7 [json_name = "message_reactions_changed"];
+    PollChanged poll_changed = 8 [json_name = "poll_changed"];
+    ThreadChanged thread_changed = 9 [json_name = "thread_changed"];
+    ScheduledMessagesChanged scheduled_messages_changed = 10 [json_name = "scheduled_messages_changed"];
+    RecentReactionsChanged recent_reactions_changed = 11 [json_name = "recent_reactions_changed"];
+    MessageChanged message_changed = 12 [json_name = "message_changed"];
+    SendStatusChanged send_status_changed = 13 [json_name = "send_status_changed"];
+    DialogChanged dialog_changed = 14 [json_name = "dialog_changed"];
+    DialogRemoved dialog_removed = 15 [json_name = "dialog_removed"];
+    ReadStateChanged read_state_changed = 16 [json_name = "read_state_changed"];
+    DraftChanged draft_changed = 17 [json_name = "draft_changed"];
+    UnreadMentionsChanged unread_mentions_changed = 18 [json_name = "unread_mentions_changed"];
+    UnreadReactionsChanged unread_reactions_changed = 19 [json_name = "unread_reactions_changed"];
+    ChatAdded chat_added = 20 [json_name = "chat_added"];
+    ChatChanged chat_changed = 21 [json_name = "chat_changed"];
+    ChatRemoved chat_removed = 22 [json_name = "chat_removed"];
+    ChatMembersChanged chat_members_changed = 23 [json_name = "chat_members_changed"];
+    ChatMemberPermissionsChanged chat_member_permissions_changed = 24 [json_name = "chat_member_permissions_changed"];
+    ChatSettingsChanged chat_settings_changed = 25 [json_name = "chat_settings_changed"];
+    JoinRequestsChanged join_requests_changed = 26 [json_name = "join_requests_changed"];
+    ConversationAccessChanged conversation_access_changed = 27 [json_name = "conversation_access_changed"];
+    UserChanged user_changed = 28 [json_name = "user_changed"];
+    ContactsChanged contacts_changed = 29 [json_name = "contacts_changed"];
+    PeerBlockChanged peer_block_changed = 30 [json_name = "peer_block_changed"];
+    PrivacyChanged privacy_changed = 31 [json_name = "privacy_changed"];
+    NotificationSettingsChanged notification_settings_changed = 32 [json_name = "notification_settings_changed"];
+    ContentSettingsChanged content_settings_changed = 33 [json_name = "content_settings_changed"];
+    ProfilePhotosChanged profile_photos_changed = 34 [json_name = "profile_photos_changed"];
+    SessionChanged session_changed = 35 [json_name = "session_changed"];
+    InstalledPacksChanged installed_packs_changed = 36 [json_name = "installed_packs_changed"];
+    StickerPackChanged sticker_pack_changed = 37 [json_name = "sticker_pack_changed"];
+    StickerAssetChanged sticker_asset_changed = 38 [json_name = "sticker_asset_changed"];
+    RecentStickersChanged recent_stickers_changed = 39 [json_name = "recent_stickers_changed"];
+    FavoriteStickersChanged favorite_stickers_changed = 40 [json_name = "favorite_stickers_changed"];
+    ChatPhotoUpdateChanged chat_photo_update_changed = 41 [json_name = "chat_photo_update_changed"];
+    ChannelPhotoUpdateChanged channel_photo_update_changed = 42 [json_name = "channel_photo_update_changed"];
+    ProfilePhotoUpdateChanged profile_photo_update_changed = 43 [json_name = "profile_photo_update_changed"];
+    AssetChangeChanged asset_change_changed = 44 [json_name = "asset_change_changed"];
+    ChatPhotoRepresentationChanged chat_photo_representation_changed = 45 [json_name = "chat_photo_representation_changed"];
+    ProfilePhotoRepresentationChanged profile_photo_representation_changed = 46 [json_name = "profile_photo_representation_changed"];
+    StickerAssetRepresentationChanged sticker_asset_representation_changed = 47 [json_name = "sticker_asset_representation_changed"];
+    BotCommandsChanged bot_commands_changed = 48 [json_name = "bot_commands_changed"];
+    BotMenuChanged bot_menu_changed = 49 [json_name = "bot_menu_changed"];
+    BotChanged bot_changed = 50 [json_name = "bot_changed"];
+    BotPermissionsChanged bot_permissions_changed = 51 [json_name = "bot_permissions_changed"];
+    TypingChanged typing_changed = 52 [json_name = "typing_changed"];
+    ConnectivityChanged connectivity_changed = 53 [json_name = "connectivity_changed"];
+    RoomOnlineCountChanged room_online_count_changed = 54 [json_name = "room_online_count_changed"];
+    ConfigurationChanged configuration_changed = 55 [json_name = "configuration_changed"];
+    WorkforceUserInfoChanged workforce_user_info_changed = 56 [json_name = "workforce_user_info_changed"];
+    ReconciliationRequired reconciliation_required = 57 [json_name = "reconciliation_required"];
+  }
+}

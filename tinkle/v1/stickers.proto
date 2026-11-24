@@ -5,6 +5,8 @@ package tinkle.v1;
 import "google/protobuf/timestamp.proto";
 import "tinkle/v1/files.proto";
 import "tinkle/v1/media.proto";
+import "tinkle/v1/sticker_types.proto";
+import "tinkle/v1/update.proto";
 
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
@@ -37,6 +39,8 @@ option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 // work. Do not blindly retry with a fresh token. CreatePack's unique short name
 // permits lookup after an ambiguous creation. Asset source changes use the direct
 // request_id and GetAssetChange; never retry with a fresh ID or CAS token.
+// Mutation updates describe changes for the authenticated caller. They do not
+// replace the command result or the durable actor-private AssetChange.
 service StickersService {
   // ============================================================================
   // Installed Pack Management
@@ -137,16 +141,6 @@ service StickersService {
   rpc PublishPack(PublishPackRequest) returns (PublishPackResponse);
   // UnpublishPack withdraws new catalog grants without deleting message references.
   rpc UnpublishPack(UnpublishPackRequest) returns (UnpublishPackResponse);
-}
-
-// PackKind fixes the kind of every member; mixed-kind packs are rejected.
-enum PackKind {
-  // No filter on list/search requests; invalid when creating a pack.
-  PACK_KIND_UNSPECIFIED = 0;
-  // Members must have STICKER_KIND_STICKER.
-  PACK_KIND_STICKER = 1;
-  // Members must have STICKER_KIND_CUSTOM_EMOJI.
-  PACK_KIND_CUSTOM_EMOJI = 2;
 }
 
 // ============================================================================
@@ -268,6 +262,8 @@ message InstallPackRequest {
 message InstallPackResponse {
   // Whether the operation succeeded.
   bool success = 1;
+  // Caller-private installed pack changes.
+  repeated Update updates = 2;
 }
 
 // UninstallPackRequest removes a sticker pack from the user's collection.
@@ -280,6 +276,8 @@ message UninstallPackRequest {
 message UninstallPackResponse {
   // Whether the operation succeeded.
   bool success = 1;
+  // Caller-private installed and archived pack changes.
+  repeated Update updates = 2;
 }
 
 // ReorderPacksRequest sets the display order of installed packs.
@@ -292,6 +290,8 @@ message ReorderPacksRequest {
 message ReorderPacksResponse {
   // Whether the operation succeeded.
   bool success = 1;
+  // Caller-private installed pack order changes.
+  repeated Update updates = 2;
 }
 
 // ============================================================================
@@ -397,6 +397,8 @@ message SaveRecentStickerRequest {
 message SaveRecentStickerResponse {
   // Whether the operation succeeded.
   bool success = 1;
+  // Caller-private recent sticker changes.
+  repeated Update updates = 2;
 }
 
 // ClearRecentStickersRequest clears all recent stickers for the user.
@@ -408,6 +410,8 @@ message ClearRecentStickersResponse {
   bool success = 1;
   // Number of recent stickers that were cleared.
   int32 cleared_count = 2;
+  // Caller-private recent sticker changes.
+  repeated Update updates = 3;
 }
 
 // ============================================================================
@@ -438,6 +442,8 @@ message ToggleFavoriteStickerResponse {
   bool success = 1;
   // Whether the sticker is now favorited (true) or unfavorited (false).
   bool is_favorited = 2;
+  // Caller-private favorite sticker changes.
+  repeated Update updates = 3;
 }
 
 // StickerAssetSource defines an owned asset using completed uploader-owned files.
@@ -481,6 +487,8 @@ message CreateStickerAssetResponse {
   StickerView asset = 1;
   // Required even for immediate success; non-success creates no catalog entry.
   AssetChange asset_change = 2;
+  // No catalog change before the create commits.
+  repeated Update updates = 3;
 }
 
 // UpdateStickerAssetRequest creates a new immutable version and advances head
@@ -507,6 +515,8 @@ message UpdateStickerAssetResponse {
   // Required for keyed changes, including immediate success. Non-success has no
   // asset or head advance. Absent only for unkeyed synchronous metadata edits.
   AssetChange asset_change = 2;
+  // A committed head change never replaces existing pack or message pins.
+  repeated Update updates = 3;
 }
 
 // AssetChangeState describes an actor-private asset create/update lifecycle.
@@ -602,30 +612,8 @@ message CancelAssetChangeRequest {
 message CancelAssetChangeResponse {
   // Required snapshot with current identity-disclosure policy applied.
   AssetChange asset_change = 1;
-}
-
-// AssetChangeChanged is an actor-only hint to query GetAssetChange, not a receipt.
-// May duplicate/reorder/disappear; query on reconnect and after an in-flight hint.
-// Stopping observation never cancels an asset change.
-message AssetChangeChanged {
-  // Original actor-scoped request UUID.
-  string request_id = 1;
-  // Original update selector only; absent for creates.
-  optional int64 asset_id = 2;
-  // Positive hinted status revision; the source query may be newer.
-  uint64 revision = 3;
-}
-
-// StickerAssetRepresentationChanged is a visibility-filtered hint, not a grant.
-// Fetch exact GetStickerAssets on startup/reconnect and after hints (again when
-// in-flight). Match exact version/main; replace complete sets, never assume head.
-message StickerAssetRepresentationChanged {
-  // Exact immutable asset ID/version, not a current head substitution.
-  AssetReference asset = 1;
-  // Exact immutable main file ID.
-  int64 main_file_id = 2;
-  // Positive independent hinted output-set revision.
-  uint64 representation_revision = 3;
+  // Actor-private updates; only the durable CANCELED outcome proves fencing.
+  repeated Update updates = 2;
 }
 
 // DeleteStickerAssetRequest removes an owned asset; pack membership must be empty.
@@ -641,6 +629,8 @@ message DeleteStickerAssetRequest {
 message DeleteStickerAssetResponse {
   // True once the asset was deleted.
   bool deleted = 1;
+  // Catalog removal does not invalidate visible messages' exact versions.
+  repeated Update updates = 2;
 }
 
 // GetStickerAssetsRequest batches asset IDs or exact versions, including emoji IDs
@@ -708,6 +698,8 @@ message CreatePackRequest {
 message CreatePackResponse {
   // Complete empty pack with published=false.
   StickerPackDetail pack = 1;
+  // Owner-only draft pack changes.
+  repeated Update updates = 2;
 }
 
 // UpdatePackRequest edits display metadata without altering members or kind.
@@ -726,6 +718,8 @@ message UpdatePackRequest {
 message UpdatePackResponse {
   // Complete current pack.
   StickerPackDetail pack = 1;
+  // Owner-only draft pack changes.
+  repeated Update updates = 2;
 }
 
 // DeletePackRequest deletes an owned unpublished pack, not the member assets.
@@ -740,6 +734,8 @@ message DeletePackRequest {
 message DeletePackResponse {
   // True once removed, including collection entries referring to this pack.
   bool deleted = 1;
+  // Caller-visible pack removal; member assets are not deleted.
+  repeated Update updates = 2;
 }
 
 // AddPackAssetRequest appends an owned asset of the pack's kind.
@@ -759,6 +755,8 @@ message AddPackAssetRequest {
 message AddPackAssetResponse {
   // Pack after membership update.
   StickerPackDetail pack = 1;
+  // Owner-only changes to the pack's pinned membership.
+  repeated Update updates = 2;
 }
 
 // RemovePackAssetRequest removes membership without deleting an asset.
@@ -775,6 +773,8 @@ message RemovePackAssetRequest {
 message RemovePackAssetResponse {
   // Pack after membership update.
   StickerPackDetail pack = 1;
+  // Owner-only changes to the pack's pinned membership.
+  repeated Update updates = 2;
 }
 
 // ReorderPackAssetsRequest replaces only order, atomically with exact-set checks.
@@ -792,6 +792,8 @@ message ReorderPackAssetsRequest {
 message ReorderPackAssetsResponse {
   // Complete pack in requested order.
   StickerPackDetail pack = 1;
+  // Owner-only changes to the pack's display order.
+  repeated Update updates = 2;
 }
 
 // PublishPackRequest validates all current members before atomic publication.
@@ -809,6 +811,8 @@ message PublishPackRequest {
 message PublishPackResponse {
   // Complete pack with published=true.
   StickerPackDetail pack = 1;
+  // Publication changes for the caller's view of the pack.
+  repeated Update updates = 2;
 }
 
 // UnpublishPackRequest withdraws new catalog grants, not visible message grants.
@@ -823,4 +827,6 @@ message UnpublishPackRequest {
 message UnpublishPackResponse {
   // Complete pack with published=false.
   StickerPackDetail pack = 1;
+  // Withdrawal changes for the caller; draft details remain owner-only.
+  repeated Update updates = 2;
 }

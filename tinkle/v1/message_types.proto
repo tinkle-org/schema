@@ -1,0 +1,366 @@
+// Shared message and chat models.
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "google/protobuf/timestamp.proto";
+import "tinkle/v1/common.proto";
+import "tinkle/v1/entities.proto";
+import "tinkle/v1/media.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// =============================================================================
+// Enums
+// =============================================================================
+
+// TypingAction describes the type of typing indicator.
+enum TypingAction {
+  TYPING_ACTION_UNSPECIFIED = 0;
+  TYPING_ACTION_TYPING = 1;
+  TYPING_ACTION_RECORD_AUDIO = 2;
+  TYPING_ACTION_UPLOAD_PHOTO = 3;
+  TYPING_ACTION_UPLOAD_DOCUMENT = 4;
+  TYPING_ACTION_RECORD_VIDEO = 5;
+  TYPING_ACTION_UPLOAD_VIDEO = 6;
+  TYPING_ACTION_RECORD_ROUND = 7;
+  TYPING_ACTION_UPLOAD_ROUND = 8;
+  TYPING_ACTION_CHOOSE_STICKER = 9;
+  TYPING_ACTION_CANCEL = 10;
+}
+
+// TargetChangeKind describes how a single message changed in one conversation.
+// It enumerates the mutation markers retained in the enquiry journal at the
+// change's original acceptance position.
+enum TargetChangeKind {
+  TARGET_CHANGE_KIND_UNSPECIFIED = 0;
+  // The message body was edited; TargetChange.message carries the current body.
+  TARGET_CHANGE_KIND_EDITED = 1;
+  // The message was removed for this viewer; visibility for other participants is unchanged.
+  TARGET_CHANGE_KIND_DELETED = 2;
+  // The message was removed for every participant.
+  TARGET_CHANGE_KIND_REVOKED = 3;
+  // Pin state changed; hydrate the authorized current body, not a user edit.
+  TARGET_CHANGE_KIND_PIN = 4;
+  // Reactions changed; hydrate the authorized current body, not a user edit.
+  TARGET_CHANGE_KIND_REACTION = 5;
+  // Poll state/results changed; hydrate the authorized current body, not a user edit.
+  TARGET_CHANGE_KIND_POLL = 6;
+  // Private acknowledgement metadata changed for this viewer only. Disclose the
+  // marker/body only to that viewer, never to other conversation participants.
+  TARGET_CHANGE_KIND_ACK = 7;
+  // Attachment output membership changed, not an authored edit. Hydrate the
+  // current body and compare representation_revision independently; no edit_date.
+  TARGET_CHANGE_KIND_REPRESENTATION = 8;
+}
+
+// DraftMessage represents an unsent draft in a dialog.
+message DraftMessage {
+  string message = 1;
+  // Rich-text spans in message, using the shared UTF-16 entity rules.
+  repeated Entity entities = 2;
+  // Message being replied to in this draft's conversation.
+  int64 reply_to_message_id = 3;
+  google.protobuf.Timestamp date = 4;
+}
+
+// RoomQueryTarget identifies a group chat or channel for a room query.
+message RoomQueryTarget {
+  // Exactly one room must be selected, and its ID must be positive.
+  oneof room {
+    // Group chat ID.
+    int64 chat_id = 1;
+    // Channel ID.
+    int64 channel_id = 2;
+  }
+}
+
+// RoomOnlineCountSample reports connectivity at a sampled time, not room viewing.
+message RoomOnlineCountSample {
+  // Number of distinct current members with an authenticated live connection
+  // whose presence the caller is permitted to see.
+  int32 count = 1;
+  // Observation time, not response time or anyone's last-seen time.
+  google.protobuf.Timestamp sampled_at = 2;
+}
+
+// ChatType describes the type of a chat.
+enum ChatType {
+  CHAT_TYPE_UNSPECIFIED = 0;
+  CHAT_TYPE_GROUP = 1;
+  CHAT_TYPE_CHANNEL = 2;
+  CHAT_TYPE_BROADCAST = 3;
+}
+
+// MessageScheduledState distinguishes queued delivery from visible messages.
+enum MessageScheduledState {
+  // Scheduling state was not reported; do not infer delivery.
+  MESSAGE_SCHEDULED_STATE_UNSPECIFIED = 0;
+  // Accepted without scheduling.
+  MESSAGE_SCHEDULED_STATE_NOT_SCHEDULED = 1;
+  // Queued for future delivery; visible only to the sender, not in history/search.
+  MESSAGE_SCHEDULED_STATE_PENDING = 2;
+  // A scheduled message has been delivered to the conversation.
+  MESSAGE_SCHEDULED_STATE_SENT = 3;
+}
+
+// Message represents a single message in a conversation.
+message Message {
+  int64 message_id = 1;
+  Target target = 2;
+  int64 from_id = 3;
+  google.protobuf.Timestamp date = 4;
+  string message = 5;
+  Media media = 6;
+  // Rich-text spans in message, including media captions.
+  repeated Entity entities = 7;
+  MessageReplyHeader reply_to = 8;
+  // Server time of the last user content edit. Pin, reaction, poll and private
+  // acknowledgement changes do not manufacture or advance a user edit timestamp.
+  google.protobuf.Timestamp edit_date = 9;
+  MessageReactions reactions = 10;
+  MessageReplies replies = 11;
+  // Shared conversation pin state, independent of this caller's personal pin.
+  bool pinned = 12;
+  int32 ttl_period = 13;
+  // accept_seq is the server-assigned acceptance position of this message within
+  // its conversation. Positions are positive and start at one, monotonically
+  // increasing per conversation, and are the ordering and deduplication token
+  // for messages in that conversation; they are not globally comparable across
+  // conversations and are not a replay cursor. The token is assigned once on
+  // acceptance and stays stable across later body/metadata changes; mutations
+  // have separate event positions disclosed under ListMessageChanges. This token
+  // never ranks body freshness. Absent on pending scheduled messages; an absent token
+  // never supplies an ordering or deduplication vote.
+  optional int64 accept_seq = 14;
+  // Positive, opaque album identifier shared by every item of one successful
+  // SendAlbum call; scoped to target, stable across edits and delivery.
+  // Absent for a standalone message. Album items are accepted atomically, in
+  // request order; an invalid item rejects the entire album.
+  optional int64 album_id = 15;
+  // Delivery state. Pending messages have no accept_seq; delivery assigns it
+  // once. A send acknowledgement for a pending message is not delivery proof.
+  MessageScheduledState scheduled_state = 16;
+  // Unix seconds of requested delivery, present for PENDING and SENT only.
+  // Editing a pending message may replace this date; omission preserves it.
+  optional int32 schedule_date = 17;
+  // Positive server-assigned version of the complete authorized body, including
+  // metadata. Increases monotonically on body changes, independently of this
+  // message's accept_seq, mutation event positions and user edit_date; never
+  // wraps or reuses a value. Compare only for the same authenticated principal,
+  // target and message_id. When both copies report it, the larger revision is
+  // fresher; equal revisions do not justify replacing a cached body. If either
+  // copy omits it, use edit_date only as a fallback: later wins, and an absent
+  // date never beats a dated one. Equal/absent dates do not order metadata-only
+  // changes; retain the cached copy and reconcile rather than inventing a date.
+  // Absence means unknown, never zero. A revision is not a cursor or receipt.
+  optional int64 body_revision = 18;
+  // Whether link preview generation is suppressed. Absent means unreported,
+  // not false. A reported value is part of the complete message body.
+  optional bool suppress_link_preview = 19;
+  // Private pin state for this authenticated caller only; false means unpinned,
+  // absent means unreported. Never disclose another user's personal pins or copy
+  // this state across principals. Changes use viewer-only ACK markers/hints and
+  // caller-relative body revisions; they do not change shared pinned or edit_date.
+  optional bool personal_pin = 20;
+}
+
+// MessageReplyHeader contains reply context for a message.
+message MessageReplyHeader {
+  // Message being replied to in the source conversation.
+  int64 reply_to_message_id = 1;
+  int64 reply_to_peer_id = 2;
+  // Thread root in the source conversation; zero when outside a thread.
+  int64 thread_root_id = 3;
+  string quote_text = 4;
+  // Rich-text spans in quote_text, independent of source-message offsets.
+  repeated Entity quote_entities = 5;
+}
+
+// MessageReplies contains thread reply summary for a message.
+message MessageReplies {
+  int32 replies = 1;
+  int64 max_id = 2;
+  int64 read_max_id = 3;
+  repeated int64 recent_replier_ids = 4;
+}
+
+// Chat represents a group or channel entity.
+message Chat {
+  int64 chat_id = 1;
+  string title = 2;
+  ChatPhoto photo = 3;
+  string about = 4;
+  ChatType chat_type = 5;
+  int32 participants_count = 6;
+  google.protobuf.Timestamp date = 7;
+  int64 owner_id = 8;
+}
+
+// ChatPhoto describes the current chat photo and its immutable completed files.
+// A nonempty photo reports its main and metadata; the thumbnail may be absent.
+// File reads use
+// ChatPhotoReference with this chat and photo_id, rechecking visibility and exact
+// membership on each call. Replacement/removal invalidates that reference.
+message ChatPhoto {
+  // Positive photo identity, not a file ID; zero denotes no current photo.
+  int64 photo_id = 1;
+  // Whether the current photo includes video; an animated image is not video.
+  bool has_video = 2;
+  // Canonical main image file; zero only when there is no current photo.
+  int64 file_id = 3;
+  // Server-measured image facts and IMAGE version 1 physical validation result.
+  ImageMetadata metadata = 4;
+  // Optional accepted presentation hint; absent is valid.
+  InlinePreview inline_preview = 5;
+  // Positive independent representation revision; absent means older/frozen.
+  optional uint64 representation_revision = 6;
+  // Optional explicitly linked thumbnail; enrichment may add it later.
+  Thumbnail thumbnail = 7;
+}
+
+// Reaction represents an emoji reaction.
+message Reaction {
+  // Plain-text reaction, or the exact custom-emoji version's canonical nonempty
+  // fallback (at most 64 UTF-8 bytes); validate equality at acceptance and retain it.
+  string emoticon = 1;
+  // Canonical CUSTOM_EMOJI asset ID, not a file ID. Zero selects emoticon.
+  // A custom reaction requires a positive currently usable asset ID.
+  int64 custom_emoji_id = 2;
+  // Required positive exact version when custom_emoji_id is nonzero, absent
+  // otherwise. Never substitute head. A visible message grants reads only while
+  // this exact reaction is retained; unavailable assets render retained emoticon.
+  optional uint64 asset_version = 3;
+}
+
+// MessageReactions contains per-message reaction summary.
+message MessageReactions {
+  int64 message_id = 1;
+  repeated ReactionCount results = 2;
+  repeated PeerReaction recent_reactions = 3;
+}
+
+// ReactionCount contains count for a single reaction type.
+message ReactionCount {
+  Reaction reaction = 1;
+  int32 count = 2;
+  bool chosen = 3;
+}
+
+// PeerReaction represents a single user's reaction.
+message PeerReaction {
+  int64 peer_id = 1;
+  Reaction reaction = 2;
+  google.protobuf.Timestamp date = 3;
+}
+
+// Media represents an attached media item on a message.
+message Media {
+  oneof media {
+    Photo photo = 1;
+    Document document = 2;
+    GeoPoint geo = 3;
+    MessageContact contact = 4;
+    Poll poll = 5;
+  }
+}
+
+// Photo represents a photo attachment.
+// id is the photo's domain-object identifier and is not a file ID;
+// file_id is the canonical reference to the stored full-size image bytes.
+// access_hash does not authorize FilesService operations.
+message Photo {
+  int64 id = 1;
+  int64 access_hash = 2;
+  int32 width = 3;
+  int32 height = 4;
+  // Canonical file ID of the full-size image bytes.
+  int64 file_id = 5;
+  // Server-published image metadata, when available.
+  optional ImageMetadata metadata = 6;
+  // Optional accepted presentation hint, never main-image validation authority.
+  InlinePreview inline_preview = 7;
+  // Positive independent output-set revision; absent means older/frozen.
+  optional uint64 representation_revision = 8;
+  // Optional stored thumbnail; access-checked like the parent.
+  Thumbnail thumbnail = 9;
+}
+
+// Document represents a file/document attachment.
+// id is the document's domain-object identifier and is not a file ID;
+// file_id is the canonical reference to the stored bytes. access_hash does not
+// authorize FilesService operations.
+message Document {
+  int64 id = 1;
+  int64 access_hash = 2;
+  string mime_type = 3;
+  int64 size = 4;
+  string file_name = 5;
+  // Canonical file ID of the stored bytes.
+  int64 file_id = 6;
+  // Server-published typed attributes of the document, when available.
+  repeated MediaAttribute attributes = 7;
+  // Optional preview, including returned video frames and explicit raw-document
+  // previews. Never inferred as a typed purpose from raw document bytes.
+  InlinePreview inline_preview = 8;
+  // Positive independent output-set revision; absent means older/frozen.
+  optional uint64 representation_revision = 9;
+  // Optional stored thumbnail; absent for voice, access-checked like the parent.
+  Thumbnail thumbnail = 10;
+}
+
+// GeoPoint represents a geographic location.
+message GeoPoint {
+  double lat = 1;
+  double long = 2;
+}
+
+// MessageContact represents a contact card attached to a message.
+message MessageContact {
+  string phone_number = 1;
+  string first_name = 2;
+  string last_name = 3;
+  int64 user_id = 4;
+}
+
+// Poll represents a poll attached to a message.
+message Poll {
+  int64 id = 1;
+  string question = 2;
+  repeated PollAnswer answers = 3;
+  bool closed = 4;
+  bool public_voters = 5;
+  bool multiple_choice = 6;
+  bool quiz = 7;
+  // Current authorized aggregate and caller-relative choices. Correctness is
+  // disclosed only after this caller votes or the poll closes, never in advance.
+  PollResults results = 8;
+}
+
+// PollResults is one consistent aggregate snapshot, not a list of voter IDs.
+message PollResults {
+  // Number of distinct voters; a multiple-choice voter counts once.
+  int32 total_voters = 1;
+  // One entry per Poll.answers option, including options with zero votes.
+  // Order matches Poll.answers; counts and chosen refer to this same snapshot.
+  repeated PollAnswerResult results = 2;
+}
+
+// PollAnswerResult describes one option's count and the caller's selection.
+message PollAnswerResult {
+  // Exact opaque bytes of PollAnswer.option; never a text or numeric index.
+  bytes option = 1;
+  // Nonnegative number of voters choosing this option.
+  int32 voters = 2;
+  // Whether the authenticated caller currently chooses this option.
+  bool chosen = 3;
+  // Quiz correctness, omitted until disclosure is allowed and for non-quizzes.
+  // Explicit false distinguishes a disclosed incorrect option from hidden data.
+  optional bool correct = 4;
+}
+
+// PollAnswer represents a single poll option.
+message PollAnswer {
+  string text = 1;
+  bytes option = 2;
+}

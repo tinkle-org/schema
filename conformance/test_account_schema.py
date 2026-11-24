@@ -11,6 +11,8 @@ import subprocess
 import tempfile
 import unittest
 
+from update_contract import current_filename
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ACCOUNT_FILE = "tinkle/v1/account.proto"
@@ -39,10 +41,10 @@ class AccountSchemaTests(unittest.TestCase):
             "build", ".", "--exclude-source-info",
             "--as-file-descriptor-set", "-o", "-#format=json",
         )
-        cls.account = next(
-            f for f in json.loads(result.stdout)["file"] if f["name"] == ACCOUNT_FILE
-        )
-        cls.messages = {m["name"]: m for m in cls.account["messageType"]}
+        image = json.loads(result.stdout)["file"]
+        cls.account = next(f for f in image if f["name"] == ACCOUNT_FILE)
+        cls.messages = {m["name"]: m for f in image for m in f.get("messageType", [])
+                        if f["name"] == current_filename(ACCOUNT_FILE, m["name"])}
         cls.image_path = Path(temporary.name) / "image.json"
         cls.image_path.write_bytes(result.stdout)
 
@@ -155,6 +157,7 @@ class AccountSchemaTests(unittest.TestCase):
         ])
         self.assert_fields("ConfirmSessionResponse", [
             ("session", 1, "MESSAGE", "Session", False, False),
+            ("updates", 2, "MESSAGE", "Update", True, False),
         ])
 
     def test_session_changed_is_an_identifier_only_refresh_hint(self):

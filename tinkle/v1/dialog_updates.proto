@@ -1,0 +1,76 @@
+// Owner-only dialog changes, keyed by the recipient's typed Target. Never
+// fan out another participant's counters, preferences or draft. Updates may
+// arrive late; unversioned invalidations require a fresh read, not a delta.
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "tinkle/v1/common.proto";
+import "tinkle/v1/message_types.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Refresh this dialog via GetDialogs, including its pin, placement and list
+// order. Use an unfiltered scan for cross-space moves. No count, draft clear
+// or deletion can be inferred from this hint.
+message DialogChanged {
+  Target target = 1;
+}
+
+// Removed from the owner's list, not deletion of shared history. Recheck for
+// a recreated dialog before discarding newer state for the same target.
+message DialogRemoved {
+  Target target = 1;
+}
+
+// Direction relative to the recipient, not the actor who performed a read.
+enum ReadScope {
+  // Unknown; never treat this as a read acknowledgment.
+  READ_SCOPE_UNSPECIFIED = 0;
+  // Incoming messages covered by the owner's read watermark.
+  READ_SCOPE_INBOX = 1;
+  // Direct messages sent by the owner and covered by the peer's read watermark.
+  READ_SCOPE_OUTBOX = 2;
+}
+
+// A reported read watermark for this recipient/target/direction/thread.
+// An outbox watermark is DM-only. For missed or unordered updates, refresh
+// GetDialogs or ListThreadMessages rather than assigning by arrival order.
+message ReadStateChanged {
+  Target target = 1;
+  ReadScope scope = 2;
+  // Message reference, not a journal position. Zero is a known empty watermark.
+  int64 max_message_id = 3;
+  // Positive thread root when thread-scoped; absent for dialog-wide reads.
+  optional int64 thread_root_id = 4;
+  // Owner's current unread count when known; never the peer's private count.
+  // Absent is unknown; zero is known empty. Never add this value as a delta.
+  optional int32 unread_count = 5;
+}
+
+// Complete owner-only draft projection. Compare revisions only within the same
+// account, target and dialog generation. Ignore older or duplicate revisions;
+// for an unknown or different generation refresh GetDialogs before applying.
+message DraftChanged {
+  Target target = 1;
+  // Exact positive source generation; not ordered across recreations.
+  int64 draft_dialog_id = 2;
+  // Source revision, including zero for an initialized empty source.
+  int64 draft_revision = 3;
+  // Absent means the draft in this generation is empty at this revision.
+  DraftMessage draft = 4;
+}
+
+// Refresh the caller's mention count and, if open, the relevant unread list.
+message UnreadMentionsChanged {
+  Target target = 1;
+  // Positive root for a thread-scoped GetUnreadMentions refresh.
+  optional int64 thread_root_id = 2;
+}
+
+// Refresh the caller's reaction count and, if open, the relevant unread list.
+message UnreadReactionsChanged {
+  Target target = 1;
+  // Positive root for a thread-scoped GetUnreadReactions refresh.
+  optional int64 thread_root_id = 2;
+}

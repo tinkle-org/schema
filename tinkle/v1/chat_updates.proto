@@ -1,0 +1,136 @@
+// Recipient-specific group and channel updates. Without a source revision,
+// refresh current state rather than overwriting it in arrival order.
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "google/protobuf/timestamp.proto";
+import "tinkle/v1/common.proto";
+import "tinkle/v1/message_types.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Newly visible chat projection. Its identity is not a membership grant.
+message ChatAdded {
+  Chat chat = 1;
+}
+
+// Refresh this recipient's visible basic chat via GetChats or GetChannels.
+message ChatChanged {
+  int64 chat_id = 1;
+}
+
+// The chat left this recipient's view. Invalidate cached chat data; do not
+// infer global deletion or restore it from an older projection.
+message ChatRemoved {
+  int64 chat_id = 1;
+}
+
+// Refresh the authorized GetRoomMembers/GetParticipants page. This is not
+// a membership delta: neither presence nor absence in user_ids proves a role.
+message ChatMembersChanged {
+  int64 chat_id = 1;
+  // Up to 100 distinct affected IDs disclosable under current roster policy.
+  // Omit hidden identities; empty requests a refresh without identifying anyone.
+  repeated int64 user_ids = 2;
+}
+
+// Refresh the visible member's rights via GetChatDetails or GetParticipant.
+// Disclose only to recipients permitted to see the affected member's identity;
+// the hint itself never grants permissions.
+message ChatMemberPermissionsChanged {
+  int64 chat_id = 1;
+  int64 user_id = 2;
+}
+
+// Refresh current authorized settings via GetChatDetails or GetFullChannel.
+message ChatSettingsChanged {
+  int64 chat_id = 1;
+}
+
+// Invalidate GetJoinRequests only for recipients authorized to review this
+// channel's requests. No applicant identity, approval or count is implied.
+message JoinRequestsChanged {
+  int64 chat_id = 1;
+}
+
+// The recipient's previous access may no longer hold. Stop using cached
+// disclosures and reauthorize through the source; never infer restored access.
+message ConversationAccessChanged {
+  Target target = 1;
+}
+
+// ChatPhotoUpdateChanged hints only to the initiating actor to query the owner.
+// Hints can duplicate, reorder or disappear. Query GetChatPhotoUpdate with the
+// original chat_id and operation_id on startup, reconnect and receipt of a hint.
+// Query again if a hint arrives during a query.
+// While connected, schedule a fallback query 30 seconds after an ambiguous
+// mutation response or a nonterminal status, even if no hint arrives. Restart
+// the 30-second timer after each query that leaves the outcome unresolved. Keep
+// at most one status query in flight per operation and stop the timer once a
+// terminal outcome is known.
+message ChatPhotoUpdateChanged {
+  // Exact original group chat ID.
+  int64 chat_id = 1;
+  // Original numeric operation ID.
+  int64 operation_id = 2;
+  // Positive hinted status revision, never a durable receipt.
+  uint64 revision = 3;
+}
+
+// ChannelPhotoUpdateChanged is an actor-only hint to query GetPhotoUpdate.
+// May duplicate/reorder/disappear; query on reconnect and after an in-flight hint.
+// Representation hints use ChatPhotoRepresentationChanged with this channel's
+// exact Chat.chat_id/photo_id/main; delivery rechecks current channel visibility.
+message ChannelPhotoUpdateChanged {
+  // Exact original channel ID.
+  int64 channel_id = 1;
+  // Original canonical actor-scoped request UUID.
+  string request_id = 2;
+  // Positive hinted status revision, not a durable receipt.
+  uint64 revision = 3;
+}
+
+// ChatPhotoRepresentationChanged is a visibility-filtered hint for a current
+// group OR channel photo, using the shared Chat.chat_id namespace explicitly.
+// Fetch GetChats/GetChannels and recheck current photo_id/main before replacing a
+// complete representation set. Never patch caches from hints or grant file reads.
+// Query on startup/reconnect without hints; a hint during fetch requires refetch.
+message ChatPhotoRepresentationChanged {
+  // Exact group or channel Chat.chat_id; no implicit target-kind discriminator.
+  int64 chat_id = 1;
+  // Exact positive current photo identity, not a replacement.
+  int64 photo_id = 2;
+  // Exact immutable main file ID.
+  int64 main_file_id = 3;
+  // Positive independent hinted output-set revision.
+  uint64 representation_revision = 4;
+}
+
+// TypingChanged is an ephemeral typed notification payload, independent of its
+// envelope or delivery transport. It is not presence, a durable event or a
+// receipt. Deliver only to currently authorized recipients in target/thread;
+// recheck membership/visibility and applicable privacy. Discard expired hints,
+// do not replay them after reconnect, and never extend expiry from arrival time.
+message TypingChanged {
+  // Required conversation currently visible to the recipient.
+  Target target = 1;
+  // Positive actor user ID derived from the actor's trusted session, not a claim.
+  int64 actor_id = 2;
+  // Typing/media activity; CANCEL clears this actor's target/thread immediately.
+  TypingAction action = 3;
+  // Required finite absolute server expiry; clients clear the indicator by this
+  // deadline without needing a cancellation hint. CANCEL clears it immediately.
+  google.protobuf.Timestamp expires_at = 4;
+  // Positive thread root when activity is thread-scoped; omit for conversation scope.
+  optional int64 thread_root_id = 5;
+}
+
+// Ephemeral aggregate for members authorized to read GetRoomOnlineCount.
+// Compare sampled_at only within this recipient and room. Discard on access
+// loss or reconnect; refetch rather than replaying a previous sample.
+message RoomOnlineCountChanged {
+  RoomQueryTarget target = 1;
+  // Absent means unavailable or withheld; never substitute zero.
+  RoomOnlineCountSample sample = 2;
+}

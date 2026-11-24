@@ -8,6 +8,7 @@ package tinkle.v1;
 
 import "google/protobuf/timestamp.proto";
 import "tinkle/v1/common.proto";
+import "tinkle/v1/update.proto";
 
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
@@ -142,6 +143,8 @@ message ImportContactsResponse {
   repeated ImportedContact imported_contacts = 1;
   // Contacts that should be retried later (e.g., invalid phone format).
   repeated Contact retry_contacts = 2;
+  // Owner-only changes for committed entries; retries remain separate.
+  repeated Update updates = 3;
 }
 
 // =============================================================================
@@ -189,6 +192,8 @@ message AddContactRequest {
 message AddContactResponse {
   // The added contact.
   Contact contact = 1;
+  // Owner-only changes to the contact list.
+  repeated Update updates = 2;
 }
 
 // DeleteContactsRequest is the request for DeleteContacts.
@@ -205,6 +210,8 @@ message DeleteContactsResponse {
   int32 deleted_count = 2;
   // Custom IDs that failed to delete. Non-empty when success is false.
   repeated string failed_custom_ids = 3;
+  // Owner-only changes for successful deletions, including partial success.
+  repeated Update updates = 4;
 }
 
 // DeleteByPhonesRequest is the request for DeleteByPhones.
@@ -217,6 +224,8 @@ message DeleteByPhonesRequest {
 message DeleteByPhonesResponse {
   // True if the operation succeeded.
   bool success = 1;
+  // Owner-only changes to saved contacts.
+  repeated Update updates = 2;
 }
 
 // ResetSavedRequest is the request for ResetSaved.
@@ -226,6 +235,8 @@ message ResetSavedRequest {}
 message ResetSavedResponse {
   // True if the operation succeeded.
   bool success = 1;
+  // Owner-only changes to saved contacts.
+  repeated Update updates = 2;
 }
 
 // =============================================================================
@@ -242,6 +253,8 @@ message BlockRequest {
 message BlockResponse {
   // True if the target was blocked.
   bool blocked = 1;
+  // Private to the blocker; never notify the blocked peer.
+  repeated Update updates = 2;
 }
 
 // UnblockRequest is the request for Unblock.
@@ -254,6 +267,8 @@ message UnblockRequest {
 message UnblockResponse {
   // True if the target was unblocked.
   bool unblocked = 1;
+  // Private to the owner of the block list.
+  repeated Update updates = 2;
 }
 
 // GetBlockedRequest is the request for GetBlocked.

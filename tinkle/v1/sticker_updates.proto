@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "tinkle/v1/media.proto";
+import "tinkle/v1/sticker_types.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Owner-only invalidation of installed pack membership or display order.
+// Refresh GetInstalledPacks; refresh GetArchivedPacks if showing archived packs.
+message InstalledPacksChanged {
+  // Same filter as GetInstalledPacks. Use UNSPECIFIED for a change spanning
+  // both kinds (including their shared display order), or when kind is unknown.
+  PackKind kind = 1;
+}
+
+// Refresh GetPack for this recipient. Disclose only an authorized pack ID;
+// withdrawal does not disclose draft contents or delete accepted history.
+message StickerPackChanged {
+  // Positive ID of the affected pack.
+  int64 pack_id = 1;
+  // Positive source pack_revision when known and disclosable. Absence still
+  // requests a refresh; never use the hint as the expected_revision for a write.
+  optional uint64 pack_revision = 2;
+}
+
+// Refresh GetStickerAssets for this recipient. Catalog withdrawal does not
+// erase pinned versions in visible messages or grant access to their files.
+message StickerAssetChanged {
+  // Positive ID of the affected sticker or custom emoji.
+  int64 asset_id = 1;
+  // Exact immutable version when known and disclosable: resolve that pair.
+  // If absent, refresh catalog state by ID; never substitute a head for a pin.
+  optional uint64 asset_version = 2;
+}
+
+// Owner-only invalidation of recent stickers. Refresh GetRecentStickers for
+// current membership and order; an empty payload does not mean the list is empty.
+message RecentStickersChanged {}
+
+// Owner-only invalidation of favorite stickers. Refresh GetFavoriteStickers;
+// the hint does not add or remove any particular sticker.
+message FavoriteStickersChanged {}
+
+// AssetChangeChanged is an actor-only hint to query GetAssetChange, not a receipt.
+// May duplicate/reorder/disappear; query on reconnect and after an in-flight hint.
+// Stopping observation never cancels an asset change.
+message AssetChangeChanged {
+  // Original actor-scoped request UUID.
+  string request_id = 1;
+  // Original update selector only; absent for creates.
+  optional int64 asset_id = 2;
+  // Positive hinted status revision; the source query may be newer.
+  uint64 revision = 3;
+}
+
+// StickerAssetRepresentationChanged is a visibility-filtered hint, not a grant.
+// Fetch exact GetStickerAssets on startup/reconnect and after hints (again when
+// in-flight). Match exact version/main; replace complete sets, never assume head.
+message StickerAssetRepresentationChanged {
+  // Exact immutable asset ID/version, not a current head substitution.
+  AssetReference asset = 1;
+  // Exact immutable main file ID.
+  int64 main_file_id = 2;
+  // Positive independent hinted output-set revision.
+  uint64 representation_revision = 3;
+}

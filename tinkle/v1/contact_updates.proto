@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Owner-only invalidation. Refresh GetContacts and GetSaved for current
+// membership; no phone, address-book label or retry input is disclosed.
+message ContactsChanged {}
+
+// Committed change to the owner's block list. Never notify the blocked user.
+// There is no ordering token; recover current membership with GetBlocked.
+message PeerBlockChanged {
+  // Positive ID of the affected peer in the receiving account's block list.
+  int64 user_id = 1;
+  // Membership at commit, not proof that a later block or unblock did not occur.
+  bool blocked = 2;
+}

@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "tinkle/v1/bot_types.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Refresh GetCommands for the exact authorized scope and language.
+message BotCommandsChanged {
+  // Bot whose commands changed.
+  int64 bot_id = 1;
+  // Same selector as GetCommands; disclose only to authorized recipients.
+  BotCommandScope scope = 2;
+  // Empty for the default language.
+  string lang_code = 3;
+}
+
+// Refresh GetMenuButton for this bot and menu scope. A private override must
+// not identify its subject to other users.
+message BotMenuChanged {
+  // Bot whose menu changed.
+  int64 bot_id = 1;
+  // Same selector as GetMenuButton: zero for the global menu.
+  int64 user_id = 2;
+}
+
+// Refresh the bot profile with GetInfo, or its owner-visible username list
+// with GetOwnedBots. The hint carries no localized text or username list.
+message BotChanged {
+  // Bot whose metadata changed.
+  int64 bot_id = 1;
+  // Present for localized info (empty for default language); absent for usernames.
+  optional string lang_code = 2;
+}
+
+// Refresh current permission state; this hint does not grant a permission.
+// The user may query CanSendMessage for their own grant; only the bot owner
+// can recover the requested group and broadcast defaults with GetInfo.
+message BotPermissionsChanged {
+  // Bot whose permission projection should be refreshed.
+  int64 bot_id = 1;
+}

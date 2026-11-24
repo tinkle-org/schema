@@ -6,12 +6,14 @@ import re
 import unittest
 
 import test_files_schema as files
+from update_contract import UPDATE_RESPONSES, current_filename
 from test_thumbnail_schema import THUMBNAILS
 
 
 # Exact RPC additions since the pinned baseline, in owning service order.
 METHODS = {
-    "MessagesService": ["GetChatPhotoUpdate", "CancelChatPhotoUpdate", "GetRoomMembers",
+    "MessagesService": ["SetDraft", "SetDialogPin", "MoveDialogToSpace",
+                        "GetChatPhotoUpdate", "CancelChatPhotoUpdate", "GetRoomMembers",
                         "GetRoomOnlineCount", "GetSendStatus", "CancelSend"],
     "ChannelsService": ["GetPhotoUpdate", "CancelPhotoUpdate"],
     "AccountService": ["GetProfilePhotoUpdate", "CancelProfilePhotoUpdate"],
@@ -69,7 +71,9 @@ class AsyncMediaSchemaTests(files.BufSchemaTestCase):
                 old_oneofs = old.get("oneofDecl", [])
                 self.assertEqual(old_oneofs, new.get("oneofDecl", [])[:len(old_oneofs)], identity)
                 # Empty messages stay empty, rather than acquiring reset placeholders.
-                if not old.get("field"):
+                if not old.get("field") and old["name"] in UPDATE_RESPONSES:
+                    self.assert_fields(old["name"], [("updates", 1, "MESSAGE", "Update", True, False)])
+                elif not old.get("field"):
                     self.assertFalse(new.get("field"), identity)
                 compare_enums(old.get("enumType", []),
                               {e["name"]: e for e in new.get("enumType", [])}, identity + ".")
@@ -81,12 +85,12 @@ class AsyncMediaSchemaTests(files.BufSchemaTestCase):
                 continue
             current = {name.removeprefix("tinkle.v1."): declaration
                        for name, (path, declaration) in self.declarations["message"].items()
-                       if path == proto["name"]}
+                       if path == current_filename(proto["name"], name)}
             compare_messages(proto.get("messageType", []), "tinkle.v1.", current)
             compare_enums(proto.get("enumType", []),
                           {name.removeprefix("tinkle.v1."): declaration
                            for name, (path, declaration) in self.declarations["enum"].items()
-                           if path == proto["name"]}, "tinkle.v1.")
+                           if path == current_filename(proto["name"], name)}, "tinkle.v1.")
             for service in proto.get("service", []):
                 new = self.declarations["service"]["tinkle.v1." + service["name"]][1]
                 old_names = {m["name"] for m in service["method"]}
@@ -125,7 +129,7 @@ class AsyncMediaSchemaTests(files.BufSchemaTestCase):
             ("CreateStickerAsset", 2, "asset_change", "AssetChange"),
             ("UpdateStickerAsset", 2, "asset_change", "AssetChange"),
         ):
-            field = self.descriptor(method + "Response")["field"][-1]
+            field = self.descriptor(method + "Response")["field"][tag - 1]
             self.assertEqual((field_name, tag, ".tinkle.v1." + kind),
                              (field["name"], field["number"], field["typeName"]))
             self.assertNotIn("oneofIndex", field)
@@ -205,7 +209,7 @@ class AsyncMediaSchemaTests(files.BufSchemaTestCase):
             self.assert_fields(cancel + "Request", selectors)
             header = [(status_field, 1, "MESSAGE", status, False, False)]
             self.assert_fields(get + "Response", header + bodies)
-            self.assert_fields(cancel + "Response", header)
+            self.assert_fields(cancel + "Response", header + [("updates", 2, "MESSAGE", "Update", True, False)])
             self.assertFalse(self.descriptor(get + "Response").get("oneofDecl"))
 
     def test_all_states_and_failure_categories_round_trip(self):

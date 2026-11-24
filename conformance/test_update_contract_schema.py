@@ -1,0 +1,256 @@
+"""Public update graph, append-only command replies, and old/new Buf wire checks."""
+
+import json
+import re
+import unittest
+
+import test_files_schema as files
+from test_updates_schema import declarations
+from update_contract import (BASELINE, CASE_FILES, COMMANDS_WITHOUT_UPDATES, UPDATE_FILE,
+                             UPDATE_RESPONSES, current_filename)
+
+
+RESPONSE = "SendMessageResponse"
+
+
+class UpdateContractSchemaTests(files.BufSchemaTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.baseline_path = cls.image_path.with_name("before-updates.json")
+        files.run_buf("build", ".git#ref=" + BASELINE, "--exclude-source-info",
+                      "--as-file-descriptor-set", "-o", str(cls.baseline_path))
+        cls.before = declarations(json.loads(cls.baseline_path.read_bytes()))
+        current = json.loads(cls.image_path.read_bytes())
+        cls.after = {p["name"]: p for p in current["file"]}
+        cls.current = declarations(current)
+
+    def test_legacy_fields_and_file_moves(self):
+        for kind in ("message", "enum"):
+            for name, (old_path, old) in self.before[kind].items():
+                with self.subTest(type=name):
+                    path, current = self.current[kind][name]
+                    self.assertEqual(current_filename(old_path, name), path)
+                    expected = dict(old)
+                    short = name.removeprefix("tinkle.v1.")
+                    fields = old.get("field", [])
+                    if short in UPDATE_RESPONSES:
+                        expected["field"] = [*fields, self.updates_field(len(fields) + 1)]
+                    elif short in ("GetInfoResponse", "OwnedBot"):
+                        # Additional fields are pinned by the bot recovery check below.
+                        current = dict(current, field=current["field"][:len(fields)])
+                    self.assertEqual(expected, current)
+
+    @staticmethod
+    def updates_field(tag):
+        return {"name": "updates", "jsonName": "updates", "number": tag,
+                "label": "LABEL_REPEATED", "type": "TYPE_MESSAGE", "typeName": ".tinkle.v1.Update"}
+
+    def test_only_planned_command_replies_embed_updates(self):
+        actual = [(name.removeprefix("tinkle.v1."), field["name"])
+                  for name, (_, msg) in self.current["message"].items() for field in msg.get("field", [])
+                  if field.get("typeName") == ".tinkle.v1.Update"]
+        self.assertEqual(102, len(UPDATE_RESPONSES))
+        self.assertCountEqual([(name, "updates") for name in UPDATE_RESPONSES], actual)
+
+    def test_update_inventory_accounts_for_rpc_handlers(self):
+        """Review commands by service/method, not just messages whose names end in Response."""
+        outputs = []
+        without_updates = set()
+        reads = ("Get", "List", "Search", "BatchGet", "Check", "CanSend", "Validate", "Observe")
+        for _, service in self.current["service"].values():
+            for method in service["method"]:
+                output = method["outputType"].removeprefix(".tinkle.v1.")
+                if output in UPDATE_RESPONSES:
+                    self.assertFalse(method["name"].startswith(reads), method["name"])
+                    outputs.append(output)
+                elif not method["name"].startswith(reads):
+                    without_updates.add((service["name"], method["name"]))
+        self.assertCountEqual(UPDATE_RESPONSES, outputs)
+        self.assertEqual({(service, method) for service, methods in COMMANDS_WITHOUT_UPDATES.items()
+                          for method in methods.split()}, without_updates)
+
+    def test_baseline_services_and_new_method_signatures(self):
+        services = dict(self.current["service"])
+        key = "tinkle.v1.MessagesService"
+        path, service = services[key]
+        added = {name: {"name": name, "inputType": f".tinkle.v1.{name}Request",
+                        "outputType": f".tinkle.v1.{name}Response"}
+                 for name in ("SetDraft", "SetDialogPin", "MoveDialogToSpace")}
+        methods = service["method"]
+        self.assertCountEqual(added.values(), [m for m in methods if m["name"] in added])
+        services[key] = path, dict(service, method=[m for m in methods if m["name"] not in added])
+        self.assertEqual(self.before["service"], services)
+
+    def test_update_import_graph(self):
+        # Buf rejects import cycles. Check every reachable file, not only direct imports.
+        seen = set()
+        def visit(path):
+            if path not in seen:
+                seen.add(path)
+                self.assertFalse(self.after[path].get("service"), path)
+                for dependency in self.after[path].get("dependency", []):
+                    visit(dependency)
+        visit(UPDATE_FILE)
+
+    def test_update_payloads_are_not_recursive(self):
+        # Imports can be acyclic while two messages in the same file refer to each other.
+        done = set()
+
+        def visit(name, path):
+            self.assertNotIn(name, path, " -> ".join((*path, name)))
+            if name not in done:
+                for field in self.current["message"][name][1].get("field", []):
+                    ref = field.get("typeName", "").lstrip(".")
+                    if ref in self.current["message"]:
+                        visit(ref, (*path, name))
+                done.add(name)
+
+        visit("tinkle.v1.Update", ())
+
+    def test_bot_recovery_projections(self):
+        self.assert_fields("GetInfoResponse", [
+            ("info", 1, "MESSAGE", "BotInfo", False, False),
+            ("group_default_admin_scopes", 2, "MESSAGE", "ChatAdminScopes", False, False),
+            ("broadcast_default_admin_scopes", 3, "MESSAGE", "ChatAdminScopes", False, False)])
+        self.assertEqual(("active_usernames", 4, "LABEL_REPEATED", "TYPE_STRING"),
+                         tuple(self.descriptor("OwnedBot")["field"][3][k]
+                               for k in ("name", "number", "label", "type")))
+        self.assertEqual(4, len(self.descriptor("OwnedBot")["field"]))
+        known_empty = {"groupDefaultAdminScopes": {}, "broadcastDefaultAdminScopes": {}}
+        self.assertEqual(known_empty, self.round_trip(known_empty, "GetInfoResponse"))
+
+    def test_owner_dialog_commands(self):
+        target = ("target", 1, "MESSAGE", "Target", False, False)
+        self.assert_fields("SetDraftRequest", [target, ("draft", 2, "MESSAGE", "DraftMessage", False, False),
+                           ("expected_dialog_id", 3, "INT64", "", False, True),
+                           ("expected_draft_revision", 4, "INT64", "", False, True)])
+        self.assert_fields("SetDialogPinRequest", [target, ("pinned", 2, "BOOL", "", False, False)])
+        self.assert_fields("MoveDialogToSpaceRequest", [target, ("space_id", 2, "INT64", "", False, False)])
+        for method in ("SetDraft", "SetDialogPin", "MoveDialogToSpace"):
+            self.assertEqual([self.updates_field(1)], self.descriptor(method + "Response", files.MESSAGES_FILE)["field"])
+        clear = {"target": {"chatId": "11"}, "expectedDialogId": "9007199254740993", "expectedDraftRevision": "0"}
+        for fixture in (clear, dict(clear, draft={"message": "hello"}), {"target": clear["target"]}):
+            self.assertEqual(fixture, self.round_trip(fixture, "SetDraftRequest"))
+
+    def test_update_surface(self):
+        source = self.after[UPDATE_FILE]
+        self.assertFalse(source.get("service"))
+        self.assertFalse(source.get("enumType"))
+        self.assertEqual(["Update"], [d["name"] for d in source["messageType"]])
+        update = self.descriptor("Update", UPDATE_FILE)
+        self.assertEqual(57, len(CASE_FILES))
+        expected = []
+        for tag, name in enumerate(CASE_FILES, 1):
+            key = re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+            expected.append({"name": key, "jsonName": key, "number": tag, "label": "LABEL_OPTIONAL",
+                             "type": "TYPE_MESSAGE", "typeName": ".tinkle.v1." + name, "oneofIndex": 0})
+        self.assertEqual({"name": "Update", "oneofDecl": [{"name": "change"}], "field": expected}, update)
+        for name, filename in CASE_FILES.items():
+            self.descriptor(name, filename)
+        self.assertNotIn("tinkle.v1.DialogInvalidated", self.current["message"])
+        for name in ("MessageAdded", "MessageEdited"):
+            self.assert_fields(name, [("message", 1, "MESSAGE", "Message", False, False)])
+        target = ("target", 1, "MESSAGE", "Target", False, False)
+        self.assert_fields("MessageAccepted", [target, ("idempotency_key", 2, "INT64", "", False, False),
+                                              ("message_id", 3, "INT64", "", False, False)])
+        self.assert_fields("DialogChanged", [target], "tinkle/v1/dialog_updates.proto")
+
+        self.assert_fields("MessageRemoval", [("message_id", 1, "INT64", "", False, False),
+                           ("scope", 2, "ENUM", "MessageRemovalScope", False, False),
+                           ("message_revision", 3, "INT64", "", False, True)], "tinkle/v1/message_updates.proto")
+        for name, owner, prefix, suffixes in (
+            ("MessageRemovalScope", "message", "MESSAGE_REMOVAL_SCOPE_", ["UNSPECIFIED", "PERSONAL", "EVERYONE"]),
+            ("ReadScope", "dialog", "READ_SCOPE_", ["UNSPECIFIED", "INBOX", "OUTBOX"]),
+        ):
+            path, descriptor = self.current["enum"]["tinkle.v1." + name]
+            self.assertEqual(f"tinkle/v1/{owner}_updates.proto", path)
+            self.assertEqual([{"name": prefix + s, "number": i} for i, s in enumerate(suffixes)], descriptor["value"])
+        people = ("users", 2, "MESSAGE", "User", True, False)
+        rooms = ("chats", 3, "MESSAGE", "Chat", True, False)
+        self.assert_fields(RESPONSE, [("message", 1, "MESSAGE", "Message", False, False), people, rooms,
+                                      ("updates", 4, "MESSAGE", "Update", True, False)],
+                           files.MESSAGES_FILE)
+
+    def test_sender_reply_and_independent_edit(self):
+        # The same sender/target/message, but separate inputs: a stale body does not make
+        # the bodyless receipt stale. Applying these in either order belongs to the SDK.
+        target = {"userId": "22"}
+        body = {"target": target, "fromId": "11", "messageId": "42", "acceptSeq": "8",
+                "message": "first", "bodyRevision": "2", "personalPin": False}
+        receipt = {"target": target, "idempotencyKey": "-9007199254740993", "messageId": "42"}
+        sender = {"message": body, "updates": [
+            {"message_added": {"message": body}}, {"message_accepted": receipt},
+            {"dialog_changed": {"target": target}}]}
+        self.assertEqual(sender, self.round_trip(sender, RESPONSE))
+        edit = {"message_edited": {"message": dict(body, message="edited", bodyRevision="3")}}
+        self.assertEqual(edit, self.round_trip(edit, "Update"))
+
+    def test_peer_projection(self):
+        # The other side of the DM sees the sender as target, not the sender's
+        # target, private pin or receipt. This fixture does not test authorization.
+        target = {"userId": "11"}
+        body = {"target": target, "fromId": "11", "messageId": "42", "acceptSeq": "8",
+                "message": "first", "bodyRevision": "2"}
+        for notification in ({"message_added": {"message": body}}, {"dialog_changed": {"target": target}}):
+            self.assertEqual(notification, self.round_trip(notification, "Update"))
+
+    def test_invalid_update_shapes_and_conflicting_cases(self):
+        conflicting = {"message_added": {}, "message_edited": {}}
+        for message, fixture in (("Update", conflicting), (RESPONSE, {"updates": [conflicting]}),
+                                 (RESPONSE, {"updates": {"updates": []}}), ("Update", {"dialog_changed": []})):
+            with self.subTest(message=message, fixture=fixture):
+                self.assertNotEqual(0, self.convert(fixture, message, check=False).returncode)
+        # Unlike invalid JSON with two alternatives, concatenated binary oneofs use the last case.
+        last = {"reconciliation_required": {}}
+        wire = self.encode({"dialog_changed": {}}, "Update") + self.encode(last, "Update")
+        self.assertEqual(last, self.decode(wire, "Update"))
+
+    def test_unknown_change_does_not_hide_known_siblings(self):
+        # Field 58 is a future length-delimited oneof alternative, unknown to this reader.
+        unknown = bytes.fromhex("d2 03 00")
+        self.assertEqual({}, self.decode(unknown, "Update"))
+        first = {"updates": [{"dialog_changed": {"target": {"chatId": "7"}}}]}
+        last = {"updates": [{"reconciliation_required": {}}]}
+        # Tag 4 contains one Update per occurrence, even for an unrecognized case.
+        wire = self.encode(first, RESPONSE) + b"\x22\x03" + unknown + self.encode(last, RESPONSE)
+        self.assertEqual({"updates": [*first["updates"], {}, *last["updates"]]}, self.decode(wire, RESPONSE))
+        self.assertNotEqual(0, self.convert(b"\x22\x03" + unknown[:-1], RESPONSE, "binpb", "json", check=False).returncode)
+
+    def test_binary_response_compatibility_in_both_directions(self):
+        legacy = {"message": {"messageId": "9007199254740993", "target": {"chatId": "9"}, "fromId": "11",
+                              "message": "hello", "acceptSeq": "8", "bodyRevision": "2"},
+                  "users": [{"data": {"id": "11", "name": "Alice"}}], "chats": [{"chatId": "9", "title": "Room"}]}
+        target = legacy["message"]["target"]
+        operation = {"operationId": "ef01a521-eb3f-4995-af4b-08524880b52a", "success": True,
+                     "completed": False, "processedCount": "17", "offset": 2}
+        contacts = {"importedContacts": [{"userId": "22", "customId": "ok"}],
+                    "retryContacts": [{"customId": "retry"}]}
+        status_hint = {"target": target, "idempotencyKey": "-7", "revision": "1"}
+        for response, result, updates in (
+            (RESPONSE, legacy, [{"message_added": {"message": legacy["message"]}},
+                                {"dialog_changed": {"target": target}}]),
+            ("ImportContactsResponse", contacts, [{"contacts_changed": {}}]),
+            ("DeleteHistoryResponse", operation, [{"history_changed": {"target": target}}]),
+            ("SendMediaResponse", {"sendStatus": dict(status_hint, state="SEND_STATE_PENDING")},
+             [{"send_status_changed": status_hint}]),
+        ):
+            with self.subTest(response=response):
+                old_wire = self.convert(result, response, image_path=self.baseline_path).stdout
+                self.assertEqual(result, self.decode(old_wire, response))
+                self.assertEqual(self.encode(result, response), self.encode(dict(result, updates=[]), response))
+                current = dict(result, updates=updates)
+                wire = self.encode(current, response)
+                self.assertEqual(current, self.decode(wire, response))
+                old_view = self.convert(wire, response, "binpb", "json", image_path=self.baseline_path)
+                self.assertEqual(result, json.loads(old_view.stdout))
+
+    def test_legacy_scheduled_reply_has_no_updates_or_acceptance_position(self):
+        pending = {"message": {"target": {"userId": "22"}, "messageId": "42", "message": "later",
+                               "scheduledState": "MESSAGE_SCHEDULED_STATE_PENDING", "scheduleDate": 1893456000}}
+        wire = self.convert(pending, RESPONSE, image_path=self.baseline_path).stdout
+        self.assertEqual(pending, self.decode(wire, RESPONSE))
+
+
+if __name__ == "__main__":
+    unittest.main()

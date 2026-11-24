@@ -40,7 +40,7 @@ class MessagingOptionsSchemaTests(files.BufSchemaTestCase):
         """The empty request cannot select a different account or follow asset heads."""
         services = self.declarations["service"]
         self.assertEqual(13, len(services))
-        self.assertEqual(219, sum(len(service[1]["method"]) for service in services.values()))
+        self.assertEqual(222, sum(len(service[1]["method"]) for service in services.values()))
         self.assert_fields("GetRecentReactionsRequest", [])
         self.assert_fields("GetRecentReactionsResponse", [
             ("reactions", 1, "MESSAGE", "Reaction", True, False),
@@ -72,10 +72,12 @@ class MessagingOptionsSchemaTests(files.BufSchemaTestCase):
             ("album_id", 6, "INT64", "", False, True),
             ("message", 7, "MESSAGE", "Message", False, False),
         ])
-        for name in ("GetScheduledMessagesResponse", "CancelScheduledMessagesResponse"):
-            self.assert_fields(name, [("messages", 1, "MESSAGE", "ScheduledMessage", True, False)])
+        jobs = ("messages", 1, "MESSAGE", "ScheduledMessage", True, False)
+        updates = ("updates", 2, "MESSAGE", "Update", True, False)
+        self.assert_fields("GetScheduledMessagesResponse", [jobs])
+        self.assert_fields("CancelScheduledMessagesResponse", [jobs, updates])
         self.assert_fields("ClosePollRequest", [target, ("message_id", 2, "INT64", "", False, False)])
-        self.assert_fields("ClosePollResponse", [("message", 1, "MESSAGE", "Message", False, False)])
+        self.assert_fields("ClosePollResponse", [("message", 1, "MESSAGE", "Message", False, False), updates])
         self.assertEqual({"idempotencyKeys": ["-7", "9007199254740993"]}, self.round_trip(
             {"idempotencyKeys": ["-7", "9007199254740993"]}, "GetScheduledMessagesRequest"))
         for state in ("PENDING", "PROCESSING", "DELIVERED", "CANCELED", "FAILED"):
@@ -290,7 +292,8 @@ class MessagingOptionsSchemaTests(files.BufSchemaTestCase):
         for phrase in ("canonical identity", "Retain a nonterminal revision floor", "cached bodies",
                        "file references", "not a viewer deletion", "not permission proof"):
             self.assertIn(phrase, change)
-        hint = text.split("message MessageChanged {", 1)[1].split("\n}", 1)[0]
+        hints = (files.REPO_ROOT / "tinkle/v1/message_updates.proto").read_text()
+        hint = hints.split("message MessageChanged {", 1)[1].split("\n}", 1)[0]
         for phrase in ("non-authoritative hint", "current source", "not permission proof"):
             self.assertIn(phrase, hint)
 
@@ -332,7 +335,8 @@ class MessagingOptionsSchemaTests(files.BufSchemaTestCase):
         reaction = text.split("// SendReactionRequest", 1)[1].split("// GetRecentReactionsRequest", 1)[0]
         for phrase in ("authenticated caller only", "Absence or false", "caller-scoped"):
             self.assertIn(phrase, reaction)
-        effect = text.split("// ReactionEffect is", 1)[1].split("// TypingChanged", 1)[0]
+        hints = (files.REPO_ROOT / "tinkle/v1/message_updates.proto").read_text()
+        effect = hints.split("// ReactionEffect is", 1)[1].split("\n}", 1)[0]
         for phrase in ("current recipient visibility", "never extended", "discard expired"):
             self.assertIn(phrase, effect)
         deletion = text.split("// DeleteHistoryRequest", 1)[1].split("// DeleteHistoryResponse", 1)[0]

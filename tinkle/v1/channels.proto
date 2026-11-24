@@ -8,12 +8,17 @@ package tinkle.v1;
 
 import "google/protobuf/timestamp.proto";
 import "tinkle/v1/common.proto";
+import "tinkle/v1/message_types.proto";
 import "tinkle/v1/messages.proto";
+import "tinkle/v1/update.proto";
 
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
 // ChannelsService provides public-facing channel management operations.
 // All RPCs require an active device-key-authenticated session.
+// For wrapped deletion results, use the outer updates list if nonempty;
+// otherwise handle the nested result as usual. Always consume deletion counts
+// and progress, without applying the same deletion twice.
 service ChannelsService {
   // GetChannels retrieves basic channel info for a list of channel IDs.
   // Missing IDs are silently skipped. Max 100 IDs per request.
@@ -291,6 +296,7 @@ message CreateChannelRequest {
 message CreateChannelResponse {
   // The created channel object.
   Chat chat = 1;
+  repeated Update updates = 2;
 }
 
 // DeleteChannelRequest specifies the channel to delete.
@@ -303,6 +309,7 @@ message DeleteChannelRequest {
 message DeleteChannelResponse {
   // true if the channel was deleted.
   bool success = 1;
+  repeated Update updates = 2;
 }
 
 // =============================================================================
@@ -361,6 +368,7 @@ message EditAdminRequest {
 message EditAdminResponse {
   // true if admin rights were updated.
   bool success = 1;
+  repeated Update updates = 2;
 }
 
 // EditBannedRequest specifies ban/restriction rights to apply.
@@ -377,6 +385,7 @@ message EditBannedRequest {
 message EditBannedResponse {
   // true if banned rights were updated.
   bool success = 1;
+  repeated Update updates = 2;
 }
 
 // DeleteParticipantHistoryRequest specifies whose history to delete.
@@ -391,6 +400,7 @@ message DeleteParticipantHistoryRequest {
 message DeleteParticipantHistoryResponse {
   // Details of the affected message history.
   DeleteHistoryResponse affected = 1;
+  repeated Update updates = 2;
 }
 
 // JoinChannelRequest specifies the channel to join.
@@ -403,6 +413,7 @@ message JoinChannelRequest {
 message JoinChannelResponse {
   // The channel object after joining.
   Chat chat = 1;
+  repeated Update updates = 2;
 }
 
 // LeaveChannelRequest specifies the channel to leave.
@@ -415,6 +426,7 @@ message LeaveChannelRequest {
 message LeaveChannelResponse {
   // true if the caller left the channel.
   bool success = 1;
+  repeated Update updates = 2;
 }
 
 // InviteToChannelRequest specifies users to invite.
@@ -429,6 +441,7 @@ message InviteToChannelRequest {
 message InviteToChannelResponse {
   // Invite outcome with success and failure lists.
   InvitedUsers invited_users = 1;
+  repeated Update updates = 2;
 }
 
 // =============================================================================
@@ -447,6 +460,7 @@ message ToggleParticipantsHiddenRequest {
 message ToggleParticipantsHiddenResponse {
   // true if the toggle was applied.
   bool success = 1;
+  repeated Update updates = 2;
 }
 
 // TogglePreHistoryHiddenRequest specifies pre-join history visibility.
@@ -461,6 +475,7 @@ message TogglePreHistoryHiddenRequest {
 message TogglePreHistoryHiddenResponse {
   // true if the toggle was applied.
   bool success = 1;
+  repeated Update updates = 2;
 }
 
 // =============================================================================
@@ -493,6 +508,7 @@ message ChannelsServiceUpdateUsernameRequest {
 message ChannelsServiceUpdateUsernameResponse {
   // true if the username was assigned.
   bool success = 1;
+  repeated Update updates = 2;
 }
 
 // ChannelsServiceToggleUsernameRequest specifies username activation toggle.
@@ -509,6 +525,7 @@ message ChannelsServiceToggleUsernameRequest {
 message ChannelsServiceToggleUsernameResponse {
   // true if the toggle was applied.
   bool success = 1;
+  repeated Update updates = 2;
 }
 
 // =============================================================================
@@ -527,6 +544,7 @@ message EditTitleRequest {
 message EditTitleResponse {
   // true if the title was updated.
   bool success = 1;
+  repeated Update updates = 2;
 }
 
 // EditPhotoRequest specifies the new channel photo. Capture the current photo
@@ -550,6 +568,7 @@ message EditPhotoResponse {
   bool success = 1;
   // Required for new photos, even immediate success; absent for removal.
   ChannelPhotoUpdate photo_update = 2;
+  repeated Update updates = 3;
 }
 
 // ChannelPhotoUpdateState describes an actor-private channel photo change.
@@ -639,19 +658,7 @@ message CancelPhotoUpdateRequest {
 message CancelPhotoUpdateResponse {
   // Required snapshot with current identity-disclosure policy applied.
   ChannelPhotoUpdate photo_update = 1;
-}
-
-// ChannelPhotoUpdateChanged is an actor-only hint to query GetPhotoUpdate.
-// May duplicate/reorder/disappear; query on reconnect and after an in-flight hint.
-// Representation hints use ChatPhotoRepresentationChanged with this channel's
-// exact Chat.chat_id/photo_id/main; delivery rechecks current channel visibility.
-message ChannelPhotoUpdateChanged {
-  // Exact original channel ID.
-  int64 channel_id = 1;
-  // Original canonical actor-scoped request UUID.
-  string request_id = 2;
-  // Positive hinted status revision, not a durable receipt.
-  uint64 revision = 3;
+  repeated Update updates = 2;
 }
 
 // ToggleSlowModeRequest specifies slow mode duration.
@@ -666,6 +673,7 @@ message ToggleSlowModeRequest {
 message ToggleSlowModeResponse {
   // true if slow mode was toggled.
   bool success = 1;
+  repeated Update updates = 2;
 }
 
 // ToggleJoinRequestRequest specifies join request approval toggle.
@@ -680,6 +688,7 @@ message ToggleJoinRequestRequest {
 message ToggleJoinRequestResponse {
   // true if the toggle was applied.
   bool success = 1;
+  repeated Update updates = 2;
 }
 
 // =============================================================================
@@ -718,6 +727,7 @@ message HideJoinRequestRequest {
 message HideJoinRequestResponse {
   // true if the request was handled.
   bool success = 1;
+  repeated Update updates = 2;
 }
 
 // HideAllJoinRequestsRequest specifies bulk handling.
@@ -732,6 +742,7 @@ message HideAllJoinRequestsRequest {
 message HideAllJoinRequestsResponse {
   // true if all requests were handled.
   bool success = 1;
+  repeated Update updates = 2;
 }
 
 // =============================================================================
@@ -764,6 +775,7 @@ message ReadChannelHistoryRequest {
 message ReadChannelHistoryResponse {
   // true if read position was updated.
   bool success = 1;
+  repeated Update updates = 2;
 }
 
 // DeleteChannelMessagesRequest specifies messages to delete.
@@ -778,6 +790,7 @@ message DeleteChannelMessagesRequest {
 message DeleteChannelMessagesResponse {
   // Details of the affected messages.
   DeleteMessagesResponse affected = 1;
+  repeated Update updates = 2;
 }
 
 // DeleteChannelHistoryRequest specifies history deletion range.
@@ -794,4 +807,5 @@ message DeleteChannelHistoryRequest {
 message DeleteChannelHistoryResponse {
   // true if history was deleted.
   bool success = 1;
+  repeated Update updates = 2;
 }

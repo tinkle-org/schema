@@ -3,6 +3,8 @@ syntax = "proto3";
 
 package tinkle.v1;
 
+import "tinkle/v1/application_updates.proto";
+
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
 // UpdatesService exposes privacy-filtered connectivity to authenticated callers.
@@ -11,20 +13,6 @@ service UpdatesService {
   // ObserveConnectivity returns current privacy-filtered connectivity, then changes.
   // A revision-only change need not emit an observation. There is no retained replay.
   rpc ObserveConnectivity(ObserveConnectivityRequest) returns (stream ObserveConnectivityResponse);
-}
-
-// ConnectivityChanged is a privacy-filtered observation, not a durable Update.
-// It reveals no devices, connection identifiers, last-seen times, or policy reasons.
-message ConnectivityChanged {
-  // user_id is the requested positive user identifier.
-  int64 user_id = 1 [json_name = "user_id"];
-  // online is true only when known and an authorized live connection exists.
-  bool online = 2;
-  // known is false for hidden or unknown state. This retracts previous knowledge;
-  // online must then be false and revision zero. Unknown never proves offline.
-  bool known = 3;
-  // revision is scoped to the connectivity backend generation, not a replay cursor.
-  uint64 revision = 4;
 }
 
 // ObserveConnectivityRequest selects a bounded set of privacy-filtered observations.

@@ -23,6 +23,8 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FILES_FILE = "tinkle/v1/files.proto"
 MEDIA_FILE = "tinkle/v1/media.proto"
+MESSAGES_FILE = "tinkle/v1/messages.proto"
+MESSAGE_TYPES_FILE = "tinkle/v1/message_types.proto"
 
 # base64("x" * 32) — a syntactically valid 32-byte digest for fixtures.
 DIGEST_32 = "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg="
@@ -99,12 +101,12 @@ class BufSchemaTestCase(unittest.TestCase):
             self.assertEqual(filename, actual_filename, name)
         return descriptor
 
-    def convert(self, payload, message_type, source="json", target="binpb", check=True):
+    def convert(self, payload, message_type, source="json", target="binpb", check=True, *, image_path=None):
         encoded_payload = (
             payload if source == "binpb" else json.dumps(payload).encode()
         )
         return run_buf(
-            "convert", f"{self.image_path}#format=json",
+            "convert", f"{image_path or self.image_path}#format=json",
             f"--type=tinkle.v1.{message_type}",
             f"--from=-#format={source}", f"--to=-#format={target}",
             input_bytes=encoded_payload, check=check,
@@ -497,7 +499,7 @@ class FilesSchemaTests(BufSchemaTestCase):
             ("inline_preview", 7, "MESSAGE", "InlinePreview", False, False),
             ("representation_revision", 8, "UINT64", "", False, True),
             ("thumbnail", 9, "MESSAGE", "Thumbnail", False, False),
-        ], "tinkle/v1/messages.proto")
+        ], MESSAGE_TYPES_FILE)
         self.assert_fields("Document", [
             ("id", 1, "INT64", "", False, False),
             ("access_hash", 2, "INT64", "", False, False),
@@ -509,7 +511,7 @@ class FilesSchemaTests(BufSchemaTestCase):
             ("inline_preview", 8, "MESSAGE", "InlinePreview", False, False),
             ("representation_revision", 9, "UINT64", "", False, True),
             ("thumbnail", 10, "MESSAGE", "Thumbnail", False, False),
-        ], "tinkle/v1/messages.proto")
+        ], MESSAGE_TYPES_FILE)
 
     def test_user_photo_and_sticker_fields(self):
         """Expose exactly one thumbnail, never a duplicate sticker thumbnail ID."""

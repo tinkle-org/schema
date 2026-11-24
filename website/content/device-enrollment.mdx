@@ -187,9 +187,9 @@ reconnect, even without a notification. Reconcile sessions and prompts by
 sessions, and clear prompts for resolved sessions or sessions absent from the
 snapshot. Do not duplicate alerts on repeated refreshes or reconnects.
 
-The runtime's general notification mechanism delivers the standalone
-[`SessionChanged`](/schema/reference/messages/SessionChanged) message defined in
-`tinkle/v1/account.proto`. Its `session_id` string field (tag 1) is the changed
+[`SessionChanged`](/schema/reference/messages/SessionChanged), defined in
+`tinkle/v1/account_updates.proto`, is an account-private refresh hint. Its
+`session_id` string field (tag 1) is the changed
 session's neutral UUID, not a credential or proof that the session remains active.
 Publish this refresh hint only after committed activation of a new device session,
 confirmation, revocation, or expiry, and only to authorized sessions of the same

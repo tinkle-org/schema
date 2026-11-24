@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Invalidate the workforce-only GetUserInfo projection for this user. Check
+// workforce authorization at delivery and read; do not include staff notes.
+message WorkforceUserInfoChanged {
+  // Subject of the administrative record, not a delivery address.
+  int64 user_id = 1;
+}
+
+// Refetch GetConfig and GetAppConfig for the current client. A delayed or
+// duplicate hint never supplies configuration values or overrides a fresh read.
+message ConfigurationChanged {}
+
+// ConnectivityChanged is an ephemeral privacy-filtered observation.
+// It reveals no devices, connection identifiers, last-seen times, or policy reasons.
+message ConnectivityChanged {
+  // user_id is the requested positive user identifier.
+  int64 user_id = 1 [json_name = "user_id"];
+  // online is true only when known and an authorized live connection exists.
+  bool online = 2;
+  // known is false for hidden or unknown state. This retracts previous knowledge;
+  // online must then be false and revision zero. Unknown never proves offline.
+  bool known = 3;
+  // revision is scoped to the connectivity backend generation, not a replay cursor.
+  uint64 revision = 4;
+}
+
+// ReconciliationRequired requests current authorized reads for the receiving
+// account. Coalesce repeats, fence by principal and bound each recovery run.
+// Does not establish loss of a specific object or authorize cursor advancement.
+message ReconciliationRequired {}
