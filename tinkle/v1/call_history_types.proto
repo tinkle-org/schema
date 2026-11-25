@@ -1,0 +1,82 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "google/protobuf/timestamp.proto";
+import "tinkle/v1/call_types.proto";
+import "tinkle/v1/common.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Stable identity, not proof of participation or permission to read a call.
+message CallReference {
+  // Exactly one positive ID is required. Equal numbers in different arms
+  // identify different calls; compare both the arm and the value.
+  oneof kind {
+    // One-to-one call ID.
+    int64 call_id = 1;
+    // Group call ID, not the hosting chat ID.
+    int64 group_call_id = 2;
+  }
+}
+
+// The authenticated history owner's role, independent of the terminal outcome.
+enum CallHistoryDirection {
+  // Direction is not disclosed.
+  CALL_HISTORY_DIRECTION_UNSPECIFIED = 0;
+  // The other account initiated the direct call.
+  CALL_HISTORY_DIRECTION_INCOMING = 1;
+  // The owner initiated the direct call.
+  CALL_HISTORY_DIRECTION_OUTGOING = 2;
+  // The owner participated in the group call.
+  CALL_HISTORY_DIRECTION_GROUP = 3;
+}
+
+// One durable terminal record per (account, call reference), shared across
+// that account's devices. Direct calls include unanswered invitations; group
+// calls include only actual participants, not the entire chat membership.
+// Finalize once when the call ends, folding group rejoins into the same row.
+// Expiry of live state, sessions or signaling does not expire history.
+message CallHistoryEntry {
+  // Required stable identity of the ended call.
+  CallReference call = 1;
+  // Other user for a direct call; hosting chat for a group call.
+  Target target = 2;
+  // Relative to the history owner, never the device that fetched this page.
+  CallHistoryDirection direction = 3;
+  // Initial media kind, not evidence that audio or video was captured.
+  CallMediaKind media_kind = 4;
+  // Server creation time of the direct invitation or group call.
+  google.protobuf.Timestamp created_at = 5;
+  // Required owner-visible final outcome and server end time. For group calls
+  // duration counts the owner's connected intervals only, not time away.
+  // An unanswered incoming NO_ANSWER is missed; a losing device on an
+  // answered call does not get a second, missed-call record.
+  CallEnded ended = 6;
+}
+
+// Server-authored terminal conversation item, not a history row, invitation
+// or join handle. Emit at most once per call in its authorized conversation,
+// even on terminal-event retries. This is the whole body: no authored text,
+// entities or media. Clients cannot send, edit or forward it as a call item.
+// Never include participant lists, private feedback, endpoint state or signaling.
+message CallMessageSummary {
+  // Call summarized by this item; confers no additional visibility.
+  CallReference call = 1;
+  // Initial media kind for presentation.
+  CallMediaKind media_kind = 2;
+  // Conversation-visible final outcome and end time. Omit undisclosed reason
+  // or duration; never copy a group participant's private connected duration.
+  CallEnded ended = 3;
+}
+
+// Allowlisted aggregate measurements from the submitting endpoint only.
+// Omission means unmeasured, not zero. At least one measurement is required.
+message CallDiagnostics {
+  // Mean round-trip time during participation, in milliseconds (0..60000).
+  optional uint32 round_trip_ms = 1;
+  // Fraction of expected inbound packets lost, in parts per thousand (0..1000).
+  optional uint32 packet_loss_per_mille = 2;
+  // Mean inbound jitter during participation, in milliseconds (0..60000).
+  optional uint32 jitter_ms = 3;
+}

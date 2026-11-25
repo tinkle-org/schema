@@ -228,8 +228,17 @@ CALL_ADDITIONS.update("tinkle.v1." + name for name in (
     "CallChanged", "CallSignalsAvailable", "CallConnectionRefreshRequired",
     "Call", "CallRinging", "CallConnecting", "CallActive", "CallEnded", "CallEndReason",
     "CallMediaKind", "CallProfile", "CallMediaState", "CallConnectionState",
+    "GroupCall", "GroupCallSettings", "GroupCallParticipant", "GroupCallParticipantRole",
+    "GroupCallParticipantRestrictions", "GroupCallMediaState", "GroupCallInvitation", "GroupCallInvitationState",
+    "GroupCallSession", "GroupCallConnection", "GroupCallTrack", "GroupCallTrack.Source",
+    "CallHistoryEntry", "CallReference", "CallHistoryDirection", "CallMessageSummary", "CallDiagnostics",
+    "CallPresentation", "CallPresentationEndpoint",
 ))
+CALL_ADDITIONS.update("tinkle.v1." + name for name, path in CASE_FILES.items() if path == "tinkle/v1/call_updates.proto")
 CHANGED_DECLARATIONS.difference_update(CALL_ADDITIONS)
+# main may have the original 16 methods. The contract suite checks the entire
+# service against the ordered calls inventory, including its unchanged prefix.
+CHANGED_DECLARATIONS.add("tinkle.v1.CallsService")
 
 # Exact option/collection additions are pinned by test_messaging_options_schema.py.
 CHANGED_DECLARATIONS.update({"tinkle.v1." + name for name in (

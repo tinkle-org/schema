@@ -2,19 +2,24 @@ syntax = "proto3";
 
 package tinkle.v1;
 
+import "tinkle/v1/call_history.proto";
+import "tinkle/v1/call_presentations.proto";
 import "tinkle/v1/call_signaling.proto";
 import "tinkle/v1/call_types.proto";
+import "tinkle/v1/group_call_media.proto";
+import "tinkle/v1/group_calls.proto";
 import "tinkle/v1/update.proto";
 
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
-// One-to-one call control and signaling. Derive account and device from the
+// Direct and room-attached group calls. Derive account and device from the
 // authenticated context; recheck block, PRIVACY_KIND_CALL and session policy
 // on admission and before disclosing state, signals or connection information.
-// One device participates per account per call. Others may see shared state
-// but cannot signal, obtain credentials, change publishing state or hang up.
+// One device participates per account per call. Other devices cannot signal
+// or obtain its credentials. Group management separately requires current
+// room or call permissions; leaving a group call never ends it for everyone.
 service CallsService {
-  // Read the features and bounds applicable to this account and device.
+  // Read the direct-call features and bounds applicable to this account and device.
   rpc GetCallConfiguration(GetCallConfigurationRequest) returns (GetCallConfigurationResponse);
   // Create one invitation and bind its caller endpoint to the initiating device.
   rpc StartCall(StartCallRequest) returns (StartCallResponse);
@@ -46,12 +51,77 @@ service CallsService {
   rpc ReportCallConnectionState(ReportCallConnectionStateRequest) returns (ReportCallConnectionStateResponse);
   // Publish the selected device's own media state; never control the peer's capture.
   rpc SetCallMediaState(SetCallMediaStateRequest) returns (SetCallMediaStateResponse);
+
+  // Create an immediate or scheduled call in a group chat or channel.
+  rpc CreateGroupCall(CreateGroupCallRequest) returns (CreateGroupCallResponse);
+  // Recover shared state and the current account's reminder and join identity.
+  rpc GetGroupCall(GetGroupCallRequest) returns (GetGroupCallResponse);
+  // Discover scheduled and active calls in the selected room.
+  rpc ListGroupCalls(ListGroupCallsRequest) returns (ListGroupCallsResponse);
+  // Admit this device as a new participation after checking current membership.
+  rpc JoinGroupCall(JoinGroupCallRequest) returns (JoinGroupCallResponse);
+  // Leave only the selected participation, without affecting room membership.
+  rpc LeaveGroupCall(LeaveGroupCallRequest) returns (LeaveGroupCallResponse);
+  // End the live call for all participants with room call-management permission.
+  rpc EndGroupCall(EndGroupCallRequest) returns (EndGroupCallResponse);
+  // Open a scheduled call without joining the organizer or reminder subscribers.
+  rpc StartScheduledGroupCall(StartScheduledGroupCallRequest) returns (StartScheduledGroupCallResponse);
+  // Cancel a scheduled call only if it has not started.
+  rpc CancelScheduledGroupCall(CancelScheduledGroupCallRequest) returns (CancelScheduledGroupCallResponse);
+  // Change only this account's reminder preference.
+  rpc SetGroupCallStartReminder(SetGroupCallStartReminderRequest) returns (SetGroupCallStartReminderResponse);
+  // Retrieve the visible live participations explicitly requested.
+  rpc GetGroupCallParticipants(GetGroupCallParticipantsRequest) returns (GetGroupCallParticipantsResponse);
+  // Page through the roster at one revision.
+  rpc ListGroupCallParticipants(ListGroupCallParticipantsRequest) returns (ListGroupCallParticipantsResponse);
+  // Invite eligible users without granting membership or activating media.
+  rpc InviteGroupCallParticipants(InviteGroupCallParticipantsRequest) returns (InviteGroupCallParticipantsResponse);
+  // Decline this account's invitation, not a later reinvitation.
+  rpc DeclineGroupCallInvitation(DeclineGroupCallInvitationRequest) returns (DeclineGroupCallInvitationResponse);
+  // Remove a lower-ranked live participation without removing room membership.
+  rpc RemoveGroupCallParticipant(RemoveGroupCallParticipantRequest) returns (RemoveGroupCallParticipantResponse);
+  // Change the call's displayed title, not the room title.
+  rpc SetGroupCallTitle(SetGroupCallTitleRequest) returns (SetGroupCallTitleResponse);
+  // Change the indicated group-call settings.
+  rpc UpdateGroupCallSettings(UpdateGroupCallSettingsRequest) returns (UpdateGroupCallSettingsResponse);
+  // Change a live participant's call role within the actor's authority.
+  rpc SetGroupCallParticipantRole(SetGroupCallParticipantRoleRequest) returns (SetGroupCallParticipantRoleResponse);
+  // Restrict publishing; lifting restrictions does not start capture.
+  rpc SetGroupCallParticipantRestrictions(SetGroupCallParticipantRestrictionsRequest) returns (SetGroupCallParticipantRestrictionsResponse);
+  // Raise or lower the joined participant's own hand.
+  rpc SetGroupCallHandRaised(SetGroupCallHandRaisedRequest) returns (SetGroupCallHandRaisedResponse);
+  // Recover invitations addressed to this account.
+  rpc ListGroupCallInvitations(ListGroupCallInvitationsRequest) returns (ListGroupCallInvitationsResponse);
+  // Recover this joined device's private relay settings and generation.
+  rpc GetGroupCallConnection(GetGroupCallConnectionRequest) returns (GetGroupCallConnectionResponse);
+  // Exchange a complete offer for an SFU answer and authorized track mapping.
+  rpc NegotiateGroupCallConnection(NegotiateGroupCallConnectionRequest) returns (NegotiateGroupCallConnectionResponse);
+  // Restart negotiation for this participation, not the rest of the room.
+  rpc RestartGroupCallConnection(RestartGroupCallConnectionRequest) returns (RestartGroupCallConnectionResponse);
+  // Report the negotiated tracks actually published by this device.
+  rpc SetGroupCallMediaState(SetGroupCallMediaStateRequest) returns (SetGroupCallMediaStateResponse);
+
+  // Start this endpoint's screen share in an eligible direct or group call.
+  rpc StartCallPresentation(StartCallPresentationRequest) returns (StartCallPresentationResponse);
+  // Stop one exact screen share without ending the containing call.
+  rpc StopCallPresentation(StopCallPresentationRequest) returns (StopCallPresentationResponse);
+  // Recover currently visible presentations without acquiring publishing rights.
+  rpc ListCallPresentations(ListCallPresentationsRequest) returns (ListCallPresentationsResponse);
+  // Page through the current account's terminal call records.
+  rpc ListCallHistory(ListCallHistoryRequest) returns (ListCallHistoryResponse);
+  // Remove selected records for this account only.
+  rpc DeleteCallHistory(DeleteCallHistoryRequest) returns (DeleteCallHistoryResponse);
+  // Privately rate a completed call.
+  rpc SetCallRating(SetCallRatingRequest) returns (SetCallRatingResponse);
+  // Submit consented, bounded endpoint measurements, never arbitrary logs.
+  rpc SubmitCallDiagnostics(SubmitCallDiagnosticsRequest) returns (SubmitCallDiagnosticsResponse);
 }
 
 // Configuration for the authenticated caller; no target selection or credentials.
 message GetCallConfigurationRequest {}
 
-// Current policy. No advertised profile means calling is unavailable.
+// Direct-call policy. No advertised profile means direct calling is unavailable.
+// Group joins use the separate SFU negotiation contract and current room policy.
 message GetCallConfigurationResponse {
   // Profiles this deployment accepts.
   repeated CallProfile profiles = 1;

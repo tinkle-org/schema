@@ -1,8 +1,11 @@
-"""Direct call descriptor and wire checks, not endpoint authorization or ICE tests."""
+"""Direct call wire checks and shared call privacy boundaries; not authorization or ICE tests."""
 
+import json
 import unittest
 
 import test_files_schema as files
+from test_updates_schema import declarations
+from update_contract import CASE_FILES
 
 
 class CallsSchemaTests(files.BufSchemaTestCase):
@@ -21,19 +24,26 @@ class CallsSchemaTests(files.BufSchemaTestCase):
         # Follow message references: a private connection inside a shared call
         # snapshot leaks just as surely as a top-level connection field.
         seen = set()
+        messages = declarations(json.loads(self.image_path.read_bytes()))["message"]
 
         def visit(name):
             if name in seen:
                 return
             seen.add(name)
-            path, message = self.declarations["message"][name]
-            self.assertNotEqual("tinkle/v1/call_signaling.proto", path, name)
+            path, message = messages[name]
+            self.assertNotIn(path, ("tinkle/v1/call_signaling.proto", "tinkle/v1/group_call_media.proto"), name)
+            self.assertNotIn(name, ("tinkle.v1.CallDiagnostics", "tinkle.v1.CallPresentationEndpoint"))
             for field in message.get("field", []):
+                self.assertNotIn(field["name"], {"session_id", "offer_sdp", "answer_sdp", "candidate", "credential",
+                                                 "ice_servers", "mid", "published_mids", "stars", "diagnostics"}, name)
                 if field["type"] == "TYPE_MESSAGE" and field["typeName"].startswith(".tinkle.v1."):
                     visit(field["typeName"].lstrip("."))
 
-        for root in ("GetCallResponse", "ListActiveCallsResponse", "CallChanged",
-                     "CallSignalsAvailable", "CallConnectionRefreshRequired"):
+        changes = [n for n, path in CASE_FILES.items() if path == "tinkle/v1/call_updates.proto"]
+        for root in (*changes, "GetCallResponse", "ListActiveCallsResponse", "GetGroupCallResponse",
+                     "ListGroupCallsResponse", "GetGroupCallParticipantsResponse", "ListGroupCallParticipantsResponse",
+                     "ListGroupCallInvitationsResponse", "ListCallPresentationsResponse", "ListCallHistoryResponse",
+                     "CallMessageSummary"):
             visit("tinkle.v1." + root)
 
     def test_private_connection_round_trip(self):

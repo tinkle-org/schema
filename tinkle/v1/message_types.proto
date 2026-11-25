@@ -4,6 +4,7 @@ syntax = "proto3";
 package tinkle.v1;
 
 import "google/protobuf/timestamp.proto";
+import "tinkle/v1/call_history_types.proto";
 import "tinkle/v1/common.proto";
 import "tinkle/v1/entities.proto";
 import "tinkle/v1/media.proto";
@@ -163,6 +164,9 @@ message Message {
   // this state across principals. Changes use viewer-only ACK markers/hints and
   // caller-relative body revisions; they do not change shared pinned or edit_date.
   optional bool personal_pin = 20;
+  // Server-authored terminal call item instead of text, entities or media.
+  // Never interpret a conversation item as an invitation or restore private history from it.
+  CallMessageSummary call_summary = 21;
 }
 
 // MessageReplyHeader contains reply context for a message.

@@ -66,6 +66,19 @@ GetCallConfiguration StartCall AcknowledgeIncomingCall AcceptCall DeclineCall Ca
 GetCall ListActiveCalls GetCallConnection SendCallSignal ListCallSignals AcknowledgeCallSignals
 RestartCallConnection ReportCallConnectionState SetCallMediaState
 """.split()
+GROUP_CALL_METHODS = """
+CreateGroupCall GetGroupCall ListGroupCalls JoinGroupCall LeaveGroupCall EndGroupCall
+StartScheduledGroupCall CancelScheduledGroupCall SetGroupCallStartReminder GetGroupCallParticipants
+ListGroupCallParticipants InviteGroupCallParticipants DeclineGroupCallInvitation RemoveGroupCallParticipant
+SetGroupCallTitle UpdateGroupCallSettings SetGroupCallParticipantRole SetGroupCallParticipantRestrictions
+SetGroupCallHandRaised ListGroupCallInvitations GetGroupCallConnection NegotiateGroupCallConnection
+RestartGroupCallConnection SetGroupCallMediaState StartCallPresentation StopCallPresentation
+ListCallPresentations ListCallHistory DeleteCallHistory SetCallRating SubmitCallDiagnostics
+""".split()
+CALL_METHODS += GROUP_CALL_METHODS
+PRIVATE_COMMANDS = "NegotiateGroupCallConnection SetCallRating SubmitCallDiagnostics"
+UPDATE_RESPONSES.update(method + "Response" for method in GROUP_CALL_METHODS
+                        if not method.startswith(("Get", "List")) and method not in PRIVATE_COMMANDS.split())
 UPDATE_RESPONSES.update(method + "Response" for method in (
     "StartCall", "AcceptCall", "DeclineCall", "CancelCall", "EndCall",
     "RestartCallConnection", "ReportCallConnectionState", "SetCallMediaState"))
@@ -80,7 +93,7 @@ COMMANDS_WITHOUT_UPDATES = {
                      "EditMessageMedia EditMessageReplyMarkup DeleteMessage BanChatParticipant UnbanChatParticipant "
                      "RestrictChatParticipant PromoteChatParticipant LeaveChat SetWebhook DeleteWebhook AnswerCallbackQuery",
     "BotsService": "SendCustomRequest AnswerWebhookQuery",
-    "CallsService": "AcknowledgeIncomingCall SendCallSignal AcknowledgeCallSignals",
+    "CallsService": "AcknowledgeIncomingCall SendCallSignal AcknowledgeCallSignals " + PRIVATE_COMMANDS,
     "ConnectionService": "InitConnect KeepAlive",
     "FilesService": "BeginUpload UploadPart CompleteUpload AbortUpload DownloadPart",
     "HelpService": "SaveAppLog AcceptTermsOfService",
@@ -111,6 +124,8 @@ CASE_LEAVES = [
     ("chat", "RoomOnlineCountChanged"),
     ("application", "ConfigurationChanged WorkforceUserInfoChanged ReconciliationRequired"),
     ("call", "CallChanged CallSignalsAvailable CallConnectionRefreshRequired"),
+    ("call", "GroupCallChanged GroupCallParticipantsChanged GroupCallInvitationChanged GroupCallStartReminderChanged "
+             "CallPresentationChanged CallHistoryChanged GroupCallAccessChanged"),
 ]
 CASE_FILES = {name: f"tinkle/v1/{domain}_updates.proto"
               for domain, names in CASE_LEAVES for name in names.split()}

@@ -11,6 +11,8 @@ from update_contract import (BASELINE, CALL_METHODS, CASE_FILES, COMMANDS_WITHOU
 
 
 RESPONSE = "SendMessageResponse"
+CALL_SUMMARY_FIELD = {"name": "call_summary", "jsonName": "callSummary", "number": 21,
+                     "label": "LABEL_OPTIONAL", "type": "TYPE_MESSAGE", "typeName": ".tinkle.v1.CallMessageSummary"}
 
 
 class UpdateContractSchemaTests(files.BufSchemaTestCase):
@@ -28,14 +30,16 @@ class UpdateContractSchemaTests(files.BufSchemaTestCase):
         cls.after = {p["name"]: p for p in current["file"]}
         cls.current = declarations(current)
 
-    def test_pre_call_messages_and_enums_are_unchanged_except_update_choices(self):
+    def test_pre_call_baseline_only_appends_to_message_and_update(self):
         before = declarations(json.loads(self.pre_call_path.read_bytes()))
         for kind in ("message", "enum"):
             for name, (old_path, old) in before[kind].items():
                 path, current = self.current[kind][name]
                 if name == "tinkle.v1.Update":
-                    # test_update_surface pins the three appended choices as well.
+                    # test_update_surface pins every appended choice.
                     current = dict(current, field=current["field"][:len(old["field"])])
+                elif name == "tinkle.v1.Message":
+                    old = dict(old, field=[*old["field"], CALL_SUMMARY_FIELD])
                 self.assertEqual((old_path, old), (path, current), name)
 
     def test_legacy_fields_and_file_moves(self):
@@ -49,6 +53,8 @@ class UpdateContractSchemaTests(files.BufSchemaTestCase):
                     fields = old.get("field", [])
                     if short in UPDATE_RESPONSES:
                         expected["field"] = [*fields, self.updates_field(len(fields) + 1)]
+                    elif short == "Message":
+                        expected["field"] = [*fields, CALL_SUMMARY_FIELD]
                     elif short in ("GetInfoResponse", "OwnedBot"):
                         # Additional fields are pinned by the bot recovery check below.
                         current = dict(current, field=current["field"][:len(fields)])
@@ -66,7 +72,7 @@ class UpdateContractSchemaTests(files.BufSchemaTestCase):
                 if field.get("typeName") == ".tinkle.v1.Update":
                     self.assertEqual(self.updates_field(field["number"]), field, name)
                     actual.append(name.removeprefix("tinkle.v1."))
-        self.assertEqual(110, len(UPDATE_RESPONSES))
+        self.assertEqual(130, len(UPDATE_RESPONSES))
         self.assertCountEqual(UPDATE_RESPONSES, actual)
 
     def test_update_inventory_accounts_for_rpc_handlers(self):
@@ -159,7 +165,7 @@ class UpdateContractSchemaTests(files.BufSchemaTestCase):
         self.assertFalse(source.get("enumType"))
         self.assertEqual(["Update"], [d["name"] for d in source["messageType"]])
         update = self.descriptor("Update", UPDATE_FILE)
-        self.assertEqual(60, len(CASE_FILES))
+        self.assertEqual(67, len(CASE_FILES))
         expected = []
         for tag, name in enumerate(CASE_FILES, 1):
             key = re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
@@ -168,6 +174,10 @@ class UpdateContractSchemaTests(files.BufSchemaTestCase):
         self.assertEqual({"name": "Update", "oneofDecl": [{"name": "change"}], "field": expected}, update)
         for name, filename in CASE_FILES.items():
             self.descriptor(name, filename)
+        call_file = "tinkle/v1/call_updates.proto"
+        call_changes = [name for name, filename in CASE_FILES.items() if filename == call_file]
+        self.assertEqual(call_changes, [msg["name"] for msg in self.after[call_file]["messageType"]
+                                        if msg["name"] in call_changes])
         self.assertNotIn("tinkle.v1.DialogInvalidated", self.current["message"])
         for name in ("MessageAdded", "MessageEdited"):
             self.assert_fields(name, [("message", 1, "MESSAGE", "Message", False, False)])
@@ -235,6 +245,17 @@ class UpdateContractSchemaTests(files.BufSchemaTestCase):
         old = self.convert(wire, RESPONSE, "binpb", "json", image_path=self.pre_call_path)
         self.assertEqual({"updates": [first, {}, last]}, json.loads(old.stdout))
         self.assertNotEqual(0, self.convert(wire[:-1], RESPONSE, "binpb", "json", check=False).returncode)
+
+    def test_pre_call_reader_keeps_message_fields_and_known_updates(self):
+        message = {"messageId": "9007199254740993", "target": {"chatId": "11"}, "bodyRevision": "1",
+                   "personalPin": False}
+        summary = {"call": {"groupCallId": "37"}, "ended": {"reason": "CALL_END_REASON_COMPLETED"}}
+        known = {"dialog_changed": {"target": {"chatId": "11"}}}
+        current = {"message": dict(message, callSummary=summary), "updates": [{"group_call_changed": {}}, known]}
+        wire = self.encode(current, RESPONSE)
+        self.assertEqual(current, self.decode(wire, RESPONSE))
+        old = self.convert(wire, RESPONSE, "binpb", "json", image_path=self.pre_call_path)
+        self.assertEqual({"message": message, "updates": [{}, known]}, json.loads(old.stdout))
 
     def test_binary_response_compatibility_in_both_directions(self):
         legacy = {"message": {"messageId": "9007199254740993", "target": {"chatId": "9"}, "fromId": "11",

@@ -1,0 +1,158 @@
+// Private WebRTC signaling between one joined device and the group call SFU.
+// Keep session handles, TURN credentials, SDP, candidates and MID mappings out
+// of shared snapshots, updates, notifications and logs. DTLS-SRTP terminates
+// at the SFU; this is not end-to-end encryption between participants.
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "tinkle/v1/call_signaling.proto";
+import "tinkle/v1/update.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Private fence, not a bearer credential. Check all four fields against the
+// authenticated device's current participation at commit, including on retry.
+// Leave, removal or call end revokes the binding. Never retarget a pending
+// command to a recovered or rejoined session, even on the same device.
+message GroupCallSession {
+  // Positive group call ID.
+  int64 group_call_id = 1;
+  // Positive participation ID for this join, never an account ID or reused on rejoin.
+  int64 participant_id = 2;
+  // Opaque server-issued device binding, 1..128 UTF-8 bytes; fresh on rejoin.
+  string session_id = 3;
+  // Positive server-issued connection generation; advances on restart, never wraps.
+  uint64 generation = 4;
+}
+
+// Private relay configuration for the client end of one SFU peer connection.
+message GroupCallConnection {
+  // Required current local session.
+  GroupCallSession session = 1;
+  // 1..8 short-lived TURN entries with the URL, credential and expiry bounds
+  // of CallConnection.IceServer. Read fresh configuration if all have expired.
+  repeated CallConnection.IceServer ice_servers = 2;
+  // Must be true. Set relay-only policy before gathering; never advertise
+  // client host/reflexive addresses or fall back to a direct connection.
+  bool relay_only = 3;
+}
+
+// One unidirectional RTP media section, identified by a=mid, not m-line
+// position, stream label or SSRC. Within a generation a MID stays bound to
+// the same source tuple even if inactive; use a new MID for a new source.
+message GroupCallTrack {
+  // Media source at the publishing participation.
+  enum Source {
+    // Invalid in a mapping, as is an unknown value.
+    SOURCE_UNSPECIFIED = 0;
+    // Main audio.
+    SOURCE_MICROPHONE = 1;
+    // Main video.
+    SOURCE_CAMERA = 2;
+    // Screen video authorized by StartCallPresentation.
+    SOURCE_PRESENTATION_VIDEO = 3;
+    // Optional audio from the same authorized presentation.
+    SOURCE_PRESENTATION_AUDIO = 4;
+  }
+
+  // SDP MID token, 1..16 ASCII bytes; unique in this description.
+  string mid = 1;
+  // Positive publisher participation ID in this call. Self means client
+  // sendonly; another current participation means client recvonly from the SFU.
+  int64 participant_id = 2;
+  // Must match the m-section's audio/video type and authorized source.
+  Source source = 3;
+  // Required only for presentation sources: current presentation ID admitted
+  // for this publisher (1..128 UTF-8 bytes); empty for main audio and video.
+  string presentation_id = 4;
+}
+
+// Recover the authenticated device's existing participation without a private
+// handle. A read cannot join, transfer a session or advance its generation.
+message GetGroupCallConnectionRequest {
+  // Positive group call ID; fail if this device is not currently joined.
+  int64 group_call_id = 1;
+}
+
+// Private result for the participating device only.
+message GetGroupCallConnectionResponse {
+  // Current session and usable relay configuration.
+  GroupCallConnection connection = 1;
+}
+
+// Client offers, SFU answers. Serialize exchanges within one generation. Both
+// descriptions are full JSEP SDP after ICE gathering, with all candidates and
+// a=end-of-candidates for each active ICE transport (including bundled media).
+// No trickle inbox or later candidate messages. ICE restart requires Restart.
+// The SFU checks both publishers' and subscribers' current membership and
+// restrictions and the call's media kind at negotiation and while forwarding.
+// A voice call accepts only microphone sections. Stop disallowed media
+// immediately, including on presentation end, without waiting for a new offer.
+message NegotiateGroupCallConnectionRequest {
+  // Required current session; a stale generation cannot install an offer.
+  GroupCallSession session = 1;
+  // Starts at one per generation. Accept only the next contiguous sequence or
+  // an identical retry of the latest accepted request (same SDP bytes and
+  // mappings). Return its original answer without reapplying; fail if no
+  // longer authorized. Reject conflicts, gaps and superseded sequences.
+  uint64 sequence = 2;
+  // Nonempty private client offer, at most 256 KiB UTF-8, relay candidates only.
+  string offer_sdp = 3;
+  // Complete requested map: one entry per active m-section, at most 128
+  // sections total including inactive ones. Reject missing, duplicate or
+  // inconsistent bindings; a subscription cannot command remote capture.
+  repeated GroupCallTrack tracks = 4;
+}
+
+// Apply only to the matching outstanding offer, once, on the current session.
+// If either side lost negotiation state, restart rather than guessing a sequence.
+message NegotiateGroupCallConnectionResponse {
+  // Session that produced this answer, including its generation.
+  GroupCallSession session = 1;
+  // Echo of the accepted offer sequence.
+  uint64 sequence = 2;
+  // Nonempty private final SFU answer, at most 256 KiB UTF-8.
+  string answer_sdp = 3;
+  // Accepted subset of the offered mappings, unchanged tuples, exactly one
+  // per active answer section. Omitted sources are rejected or inactive;
+  // never substitute another participant under the same MID.
+  repeated GroupCallTrack tracks = 4;
+}
+
+// Compare and replace only this device's current connection. Invalidate the
+// old transport, mappings and pending commands atomically. A duplicate or
+// losing restart fails; recover the winner with Get rather than restarting it.
+message RestartGroupCallConnectionRequest {
+  // Full current session, including the generation to replace.
+  GroupCallSession session = 1;
+}
+
+// The participation remains joined. Start a new peer connection and offer.
+message RestartGroupCallConnectionResponse {
+  // Same participation, higher generation, fresh ICE credentials.
+  GroupCallConnection connection = 1;
+  // Recipient-visible effects only, never private connection data.
+  repeated Update updates = 2;
+}
+
+// Full report of actual local publishing after local capture permission. Stop
+// capture locally without waiting for acknowledgement. This operation neither
+// authorizes presentation nor enables another device's camera or microphone.
+message SetGroupCallMediaStateRequest {
+  // Required current publishing session.
+  GroupCallSession session = 1;
+  // Positive, increasing within this generation's media reports, independent
+  // of offer sequence. Identical latest retry is a no-op; reject stale reports
+  // and conflicting reuse without changing state.
+  uint64 sequence = 2;
+  // Distinct currently published MIDs from the accepted local send map (0..4,
+  // one per source). Empty means nothing published. Reject unauthorized MIDs.
+  repeated string published_mids = 3;
+}
+
+// Public effects of this report; not an instruction to start capture.
+message SetGroupCallMediaStateResponse {
+  // Recipient-visible participant state changes only, never private MIDs.
+  repeated Update updates = 1;
+}

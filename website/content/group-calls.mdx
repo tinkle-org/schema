@@ -1,0 +1,37 @@
+---
+title: Group calls
+description: Join a group call, recover device membership, and negotiate media with the SFU.
+---
+
+# Group calls
+
+`tinkle.v1.CallsService` is the service for both direct and group calls. In a group call, the roster tells you who is participating. It does not give a device the connection details it needs to send or receive media.
+
+## From invitation to participation
+
+- **Schedule or start.** Each call belongs to a group chat or channel. A scheduled call can be started or cancelled; reaching its scheduled time does not start it. A reminder is a personal preference for that call; enabling it does not join the call or guarantee a notification. Even the person who starts a call must join separately.
+- **Invite and join.** An invitation identifies a call the recipient can ask to join. It does not add the recipient to the roster, authorize media, or turn on a device. Joining establishes membership; negotiating the media connection is a separate step.
+- **Recover after disconnect.** If the join reply is lost, use `GetGroupCallConnection` with the call ID on the same device. It returns the current session if the device is still joined; it cannot join on the device's behalf or take over another device's membership. Refresh the call and roster separately for shared state.
+- **Leave or end.** Leaving relinquishes that membership; ending a live call closes it for everyone. A rejoin gets a new `participant_id` even for the same account. Never retry a command aimed at the old participation against the new one.
+
+## Negotiate with the SFU
+
+Each participating device negotiates with a selective forwarding unit (SFU), not with every other participant. Set the relay-only policy before gathering ICE candidates. After gathering completes, send the device's **full SDP offer** and track mappings to `NegotiateGroupCallConnection`. Apply the SFU's **full SDP answer** only to the matching session and offer sequence. Both descriptions include the candidates and end-of-candidates markers; there is no group trickle inbox.
+
+Keep one exchange outstanding at a time. If the reply is lost, retry the latest offer with the same sequence, SDP bytes, and mappings. If negotiation state is lost, use `RestartGroupCallConnection` rather than guessing the next sequence. Restart replaces the device's connection generation without making it leave and rejoin.
+
+In a [direct call](/schema/direct-calls), the original caller offers, the callee answers, and each endpoint trickles typed ICE candidates and end-of-candidates markers to the other. In a group call, DTLS-SRTP terminates at the SFU: media is **not end-to-end encrypted (E2EE)** between participants. Keep SDP, credentials, and track mappings out of shared state and logs.
+
+## Moderation and presentation
+
+Use the roster to distinguish a participant's effective role, restrictions, raised hand, and reported media state. A listener can raise a hand without publishing. Promoting a listener or lifting a mute restriction can permit publishing; it cannot remotely activate the microphone. The same boundary applies to the camera and screen capture.
+
+Voice calls allow microphone audio only. In a video-enabled group call that permits screen sharing, the presenting device obtains local capture permission and submits a fresh presentation ID to `StartCallPresentation`. Negotiate presentation tracks under the admitted ID. Stop forwarding those tracks when the presentation ends; do not wait for another offer. A subscription never instructs the presenter to start capture.
+
+## History and private feedback
+
+`ListCallHistory` reads the authenticated account's terminal direct and group calls. A group entry is for someone who actually participated, not everyone in the room. Rejoins belong to the same entry. `DeleteCallHistory` removes only that account's row across its devices; it does not delete the conversation summary or anyone else's history.
+
+`SetCallRating` sets the participant's private rating. `SubmitCallDiagnostics` requires separate, informed consent for each submission and accepts only the defined aggregate measurements, never raw logs or SDP. Neither rating nor diagnostics appear in shared updates or conversation messages.
+
+This contract does not include recording or shareable call links. See the [generated reference](/schema/reference) for method and field definitions; the schema does not establish runtime availability.

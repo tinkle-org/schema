@@ -5,7 +5,9 @@ description: Start or answer a one-to-one call, exchange signals in order, and r
 
 # Direct calls
 
-`tinkle.v1.CallsService` covers calls between two users. Both participants can see the call snapshot, including each participant's media state. Only the participating endpoints can retrieve their own connection details and incoming signals. Knowing the call ID does not grant endpoint access.
+This guide covers the one-to-one methods of `tinkle.v1.CallsService`. Direct calls use typed trickle ICE signaling between the participating endpoints. For device-initiated negotiation with an SFU on the same service, see [Group calls](/schema/group-calls).
+
+Both participants can see the direct-call snapshot, including each participant's media state. Only the participating endpoints can retrieve their own connection details and incoming signals. Knowing the call ID does not grant endpoint access.
 
 ## Start and answer
 

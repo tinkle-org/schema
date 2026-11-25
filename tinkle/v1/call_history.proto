@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "tinkle/v1/call_history_types.proto";
+import "tinkle/v1/update.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Read only the authenticated account's terminal history. Start a fresh list
+// after reconnect; a page token is not an update or message journal cursor.
+message ListCallHistoryRequest {
+  // Maximum entries to return: omit for 50; reject values outside 1..100.
+  optional uint32 page_size = 1;
+  // Omit on the first page. Otherwise pass the opaque nonempty token from the
+  // preceding page. Reject invalid, expired or cross-account tokens rather
+  // than silently starting over. On expiry restart without a token.
+  optional string page_token = 2;
+}
+
+// Pages traverse the first read's entries in descending ended_at order, then
+// direct before group, then descending numeric call ID. Continue strictly
+// after the previous position even if that row was deleted. Exclude later
+// insertions; recheck visibility and omit rows since deleted on every read.
+message ListCallHistoryResponse {
+  // Authorized, nondeleted rows, at most once per call in this traversal.
+  repeated CallHistoryEntry entries = 1;
+  // Present and nonempty only when another page remains.
+  optional string next_page_token = 2;
+}
+
+// Remove terminal history only for the authenticated owner, across devices.
+// Do not delete conversation messages, other participants' rows or live call
+// state. A deleted row stays deleted across retries, late terminal events,
+// backfills and reconciliation; a message summary cannot recreate it.
+// Clients must not reinsert a removed row from a stale page or live event.
+message DeleteCallHistoryRequest {
+  // 1..100 distinct valid references. Reject an invalid batch before making
+  // changes; a valid reference without a visible terminal row is a no-op.
+  repeated CallReference calls = 1;
+}
+
+// Exact result: each requested reference appears once in exactly one list,
+// in its input order within that list. No counts or inferred deletions.
+message DeleteCallHistoryResponse {
+  // Owner's rows actually removed by this request.
+  repeated CallReference deleted = 1;
+  // No visible row removed: absent, already deleted, nonterminal and
+  // unauthorized references are indistinguishable, including on retries.
+  repeated CallReference unavailable = 2;
+  // Committed deletion effects for the owner's devices only. An unchanged
+  // row emits no effect. Reconcile missed effects via ListCallHistory.
+  repeated Update updates = 3;
+}
+
+// Set the authenticated participant's private rating for their visible
+// terminal history entry. Replace any previous rating for this owner/call;
+// identical retries do not add ratings. Never create or restore history.
+message SetCallRatingRequest {
+  // Required direct or group call; reject unavailable entries without
+  // disclosing whether the call exists for someone else.
+  CallReference call = 1;
+  // Whole stars, inclusive 1..5. Zero (including omission) is invalid.
+  uint32 stars = 2;
+}
+
+// Private acknowledgement only; no rating echoed, shared update or message.
+message SetCallRatingResponse {}
+
+// Submit private quality measurements for this participant's visible ended
+// call. A rating does not imply consent. Never accept raw logs, free text,
+// media, PII, SDP, ICE candidates, addresses, credentials or device IDs.
+// Reject unknown fields recursively (including in call and diagnostics) or
+// discard them before use, storage or forwarding. Never log the raw request.
+message SubmitCallDiagnosticsRequest {
+  // Required reference; verify actual participation by the reporting endpoint.
+  // Return the same unavailable error for unknown, hidden and deleted calls.
+  CallReference call = 1;
+  // Must be true after explicit, informed opt-in for this submission. False
+  // or omitted rejects the submission without retaining measurements.
+  bool consent = 2;
+  // Required, range-checked aggregate. Replace the owner's report for this
+  // call; an identical retry adds nothing and cannot restore deleted history.
+  CallDiagnostics diagnostics = 3;
+}
+
+// Private acknowledgement only; diagnostics never enter history, messages or updates.
+message SubmitCallDiagnosticsResponse {}

@@ -8,6 +8,7 @@ export default {
   'device-enrollment': 'Device Enrollment',
   'applying-updates': 'Applying updates',
   'direct-calls': 'Direct calls',
+  'group-calls': 'Group calls',
   'file-transfers': 'File Transfers',
   reference: 'Reference',
 }

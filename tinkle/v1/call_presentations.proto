@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "google/protobuf/timestamp.proto";
+import "tinkle/v1/call_history_types.proto";
+import "tinkle/v1/call_signaling.proto";
+import "tinkle/v1/group_call_media.proto";
+import "tinkle/v1/update.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Private selector: only the device that owns the current session may publish.
+message CallPresentationEndpoint {
+  // Required current generation. Both arms are authenticated independently of IDs.
+  oneof endpoint {
+    // Selected direct-call device.
+    CallSession direct = 1;
+    // Joined group-call device with presentation permission.
+    GroupCallSession group = 2;
+  }
+}
+
+// Currently authorized screen share, not a credential or proof of capture.
+message CallPresentation {
+  // Direct or group call containing the share.
+  CallReference call = 1;
+  // Stable ID unique within this call; never reused, including after stop.
+  string presentation_id = 2;
+  // Account publishing the share.
+  int64 presenter_user_id = 3;
+  // Present only in a group call: exact join incarnation of the publisher.
+  optional int64 participant_id = 4;
+  // Server time of admission, not first media delivery.
+  google.protobuf.Timestamp started_at = 5;
+}
+
+// At most one active share per endpoint and 32 per call. Obtain local capture
+// consent first; admission does not turn on capture. For an active direct video
+// call, replace the local outgoing video track, never send a second camera or
+// screen track; camera_enabled reports camera capture only. Group endpoints
+// negotiate presentation tracks with the SFU after admission.
+message StartCallPresentationRequest {
+  // Required authorized endpoint; reject a direct voice call or ineligible group role.
+  CallPresentationEndpoint endpoint = 1;
+  // Canonical lowercase UUIDv7 per share. An identical retry on this endpoint
+  // returns its original admission while live; after stop, reject the spent ID.
+  string presentation_id = 2;
+}
+
+// Current admission, delivered only while the caller still has access.
+message StartCallPresentationResponse {
+  // Identity for stopping this share and binding group presentation tracks.
+  CallPresentation presentation = 1;
+  // Visible changes; no private SDP or relay credentials.
+  repeated Update updates = 2;
+}
+
+// Stop capture locally first. May stop only this endpoint's exact share. End,
+// leave, removal or loss of permission also revoke it; none resumes capture.
+message StopCallPresentationRequest {
+  // Required current owner session. Restarting negotiation alone does not start another share.
+  CallPresentationEndpoint endpoint = 1;
+  // An obsolete ID cannot stop a newer share, even on the same endpoint.
+  string presentation_id = 2;
+}
+
+// Result of withdrawing a screen share, not of ending the call.
+message StopCallPresentationResponse {
+  // Recipient-visible effects.
+  repeated Update updates = 1;
+}
+
+// Reauthorize and recover after a missed or duplicated change notification.
+message ListCallPresentationsRequest {
+  // Direct participant's or group member's visible call.
+  CallReference call = 1;
+}
+
+// Complete authorized snapshot; apply only at or above the cached revision.
+message ListCallPresentationsResponse {
+  // Active shares only. A successful empty snapshot means none are visible.
+  repeated CallPresentation presentations = 1;
+  // Per-call monotonically increasing presentation collection revision.
+  uint64 revision = 2;
+}
