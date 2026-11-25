@@ -1,0 +1,146 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "google/protobuf/timestamp.proto";
+import "tinkle/v1/call_types.proto";
+import "tinkle/v1/message_types.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Full room-visible snapshot. No roster, invitation, reminder or endpoint secrets.
+message GroupCall {
+  // Stable positive server ID, never reused, including after cancellation.
+  int64 group_call_id = 1;
+  // Required parent group chat or channel, fixed at creation.
+  RoomQueryTarget target = 2;
+  // Positive, increasing on changes to this snapshot. Not a page cursor.
+  uint64 revision = 3;
+  // Account that created the call. This identity alone does not confer authority.
+  int64 creator_user_id = 4;
+  // UTF-8 title, at most 128 bytes; empty selects the room's display name.
+  string title = 5;
+  // Full effective policy, including server defaults.
+  GroupCallSettings settings = 6;
+  // Server creation time; creating or starting never auto-joins the actor.
+  google.protobuf.Timestamp created_at = 7;
+  // Exactly one state. Scheduled may become live or cancelled; live may only end.
+  oneof state {
+    // Intended start time. Reaching it does not authorize a join or start.
+    google.protobuf.Timestamp scheduled_for = 8;
+    // Actual start time of the live call (possibly with no participants).
+    google.protobuf.Timestamp started_at = 9;
+    // Final outcome of a previously live call.
+    google.protobuf.Timestamp ended_at = 10;
+    // Final outcome of a scheduled call that never started.
+    google.protobuf.Timestamp cancelled_at = 11;
+  }
+  // Current number of live join incarnations; zero outside the live state.
+  uint32 participant_count = 12;
+  // Positive roster revision increasing on join, departure or participant change.
+  uint64 participants_revision = 13;
+  // Immutable group media mode, also used in terminal history and summaries.
+  CallMediaKind media_kind = 14;
+}
+
+// Full call policy. Role, room permissions and individual restrictions still apply.
+message GroupCallSettings {
+  // If true, ordinary joins start as listeners rather than speakers.
+  bool join_as_listener = 1;
+  // Whether otherwise eligible speakers may publish a presentation.
+  bool allow_presentation = 2;
+}
+
+// Effective role within this call, subordinate to current room permissions.
+enum GroupCallParticipantRole {
+  // Unknown; grants no rights and cannot be assigned.
+  GROUP_CALL_PARTICIPANT_ROLE_UNSPECIFIED = 0;
+  // May listen and raise a hand, but not publish.
+  GROUP_CALL_PARTICIPANT_ROLE_LISTENER = 1;
+  // May publish permitted media; no moderation authority.
+  GROUP_CALL_PARTICIPANT_ROLE_SPEAKER = 2;
+  // May moderate listeners and speakers, never a peer or host.
+  GROUP_CALL_PARTICIPANT_ROLE_MODERATOR = 3;
+  // Creator with current room call-management permission; not assignable by RPC.
+  GROUP_CALL_PARTICIPANT_ROLE_HOST = 4;
+}
+
+// Full set of moderator-imposed prohibitions. Lifting one never starts capture.
+message GroupCallParticipantRestrictions {
+  // Prohibit publishing microphone audio.
+  bool microphone_restricted = 1;
+  // Prohibit publishing camera video.
+  bool camera_restricted = 2;
+  // Prohibit publishing presentation media (including its audio).
+  bool presentation_restricted = 3;
+}
+
+// Shared observation of what the participant's own endpoint publishes, bounded
+// by effective permissions. Other participants cannot use this to turn media on.
+message GroupCallMediaState {
+  // Publishing microphone audio.
+  bool microphone_enabled = 1;
+  // Publishing camera video.
+  bool camera_enabled = 2;
+  // Publishing a presentation.
+  bool presentation_enabled = 3;
+}
+
+// Live membership only. At most one participating device per user in a call.
+message GroupCallParticipant {
+  // Parent call identity.
+  int64 group_call_id = 1;
+  // Positive server ID for this join incarnation; never reused within the call.
+  int64 participant_id = 2;
+  // Positive account identity, stable across rejoins; never a mutation selector.
+  int64 user_id = 3;
+  // Positive, increasing on visible changes to this incarnation.
+  uint64 revision = 4;
+  // Server time of this join.
+  google.protobuf.Timestamp joined_at = 5;
+  // Current effective role, not a durable room rank.
+  GroupCallParticipantRole role = 6;
+  // Effective explicit restrictions. Enforce bans even if the user leaves and rejoins.
+  GroupCallParticipantRestrictions restrictions = 7;
+  // Latest effective own media; absent if no state has been reported.
+  GroupCallMediaState media = 8;
+  // Whether this incarnation currently requests the floor.
+  bool hand_raised = 9;
+}
+
+// Private invitation outcome. Only pending invitations can be acted upon.
+enum GroupCallInvitationState {
+  // Unknown; do not notify or act.
+  GROUP_CALL_INVITATION_STATE_UNSPECIFIED = 0;
+  // Outstanding until its deadline or a competing transition.
+  GROUP_CALL_INVITATION_STATE_PENDING = 1;
+  // The invited account joined the call.
+  GROUP_CALL_INVITATION_STATE_ACCEPTED = 2;
+  // Declined by an eligible device of the invited account.
+  GROUP_CALL_INVITATION_STATE_DECLINED = 3;
+  // Deadline elapsed without a decision.
+  GROUP_CALL_INVITATION_STATE_EXPIRED = 4;
+  // Withdrawn by termination, cancellation or loss of eligibility.
+  GROUP_CALL_INVITATION_STATE_REVOKED = 5;
+}
+
+// Account-private snapshot, never embedded in the room-wide call or roster.
+// An invitation is not a room membership, join capability or media credential.
+message GroupCallInvitation {
+  // Parent call identity.
+  int64 group_call_id = 1;
+  // Positive, never-reused invitation identity; a reinvite gets a fresh ID.
+  int64 invitation_id = 2;
+  // Inviting account.
+  int64 inviter_user_id = 3;
+  // Invited account.
+  int64 invitee_user_id = 4;
+  // Positive, increasing on every transition of this invitation.
+  uint64 revision = 5;
+  // Current lifecycle state, independent of notification delivery.
+  GroupCallInvitationState state = 6;
+  // Server issue time.
+  google.protobuf.Timestamp created_at = 7;
+  // Absolute deadline, never extended by a retry.
+  google.protobuf.Timestamp expires_at = 8;
+}

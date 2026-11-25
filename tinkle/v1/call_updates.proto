@@ -1,0 +1,82 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "tinkle/v1/call_history_types.proto";
+import "tinkle/v1/call_types.proto";
+import "tinkle/v1/group_call_types.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Committed snapshot for authorized participant accounts. Merge only a newer
+// revision for this call. On reconnect, check current state before ringing.
+message CallChanged {
+  // Full recipient-authorized snapshot; never contains endpoint secrets.
+  Call call = 1;
+}
+
+// Ephemeral wake-up for the selected recipient device only. Coalesce duplicates;
+// list its unacknowledged inbox on reconnect even if no wake-up arrives.
+message CallSignalsAvailable {
+  // Direct call with pending private signaling.
+  int64 call_id = 1;
+  // Recipient's negotiation generation, not a signal position or receipt.
+  uint64 generation = 2;
+}
+
+// Endpoint-private invalidation, not a command to allocate a new generation.
+message CallConnectionRefreshRequired {
+  // Recover this device's current connection by call ID, if still authorized.
+  int64 call_id = 1;
+  // New generation. Ignore an older hint or a hint for a terminal call.
+  uint64 generation = 2;
+}
+
+// Full room-visible snapshot for an authorized recipient. Merge by call revision.
+message GroupCallChanged {
+  // Shared lifecycle and settings, never reminder preferences or session details.
+  GroupCall group_call = 1;
+}
+
+// Roster invalidation, not a join/leave delta. Refresh from a single current
+// revision, ignoring duplicate or older invalidations for the same call.
+message GroupCallParticipantsChanged {
+  // Authorized group call whose roster changed.
+  int64 group_call_id = 1;
+  // GroupCall.participants_revision after the change.
+  uint64 participants_revision = 2;
+}
+
+// Private to the invitee; a newer revision supersedes the cached invitation.
+message GroupCallInvitationChanged {
+  // Invitation state. Recheck current eligibility and expiry before notifying.
+  GroupCallInvitation invitation = 1;
+}
+
+// Owner-only reminder invalidation. Coalesce then recover via GetGroupCall.
+message GroupCallStartReminderChanged {
+  // Scheduled group call ID.
+  int64 group_call_id = 1;
+  // Owner's reminder revision; discloses nothing to other room members.
+  uint64 revision = 2;
+}
+
+// Refresh visible screen shares using ListCallPresentations. Never start capture.
+message CallPresentationChanged {
+  // Call whose presentation collection changed.
+  CallReference call = 1;
+  // Per-call presentation collection revision, not an endpoint generation.
+  uint64 revision = 2;
+}
+
+// Owner-only invalidation. Coalesce and restart ListCallHistory from page one.
+// Neither this hint nor a history read can ring, join or remove a timeline item.
+message CallHistoryChanged {}
+
+// Private invalidation of this recipient's previous visibility or participation.
+// Stop using cached disclosures and reauthorize independently via GetGroupCall
+// and GetGroupCallConnection. Repeated hints never grant access or rejoin.
+message GroupCallAccessChanged {
+  // Previously known call ID; disclose no newly hidden room state.
+  int64 group_call_id = 1;
+}

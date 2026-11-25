@@ -1,0 +1,366 @@
+// Group call control messages. Resolve the account and device from authentication;
+// check current room membership, visibility, call permissions and applicable
+// block/privacy policy before every effect or disclosure, including retries and
+// continuation pages. Room call management requires current manage_video_chats
+// authority (or room ownership). IDs, keys, invitations and cursors never grant access.
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "google/protobuf/timestamp.proto";
+import "tinkle/v1/group_call_media.proto";
+import "tinkle/v1/group_call_types.proto";
+import "tinkle/v1/message_types.proto";
+import "tinkle/v1/update.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Room call managers only. Persist the key and arguments before the first send.
+// For create, invite and join, scope keys by actor and method, bind the device
+// and exact arguments, and reject conflicting reuse. Keys are canonical lowercase
+// UUIDv7; reject first use in the future or over 24h old. Retain accepted bindings
+// until at least 24h after call termination; expired keys cannot become new work.
+message CreateGroupCallRequest {
+  // Required parent group chat or channel, with exactly one positive ID.
+  RoomQueryTarget target = 1;
+  // At most 128 UTF-8 bytes; empty uses the room's display name.
+  string title = 2;
+  // Optional initial policy. Omission selects room defaults.
+  GroupCallSettings settings = 3;
+  // Absent for immediate live creation; otherwise in the next 365 days at acceptance.
+  google.protobuf.Timestamp scheduled_for = 4;
+  // Fresh key for this intentional creation, shared by all retries.
+  string idempotency_key = 5;
+}
+
+// Identical retry recovers the original ID, never creates, joins or starts again.
+message CreateGroupCallResponse {
+  // Positive server-assigned call ID, usable with GetGroupCall.
+  int64 group_call_id = 1;
+  // Current effects visible to the caller, not a replay of old state.
+  repeated Update updates = 2;
+}
+
+// Recover current state, including terminal snapshots for at least 24h after
+// termination. Unknown/expired/unauthorized lookups disclose no call state.
+message GetGroupCallRequest {
+  // Positive server-assigned group call ID.
+  int64 group_call_id = 1;
+}
+
+// The reminder and last join identity belong only to the authenticated account;
+// do not cache them as part of the room's shared snapshot.
+message GetGroupCallResponse {
+  // Complete current shared snapshot.
+  GroupCall group_call = 1;
+  // Current private subscription, always false once no longer scheduled.
+  bool start_reminder_enabled = 2;
+  // Monotonic per account/call reminder revision; zero for initial false.
+  uint64 start_reminder_revision = 3;
+  // Most recent join ID of this account (including after departure); zero if none.
+  int64 last_participant_id = 4;
+}
+
+// Discover scheduled and live calls in one room, ascending by call ID. For all
+// three list methods, an empty token starts a snapshot. Bind continuation to the
+// caller, method, scope, ordering and collection revision. Reject a stale, expired
+// or mismatched token; discard partial pages and restart, never splice revisions.
+message ListGroupCallsRequest {
+  // Required room, exactly one positive ID.
+  RoomQueryTarget target = 1;
+  // 0 selects 50; otherwise 1..100.
+  uint32 page_size = 2;
+  // Opaque continuation, at most 1024 bytes, returned by this method.
+  string page_token = 3;
+}
+
+// Bounded page; absence from the nonterminal list is not a terminal outcome.
+message ListGroupCallsResponse {
+  // Currently authorized calls in the selected room.
+  repeated GroupCall group_calls = 1;
+  // Positive revision of this visible room collection (including returned bodies).
+  uint64 revision = 2;
+  // Empty only when the snapshot is exhausted.
+  string next_page_token = 3;
+}
+
+// Only a live, eligible, unoccupied account may join. Atomically compare the
+// predecessor, allocate a fresh ID, bind this device and consume any pending invite.
+// A matching retry on the winning device only recovers its own still-live join;
+// once fenced, fail rather than resurrecting it or disclosing a newer session.
+message JoinGroupCallRequest {
+  // Positive live call ID. A join starts with capture and publishing off.
+  int64 group_call_id = 1;
+  // Fresh key per intentional join, even on the same device after leaving.
+  string idempotency_key = 2;
+  // Must match GetGroupCall.last_participant_id for this account; zero on first join.
+  int64 previous_participant_id = 3;
+}
+
+// Session is for the selected device only. Do not send it through shared updates.
+message JoinGroupCallResponse {
+  // Current private endpoint session for this join incarnation.
+  GroupCallSession session = 1;
+  // Committed recipient-visible effects.
+  repeated Update updates = 2;
+}
+
+// Only the joined device can leave its own incarnation. Departure revokes all
+// its generations and is not an instruction to end the call for others.
+message LeaveGroupCallRequest {
+  // Required current authenticated endpoint session; stale sessions cannot leave a rejoin.
+  GroupCallSession session = 1;
+}
+
+// Result of leaving the roster.
+message LeaveGroupCallResponse {
+  // Committed recipient-visible effects.
+  repeated Update updates = 1;
+}
+
+// Current room call manager only. Atomically terminate a live call, revoke all
+// endpoints and pending invitations, and empty the roster. Never ends a scheduled call.
+message EndGroupCallRequest {
+  // Positive live call ID.
+  int64 group_call_id = 1;
+}
+
+// Result of ending the call for everyone.
+message EndGroupCallResponse {
+  // Committed recipient-visible effects.
+  repeated Update updates = 1;
+}
+
+// A current room call manager may start early or late. Start and cancel compete
+// atomically; the loser cannot reinterpret its request against the winning state.
+message StartScheduledGroupCallRequest {
+  // Positive scheduled call ID; starting preserves its identity and clears reminders.
+  int64 group_call_id = 1;
+}
+
+// Starting does not join a device or authorize capture.
+message StartScheduledGroupCallResponse {
+  // Committed recipient-visible effects.
+  repeated Update updates = 1;
+}
+
+// Current room call manager only. Cancel a scheduled call, clear reminders and
+// revoke pending invites. Never cancels or ends an already started call.
+message CancelScheduledGroupCallRequest {
+  // Positive scheduled call ID.
+  int64 group_call_id = 1;
+}
+
+// Result of cancelling before start.
+message CancelScheduledGroupCallResponse {
+  // Committed recipient-visible effects.
+  repeated Update updates = 1;
+}
+
+// Set desired subscription for the authenticated account only, while scheduled.
+// Setting the same value is a no-op; a reminder is not a join or delivery receipt.
+message SetGroupCallStartReminderRequest {
+  // Positive scheduled call ID.
+  int64 group_call_id = 1;
+  // True subscribes; false unsubscribes.
+  bool enabled = 2;
+}
+
+// Read GetGroupCall for private state if the response or notification is missed.
+message SetGroupCallStartReminderResponse {
+  // Caller-private effects; never disclose subscriptions to the room.
+  repeated Update updates = 1;
+}
+
+// Look up explicit live join incarnations; an empty request never lists a roster.
+message GetGroupCallParticipantsRequest {
+  // Positive authorized call ID.
+  int64 group_call_id = 1;
+  // 1..100 distinct positive incarnation IDs from this call, never user IDs.
+  repeated int64 participant_ids = 2;
+}
+
+// Consistent at the reported revision. Omit departed, unknown or invisible IDs.
+message GetGroupCallParticipantsResponse {
+  // Visible live participants in request order; never substitute a newer join.
+  repeated GroupCallParticipant participants = 1;
+  // GroupCall.participants_revision at the read.
+  uint64 participants_revision = 2;
+}
+
+// Recover the visible roster from the beginning, ascending by participant ID.
+message ListGroupCallParticipantsRequest {
+  // Positive authorized call ID.
+  int64 group_call_id = 1;
+  // 0 selects 50; otherwise 1..100.
+  uint32 page_size = 2;
+  // Opaque roster-revision-bound continuation, at most 1024 bytes.
+  string page_token = 3;
+}
+
+// A complete traversal of one revision recovers membership after missed updates.
+message ListGroupCallParticipantsResponse {
+  // Visible live participants; bounded by the requested page size.
+  repeated GroupCallParticipant participants = 1;
+  // GroupCall.participants_revision shared by every page of this traversal.
+  uint64 participants_revision = 2;
+  // Empty at end; restart on an invalidated token.
+  string next_page_token = 3;
+}
+
+// Room call managers or live moderators may invite eligible room members to
+// scheduled or live calls. Check all targets' membership, block and call privacy
+// before atomic acceptance; do not enumerate ineligible users on failure. At most
+// one pending invite per call/invitee; reuse it without notifying again.
+message InviteGroupCallParticipantsRequest {
+  // Positive nonterminal call ID.
+  int64 group_call_id = 1;
+  // 1..50 distinct positive user IDs, excluding self and current participants.
+  repeated int64 user_ids = 2;
+  // Key bound to this ordered batch. Retry never reissues even a terminal invite.
+  string idempotency_key = 3;
+}
+
+// Accepted identities survive loss of the reply. Retry identical arguments to
+// recover them; authorization is rechecked without issuing new invitations.
+message InviteGroupCallParticipantsResponse {
+  // Stable invitation IDs in the original request order.
+  repeated int64 invitation_ids = 1;
+  // Only effects visible to the inviter, never another account's inbox.
+  repeated Update updates = 2;
+}
+
+// Invited account only. Decline this pending invite, not a later reinvitation;
+// if join won the race, never leave the participant as a side effect.
+message DeclineGroupCallInvitationRequest {
+  // Positive parent call ID.
+  int64 group_call_id = 1;
+  // Positive exact invitation identity.
+  int64 invitation_id = 2;
+}
+
+// Result of declining; clients can recover through ListGroupCallInvitations.
+message DeclineGroupCallInvitationResponse {
+  // Committed recipient-visible effects.
+  repeated Update updates = 1;
+}
+
+// Remove only a live lower-ranked incarnation (host > moderator > speaker/listener).
+// Only hosts and moderators may target another participant; no self, peer or
+// superior moderation. Room call-management authority for lifecycle operations
+// does not bypass roster rank. Recheck both ranks and identity atomically.
+message RemoveGroupCallParticipantRequest {
+  // Moderator's required current endpoint session, identifying the live call.
+  GroupCallSession session = 1;
+  // Positive target incarnation, never a user ID; revoke all its endpoint generations.
+  int64 participant_id = 2;
+}
+
+// Removal is not a room ban. A later permitted join must be a new incarnation.
+message RemoveGroupCallParticipantResponse {
+  // Committed recipient-visible effects.
+  repeated Update updates = 1;
+}
+
+// Current room call manager only, while scheduled or live.
+message SetGroupCallTitleRequest {
+  // Positive nonterminal call ID.
+  int64 group_call_id = 1;
+  // Desired full title, at most 128 UTF-8 bytes; empty clears the override.
+  string title = 2;
+}
+
+// Result of changing the display title.
+message SetGroupCallTitleResponse {
+  // Committed recipient-visible effects.
+  repeated Update updates = 1;
+}
+
+// Current room call manager only, while scheduled or live. Enforce tightened
+// policy immediately on existing publishers; relaxing policy never starts media.
+message UpdateGroupCallSettingsRequest {
+  // Positive nonterminal call ID.
+  int64 group_call_id = 1;
+  // Required complete replacement; omission is invalid, not a reset to defaults.
+  GroupCallSettings settings = 2;
+  // Required positive GroupCall.revision; refetch on a concurrent change.
+  uint64 expected_revision = 3;
+}
+
+// Result of replacing the effective call policy.
+message UpdateGroupCallSettingsResponse {
+  // Committed recipient-visible effects.
+  repeated Update updates = 1;
+}
+
+// Joined host or moderator only. Target and assigned role must both be strictly
+// below the actor. Never self-promote, assign host, or grant room authority.
+// Enforce a demotion immediately; leaving and rejoining cannot undo a demotion.
+message SetGroupCallParticipantRoleRequest {
+  // Moderator's required current endpoint session, identifying the live call.
+  GroupCallSession session = 1;
+  // Positive live target incarnation, never a user ID.
+  int64 participant_id = 2;
+  // Desired listener, speaker or moderator role within the actor's authority.
+  GroupCallParticipantRole role = 3;
+}
+
+// Result of assigning a role, not a command to start media.
+message SetGroupCallParticipantRoleResponse {
+  // Committed recipient-visible effects.
+  repeated Update updates = 1;
+}
+
+// Joined host or moderator only, against a strictly lower-ranked participant.
+// Reject absent restrictions. Stop prohibited publication immediately; clearing a
+// restriction never unmutes, enables camera or starts a presentation remotely.
+message SetGroupCallParticipantRestrictionsRequest {
+  // Moderator's required current endpoint session, identifying the live call.
+  GroupCallSession session = 1;
+  // Positive live target incarnation; never retarget a departure to its successor.
+  int64 participant_id = 2;
+  // Required complete desired restrictions.
+  GroupCallParticipantRestrictions restrictions = 3;
+}
+
+// Result of updating moderator-imposed publishing restrictions.
+message SetGroupCallParticipantRestrictionsResponse {
+  // Committed recipient-visible effects.
+  repeated Update updates = 1;
+}
+
+// Own participating device only. This desired state belongs to one incarnation;
+// a hand raise grants no role, permission to publish, or local capture instruction.
+message SetGroupCallHandRaisedRequest {
+  // Current authenticated endpoint session, never another participant's ID.
+  GroupCallSession session = 1;
+  // True raises; false lowers.
+  bool hand_raised = 2;
+}
+
+// Result of changing one's own hand state.
+message SetGroupCallHandRaisedResponse {
+  // Committed recipient-visible effects.
+  repeated Update updates = 1;
+}
+
+// Recover the authenticated account's incoming invitations across visible rooms,
+// including retained terminal outcomes (at least 24h after decision). Newest first
+// by creation time, then descending invitation ID. No invitee selector or roster scan.
+message ListGroupCallInvitationsRequest {
+  // 0 selects 50; otherwise 1..100.
+  uint32 page_size = 1;
+  // Opaque account/inbox-revision-bound continuation, at most 1024 bytes.
+  string page_token = 2;
+}
+
+// Private inbox page. Only a pending, unexpired invitation is actionable; after
+// retention expires absence means unknown, not an implicit decline or acceptance.
+message ListGroupCallInvitationsResponse {
+  // Currently authorized invitation snapshots, not evidence of notification receipt.
+  repeated GroupCallInvitation invitations = 1;
+  // Positive revision of this account's visible invitation collection.
+  uint64 revision = 2;
+  // Empty at end; restart on an invalidated token.
+  string next_page_token = 3;
+}

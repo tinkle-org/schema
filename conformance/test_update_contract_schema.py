@@ -6,11 +6,13 @@ import unittest
 
 import test_files_schema as files
 from test_updates_schema import declarations
-from update_contract import (BASELINE, CASE_FILES, COMMANDS_WITHOUT_UPDATES, UPDATE_FILE,
-                             UPDATE_RESPONSES, current_filename)
+from update_contract import (BASELINE, CALL_METHODS, CASE_FILES, COMMANDS_WITHOUT_UPDATES,
+                             PRE_CALL_BASELINE, UPDATE_FILE, UPDATE_RESPONSES, current_filename)
 
 
 RESPONSE = "SendMessageResponse"
+CALL_SUMMARY_FIELD = {"name": "call_summary", "jsonName": "callSummary", "number": 21,
+                     "label": "LABEL_OPTIONAL", "type": "TYPE_MESSAGE", "typeName": ".tinkle.v1.CallMessageSummary"}
 
 
 class UpdateContractSchemaTests(files.BufSchemaTestCase):
@@ -21,9 +23,24 @@ class UpdateContractSchemaTests(files.BufSchemaTestCase):
         files.run_buf("build", ".git#ref=" + BASELINE, "--exclude-source-info",
                       "--as-file-descriptor-set", "-o", str(cls.baseline_path))
         cls.before = declarations(json.loads(cls.baseline_path.read_bytes()))
+        cls.pre_call_path = cls.image_path.with_name("before-calls.json")
+        files.run_buf("build", ".git#ref=" + PRE_CALL_BASELINE, "--exclude-source-info",
+                      "--as-file-descriptor-set", "-o", str(cls.pre_call_path))
         current = json.loads(cls.image_path.read_bytes())
         cls.after = {p["name"]: p for p in current["file"]}
         cls.current = declarations(current)
+
+    def test_pre_call_baseline_only_appends_to_message_and_update(self):
+        before = declarations(json.loads(self.pre_call_path.read_bytes()))
+        for kind in ("message", "enum"):
+            for name, (old_path, old) in before[kind].items():
+                path, current = self.current[kind][name]
+                if name == "tinkle.v1.Update":
+                    # test_update_surface pins every appended choice.
+                    current = dict(current, field=current["field"][:len(old["field"])])
+                elif name == "tinkle.v1.Message":
+                    old = dict(old, field=[*old["field"], CALL_SUMMARY_FIELD])
+                self.assertEqual((old_path, old), (path, current), name)
 
     def test_legacy_fields_and_file_moves(self):
         for kind in ("message", "enum"):
@@ -36,6 +53,8 @@ class UpdateContractSchemaTests(files.BufSchemaTestCase):
                     fields = old.get("field", [])
                     if short in UPDATE_RESPONSES:
                         expected["field"] = [*fields, self.updates_field(len(fields) + 1)]
+                    elif short == "Message":
+                        expected["field"] = [*fields, CALL_SUMMARY_FIELD]
                     elif short in ("GetInfoResponse", "OwnedBot"):
                         # Additional fields are pinned by the bot recovery check below.
                         current = dict(current, field=current["field"][:len(fields)])
@@ -47,11 +66,14 @@ class UpdateContractSchemaTests(files.BufSchemaTestCase):
                 "label": "LABEL_REPEATED", "type": "TYPE_MESSAGE", "typeName": ".tinkle.v1.Update"}
 
     def test_only_planned_command_replies_embed_updates(self):
-        actual = [(name.removeprefix("tinkle.v1."), field["name"])
-                  for name, (_, msg) in self.current["message"].items() for field in msg.get("field", [])
-                  if field.get("typeName") == ".tinkle.v1.Update"]
-        self.assertEqual(102, len(UPDATE_RESPONSES))
-        self.assertCountEqual([(name, "updates") for name in UPDATE_RESPONSES], actual)
+        actual = []
+        for name, (_, msg) in self.current["message"].items():
+            for field in msg.get("field", []):
+                if field.get("typeName") == ".tinkle.v1.Update":
+                    self.assertEqual(self.updates_field(field["number"]), field, name)
+                    actual.append(name.removeprefix("tinkle.v1."))
+        self.assertEqual(130, len(UPDATE_RESPONSES))
+        self.assertCountEqual(UPDATE_RESPONSES, actual)
 
     def test_update_inventory_accounts_for_rpc_handlers(self):
         """Review commands by service/method, not just messages whose names end in Response."""
@@ -80,6 +102,10 @@ class UpdateContractSchemaTests(files.BufSchemaTestCase):
         methods = service["method"]
         self.assertCountEqual(added.values(), [m for m in methods if m["name"] in added])
         services[key] = path, dict(service, method=[m for m in methods if m["name"] not in added])
+        calls = {"name": "CallsService", "method": [
+            {"name": m, "inputType": f".tinkle.v1.{m}Request", "outputType": f".tinkle.v1.{m}Response"}
+            for m in CALL_METHODS]}
+        self.assertEqual(("tinkle/v1/calls.proto", calls), services.pop("tinkle.v1.CallsService"))
         self.assertEqual(self.before["service"], services)
 
     def test_update_import_graph(self):
@@ -139,7 +165,7 @@ class UpdateContractSchemaTests(files.BufSchemaTestCase):
         self.assertFalse(source.get("enumType"))
         self.assertEqual(["Update"], [d["name"] for d in source["messageType"]])
         update = self.descriptor("Update", UPDATE_FILE)
-        self.assertEqual(57, len(CASE_FILES))
+        self.assertEqual(67, len(CASE_FILES))
         expected = []
         for tag, name in enumerate(CASE_FILES, 1):
             key = re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
@@ -148,6 +174,10 @@ class UpdateContractSchemaTests(files.BufSchemaTestCase):
         self.assertEqual({"name": "Update", "oneofDecl": [{"name": "change"}], "field": expected}, update)
         for name, filename in CASE_FILES.items():
             self.descriptor(name, filename)
+        call_file = "tinkle/v1/call_updates.proto"
+        call_changes = [name for name, filename in CASE_FILES.items() if filename == call_file]
+        self.assertEqual(call_changes, [msg["name"] for msg in self.after[call_file]["messageType"]
+                                        if msg["name"] in call_changes])
         self.assertNotIn("tinkle.v1.DialogInvalidated", self.current["message"])
         for name in ("MessageAdded", "MessageEdited"):
             self.assert_fields(name, [("message", 1, "MESSAGE", "Message", False, False)])
@@ -206,16 +236,26 @@ class UpdateContractSchemaTests(files.BufSchemaTestCase):
         wire = self.encode({"dialog_changed": {}}, "Update") + self.encode(last, "Update")
         self.assertEqual(last, self.decode(wire, "Update"))
 
-    def test_unknown_change_does_not_hide_known_siblings(self):
-        # Field 58 is a future length-delimited oneof alternative, unknown to this reader.
-        unknown = bytes.fromhex("d2 03 00")
-        self.assertEqual({}, self.decode(unknown, "Update"))
-        first = {"updates": [{"dialog_changed": {"target": {"chatId": "7"}}}]}
-        last = {"updates": [{"reconciliation_required": {}}]}
-        # Tag 4 contains one Update per occurrence, even for an unrecognized case.
-        wire = self.encode(first, RESPONSE) + b"\x22\x03" + unknown + self.encode(last, RESPONSE)
-        self.assertEqual({"updates": [*first["updates"], {}, *last["updates"]]}, self.decode(wire, RESPONSE))
-        self.assertNotEqual(0, self.convert(b"\x22\x03" + unknown[:-1], RESPONSE, "binpb", "json", check=False).returncode)
+    def test_pre_call_reader_preserves_known_siblings(self):
+        first = {"dialog_changed": {"target": {"chatId": "7"}}}
+        last = {"reconciliation_required": {}}
+        current = {"updates": [first, {"call_changed": {}}, last]}
+        wire = self.encode(current, RESPONSE)
+        self.assertEqual(current, self.decode(wire, RESPONSE))
+        old = self.convert(wire, RESPONSE, "binpb", "json", image_path=self.pre_call_path)
+        self.assertEqual({"updates": [first, {}, last]}, json.loads(old.stdout))
+        self.assertNotEqual(0, self.convert(wire[:-1], RESPONSE, "binpb", "json", check=False).returncode)
+
+    def test_pre_call_reader_keeps_message_fields_and_known_updates(self):
+        message = {"messageId": "9007199254740993", "target": {"chatId": "11"}, "bodyRevision": "1",
+                   "personalPin": False}
+        summary = {"call": {"groupCallId": "37"}, "ended": {"reason": "CALL_END_REASON_COMPLETED"}}
+        known = {"dialog_changed": {"target": {"chatId": "11"}}}
+        current = {"message": dict(message, callSummary=summary), "updates": [{"group_call_changed": {}}, known]}
+        wire = self.encode(current, RESPONSE)
+        self.assertEqual(current, self.decode(wire, RESPONSE))
+        old = self.convert(wire, RESPONSE, "binpb", "json", image_path=self.pre_call_path)
+        self.assertEqual({"message": message, "updates": [{}, known]}, json.loads(old.stdout))
 
     def test_binary_response_compatibility_in_both_directions(self):
         legacy = {"message": {"messageId": "9007199254740993", "target": {"chatId": "9"}, "fromId": "11",

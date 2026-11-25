@@ -1,0 +1,100 @@
+// Private, ephemeral WebRTC signaling for a direct call. Keep session IDs,
+// TURN credentials, SDP and candidates out of shared call state, push
+// notifications and logs.
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Identifies one participating device's session, not the remote peer's.
+// Possession grants no access. On every send, read and delivery, verify the
+// current authenticated device, its call membership and the active generation.
+message CallSession {
+  // Positive direct-call ID, shared by the two participants.
+  int64 call_id = 1;
+  // Nonempty opaque server-issued ID bound to the participating device.
+  string session_id = 2;
+  // Positive server-issued epoch. A replacement fences the old generation;
+  // never apply its signals or reuse its cursor in the replacement session.
+  uint64 generation = 3;
+}
+
+// Private ICE configuration issued only to the device identified by session.
+message CallConnection {
+  // TURN endpoints sharing one short-lived credential and deadline.
+  message IceServer {
+    // 1..8 turn: or turns: URLs, at most 2048 UTF-8 bytes each.
+    repeated string urls = 1;
+    // Nonempty TURN username, at most 512 UTF-8 bytes.
+    string username = 2;
+    // Nonempty TURN password, at most 512 UTF-8 bytes.
+    string credential = 3;
+    // Required absolute credential deadline. Never use an expired entry.
+    google.protobuf.Timestamp expires_at = 4;
+  }
+
+  // Required current local session.
+  CallSession session = 1;
+  // 1..8 server entries. Obtain fresh credentials if none remain usable.
+  repeated IceServer ice_servers = 2;
+  // Must be true. Set ICE transport policy to relay before gathering; never
+  // advertise non-relay candidates (including in SDP) or fall back to direct ICE.
+  bool relay_only = 3;
+}
+
+// Exactly one JSEP description (RFC 9429) or Trickle ICE event (RFC 8838).
+// Apply descriptions in signaling-state order. Apply trickle events only to
+// their matching remote description, in sender order and without duplicates.
+message CallSignalPayload {
+  // Identifies an SDP media section and its ICE generation. At least one of
+  // mid and line is required; if both are present they must agree.
+  message IceTarget {
+    // Nonempty SDP media identification tag when present.
+    optional string mid = 1;
+    // Zero-based SDP m-line index; zero selects the first section.
+    optional uint32 line = 2;
+    // Required ICE username fragment from the originating description. Start
+    // a new session generation before negotiating a restart with fresh credentials.
+    string ufrag = 3;
+  }
+
+  // One trickled relay candidate for a specific ICE transport and generation.
+  message Candidate {
+    // Required candidate attribute starting with "candidate:" (no "a=").
+    string candidate = 1;
+    // Required association with the description that produced this candidate.
+    IceTarget target = 2;
+  }
+
+  // Missing or unrecognized cases must not be applied.
+  oneof kind {
+    // Nonempty SDP of a JSEP offer.
+    string offer = 1;
+    // Nonempty SDP of a final JSEP answer.
+    string answer = 2;
+    // One candidate; an empty candidate is not an end marker.
+    Candidate candidate = 3;
+    // Gathering is complete for this transport and ICE generation. Do not
+    // send further candidates for it; this does not end the call.
+    IceTarget end_of_candidates = 4;
+  }
+}
+
+// One private inbound signal. Deliver only to the currently authorized
+// recipient device, never to all devices of either participant.
+message CallSignal {
+  // Required recipient session; the server determines it from call state.
+  CallSession session = 1;
+  // Positive server-assigned receive position, strictly increasing within
+  // this recipient session generation. The sending operation's sequence orders
+  // and deduplicates submissions from the sender; it is not a receive cursor.
+  // A redelivery retains its position. Apply each position at most once.
+  uint64 position = 2;
+  // Required event from the other authorized participant's device.
+  CallSignalPayload payload = 3;
+  // Required absolute deadline. Discard at expiry; retries do not extend it.
+  google.protobuf.Timestamp expires_at = 4;
+}

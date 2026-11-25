@@ -1,0 +1,379 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "tinkle/v1/call_history.proto";
+import "tinkle/v1/call_presentations.proto";
+import "tinkle/v1/call_signaling.proto";
+import "tinkle/v1/call_types.proto";
+import "tinkle/v1/group_call_media.proto";
+import "tinkle/v1/group_calls.proto";
+import "tinkle/v1/update.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Direct and room-attached group calls. Derive account and device from the
+// authenticated context; recheck block, PRIVACY_KIND_CALL and session policy
+// on admission and before disclosing state, signals or connection information.
+// One device participates per account per call. Other devices cannot signal
+// or obtain its credentials. Group management separately requires current
+// room or call permissions; leaving a group call never ends it for everyone.
+service CallsService {
+  // Read the direct-call features and bounds applicable to this account and device.
+  rpc GetCallConfiguration(GetCallConfigurationRequest) returns (GetCallConfigurationResponse);
+  // Create one invitation and bind its caller endpoint to the initiating device.
+  rpc StartCall(StartCallRequest) returns (StartCallResponse);
+  // Record receipt on an eligible callee device; does not answer or imply attention.
+  rpc AcknowledgeIncomingCall(AcknowledgeIncomingCallRequest) returns (AcknowledgeIncomingCallResponse);
+  // Atomically claim an unexpired invitation for the authenticated callee device.
+  rpc AcceptCall(AcceptCallRequest) returns (AcceptCallResponse);
+  // Decline for the callee account, but only while the call is unanswered.
+  rpc DeclineCall(DeclineCallRequest) returns (DeclineCallResponse);
+  // Withdraw the originating device's invitation only if still unanswered.
+  rpc CancelCall(CancelCallRequest) returns (CancelCallResponse);
+  // End an accepted call for both accounts; revoke signaling and credentials.
+  rpc EndCall(EndCallRequest) returns (EndCallResponse);
+  // Recover a current snapshot, including a retained terminal outcome.
+  rpc GetCall(GetCallRequest) returns (GetCallResponse);
+  // Recover all currently relevant nonterminal direct calls without replaying invitations.
+  rpc ListActiveCalls(ListActiveCallsRequest) returns (ListActiveCallsResponse);
+  // Recover this selected device's session and relay credentials without restarting ICE.
+  rpc GetCallConnection(GetCallConnectionRequest) returns (GetCallConnectionResponse);
+  // Queue one generation-bound event for the other selected device only.
+  rpc SendCallSignal(SendCallSignalRequest) returns (SendCallSignalResponse);
+  // Read a bounded prefix of the recipient device's unacknowledged inbox.
+  rpc ListCallSignals(ListCallSignalsRequest) returns (ListCallSignalsResponse);
+  // Acknowledge a contiguous prefix accepted by the local media engine.
+  rpc AcknowledgeCallSignals(AcknowledgeCallSignalsRequest) returns (AcknowledgeCallSignalsResponse);
+  // Replace the current generation for both endpoints; old signals cannot cross over.
+  rpc RestartCallConnection(RestartCallConnectionRequest) returns (RestartCallConnectionResponse);
+  // Report a local observation; this does not authorize or revive participation.
+  rpc ReportCallConnectionState(ReportCallConnectionStateRequest) returns (ReportCallConnectionStateResponse);
+  // Publish the selected device's own media state; never control the peer's capture.
+  rpc SetCallMediaState(SetCallMediaStateRequest) returns (SetCallMediaStateResponse);
+
+  // Create an immediate or scheduled call in a group chat or channel.
+  rpc CreateGroupCall(CreateGroupCallRequest) returns (CreateGroupCallResponse);
+  // Recover shared state and the current account's reminder and join identity.
+  rpc GetGroupCall(GetGroupCallRequest) returns (GetGroupCallResponse);
+  // Discover scheduled and active calls in the selected room.
+  rpc ListGroupCalls(ListGroupCallsRequest) returns (ListGroupCallsResponse);
+  // Admit this device as a new participation after checking current membership.
+  rpc JoinGroupCall(JoinGroupCallRequest) returns (JoinGroupCallResponse);
+  // Leave only the selected participation, without affecting room membership.
+  rpc LeaveGroupCall(LeaveGroupCallRequest) returns (LeaveGroupCallResponse);
+  // End the live call for all participants with room call-management permission.
+  rpc EndGroupCall(EndGroupCallRequest) returns (EndGroupCallResponse);
+  // Open a scheduled call without joining the organizer or reminder subscribers.
+  rpc StartScheduledGroupCall(StartScheduledGroupCallRequest) returns (StartScheduledGroupCallResponse);
+  // Cancel a scheduled call only if it has not started.
+  rpc CancelScheduledGroupCall(CancelScheduledGroupCallRequest) returns (CancelScheduledGroupCallResponse);
+  // Change only this account's reminder preference.
+  rpc SetGroupCallStartReminder(SetGroupCallStartReminderRequest) returns (SetGroupCallStartReminderResponse);
+  // Retrieve the visible live participations explicitly requested.
+  rpc GetGroupCallParticipants(GetGroupCallParticipantsRequest) returns (GetGroupCallParticipantsResponse);
+  // Page through the roster at one revision.
+  rpc ListGroupCallParticipants(ListGroupCallParticipantsRequest) returns (ListGroupCallParticipantsResponse);
+  // Invite eligible users without granting membership or activating media.
+  rpc InviteGroupCallParticipants(InviteGroupCallParticipantsRequest) returns (InviteGroupCallParticipantsResponse);
+  // Decline this account's invitation, not a later reinvitation.
+  rpc DeclineGroupCallInvitation(DeclineGroupCallInvitationRequest) returns (DeclineGroupCallInvitationResponse);
+  // Remove a lower-ranked live participation without removing room membership.
+  rpc RemoveGroupCallParticipant(RemoveGroupCallParticipantRequest) returns (RemoveGroupCallParticipantResponse);
+  // Change the call's displayed title, not the room title.
+  rpc SetGroupCallTitle(SetGroupCallTitleRequest) returns (SetGroupCallTitleResponse);
+  // Change the indicated group-call settings.
+  rpc UpdateGroupCallSettings(UpdateGroupCallSettingsRequest) returns (UpdateGroupCallSettingsResponse);
+  // Change a live participant's call role within the actor's authority.
+  rpc SetGroupCallParticipantRole(SetGroupCallParticipantRoleRequest) returns (SetGroupCallParticipantRoleResponse);
+  // Restrict publishing; lifting restrictions does not start capture.
+  rpc SetGroupCallParticipantRestrictions(SetGroupCallParticipantRestrictionsRequest) returns (SetGroupCallParticipantRestrictionsResponse);
+  // Raise or lower the joined participant's own hand.
+  rpc SetGroupCallHandRaised(SetGroupCallHandRaisedRequest) returns (SetGroupCallHandRaisedResponse);
+  // Recover invitations addressed to this account.
+  rpc ListGroupCallInvitations(ListGroupCallInvitationsRequest) returns (ListGroupCallInvitationsResponse);
+  // Recover this joined device's private relay settings and generation.
+  rpc GetGroupCallConnection(GetGroupCallConnectionRequest) returns (GetGroupCallConnectionResponse);
+  // Exchange a complete offer for an SFU answer and authorized track mapping.
+  rpc NegotiateGroupCallConnection(NegotiateGroupCallConnectionRequest) returns (NegotiateGroupCallConnectionResponse);
+  // Restart negotiation for this participation, not the rest of the room.
+  rpc RestartGroupCallConnection(RestartGroupCallConnectionRequest) returns (RestartGroupCallConnectionResponse);
+  // Report the negotiated tracks actually published by this device.
+  rpc SetGroupCallMediaState(SetGroupCallMediaStateRequest) returns (SetGroupCallMediaStateResponse);
+
+  // Start this endpoint's screen share in an eligible direct or group call.
+  rpc StartCallPresentation(StartCallPresentationRequest) returns (StartCallPresentationResponse);
+  // Stop one exact screen share without ending the containing call.
+  rpc StopCallPresentation(StopCallPresentationRequest) returns (StopCallPresentationResponse);
+  // Recover currently visible presentations without acquiring publishing rights.
+  rpc ListCallPresentations(ListCallPresentationsRequest) returns (ListCallPresentationsResponse);
+  // Page through the current account's terminal call records.
+  rpc ListCallHistory(ListCallHistoryRequest) returns (ListCallHistoryResponse);
+  // Remove selected records for this account only.
+  rpc DeleteCallHistory(DeleteCallHistoryRequest) returns (DeleteCallHistoryResponse);
+  // Privately rate a completed call.
+  rpc SetCallRating(SetCallRatingRequest) returns (SetCallRatingResponse);
+  // Submit consented, bounded endpoint measurements, never arbitrary logs.
+  rpc SubmitCallDiagnostics(SubmitCallDiagnosticsRequest) returns (SubmitCallDiagnosticsResponse);
+}
+
+// Configuration for the authenticated caller; no target selection or credentials.
+message GetCallConfigurationRequest {}
+
+// Direct-call policy. No advertised profile means direct calling is unavailable.
+// Group joins use the separate SFU negotiation contract and current room policy.
+message GetCallConfigurationResponse {
+  // Profiles this deployment accepts.
+  repeated CallProfile profiles = 1;
+  // Initial modes the caller may request.
+  repeated CallMediaKind media_kinds = 2;
+  // Ringing interval in seconds; the snapshot's absolute deadline is authoritative.
+  uint32 ringing_timeout_seconds = 3;
+  // Initial establishment interval after acceptance, in seconds.
+  uint32 connecting_timeout_seconds = 4;
+  // Maximum serialized CallSignalPayload size in bytes.
+  uint32 max_signal_bytes = 5;
+  // Maximum number of pending signals per recipient generation.
+  uint32 max_pending_signals = 6;
+  // Maximum unacknowledged signal lifetime, in seconds.
+  uint32 signal_ttl_seconds = 7;
+  // Admission bound, not a truncation limit for ListActiveCalls.
+  uint32 max_active_calls = 8;
+}
+
+// Persist the request before sending. An identical retained retry from this
+// device returns the original ID without ringing again. Different arguments or
+// another device reusing the same account-scoped key must fail.
+message StartCallRequest {
+  // A different user's positive account ID.
+  int64 callee_id = 1;
+  // Required advertised initial mode.
+  CallMediaKind requested_media = 2;
+  // Required advertised profile implemented by this device.
+  CallProfile profile = 3;
+  // Canonical lowercase UUIDv7 generated once per intentional dial. First use
+  // must be within 24h of its embedded time; reject future or expired keys.
+  // Retain accepted mappings while live and at least 24h after termination.
+  string idempotency_key = 4;
+}
+
+// The accepted identity is stable even if a retry finds the call already ended.
+message StartCallResponse {
+  // Positive server-assigned call ID.
+  int64 call_id = 1;
+  // Current recipient-visible effects, not a replay of stale ringing state.
+  repeated Update updates = 2;
+}
+
+// Receipt from this device for an unexpired invitation to its account.
+message AcknowledgeIncomingCallRequest {
+  // Invited call ID.
+  int64 call_id = 1;
+}
+
+// No private participation or control rights are granted by this receipt.
+message AcknowledgeIncomingCallResponse {}
+
+// Only the first successful acceptance wins. Repeating on the winner while
+// live recovers its current session; competing devices get no session.
+message AcceptCallRequest {
+  // Unexpired incoming call ID.
+  int64 call_id = 1;
+  // Must match the invitation and be supported by the accepting endpoint.
+  CallProfile profile = 2;
+}
+
+// Route session to the local call controller, not the shared update processor.
+message AcceptCallResponse {
+  // Answering device's private session.
+  CallSession session = 1;
+  // Shared state changes, including transition out of ringing for other devices.
+  repeated Update updates = 2;
+}
+
+// Competing answer or expiry makes decline fail without affecting an accepted call.
+message DeclineCallRequest {
+  // Incoming call ID.
+  int64 call_id = 1;
+}
+
+// Result of declining the invitation for all callee devices.
+message DeclineCallResponse {
+  // Recipient-visible terminal state.
+  repeated Update updates = 1;
+}
+
+// A cancel that races and loses to acceptance fails; never reinterpret it as EndCall.
+message CancelCallRequest {
+  // Outgoing call ID.
+  int64 call_id = 1;
+}
+
+// Result of withdrawing an unanswered invitation.
+message CancelCallResponse {
+  // Recipient-visible terminal state.
+  repeated Update updates = 1;
+}
+
+// Only a selected endpoint may end its connecting or active call.
+message EndCallRequest {
+  // Accepted call ID; authenticating the participating device is still required.
+  int64 call_id = 1;
+}
+
+// Result of hanging up. Once ended, no signal, restart or report can revive a call.
+message EndCallResponse {
+  // Recipient-visible terminal state.
+  repeated Update updates = 1;
+}
+
+// Read-only lookup; an unknown or expired key cannot create an invitation.
+message GetCallRequest {
+  // Exactly one authorized lookup key is required.
+  oneof selector {
+    // Participant-visible call ID, retained for at least 24h after termination.
+    int64 call_id = 1;
+    // Initiating device's original StartCall key; same retention as the call.
+    string idempotency_key = 2;
+  }
+}
+
+// Authorized shared state, never private media parameters.
+message GetCallResponse {
+  // Current full snapshot; unavailable or unauthorized lookups disclose no state.
+  Call call = 1;
+}
+
+// List only the authenticated account's calls, including unanswered invitations.
+message ListActiveCallsRequest {}
+
+// Complete bounded snapshot at read time; read GetCall for a missing known ID.
+message ListActiveCallsResponse {
+  // Incoming, outgoing, connecting and active calls; never terminal history.
+  repeated Call calls = 1;
+}
+
+// Recover by call ID even when a start/accept response or refresh hint was lost.
+message GetCallConnectionRequest {
+  // Call already accepted by the selected devices.
+  int64 call_id = 1;
+}
+
+// Only the authenticated participating endpoint may consume this response.
+message GetCallConnectionResponse {
+  // Current session and private relay configuration. A read does not advance generation.
+  CallConnection connection = 1;
+}
+
+// Per endpoint/generation send sequences start at one and are contiguous. Send
+// in order. A retained identical retry succeeds without enqueueing twice;
+// reject gaps and conflicting reuse. Never enqueue a previously accepted
+// sequence even after its payload expires; restart if deduplication is uncertain.
+message SendCallSignalRequest {
+  // Required current local session. The server derives sender and recipient.
+  CallSession session = 1;
+  // Next sender sequence, independent of the peer's inbox position.
+  uint64 sequence = 2;
+  // One bounded event. Caller offers once, callee answers once per generation;
+  // each sends its own description before its candidates or end markers.
+  CallSignalPayload payload = 3;
+}
+
+// Successful enqueue or identical retry, not peer delivery or processing.
+message SendCallSignalResponse {
+  // Accepted sender sequence.
+  uint64 sequence = 1;
+}
+
+// Repeat after each acknowledgement until empty. Listing is not destructive.
+message ListCallSignalsRequest {
+  // Required current recipient session and generation.
+  CallSession session = 1;
+}
+
+// Positions start at one and are contiguous. If an unprocessed position has
+// expired or was lost, fail with FAILED_PRECONDITION (restart required) even
+// when the inbox is now empty. Never return a suffix across that gap.
+message ListCallSignalsResponse {
+  // Oldest unacknowledged signals in position order; server may page the prefix.
+  repeated CallSignal signals = 1;
+  // Last server-acknowledged contiguous position; zero if none.
+  uint64 acknowledged_through = 2;
+}
+
+// Advance only after the engine accepts every event through the position. On
+// uncertain engine state restart instead of skipping or reapplying an event.
+message AcknowledgeCallSignalsRequest {
+  // Required current recipient session and generation.
+  CallSession session = 1;
+  // Cumulative position; duplicates are no-ops, values beyond those listed fail.
+  uint64 through_position = 2;
+}
+
+// No shared state effect; acknowledging never extends signal retention.
+message AcknowledgeCallSignalsResponse {}
+
+// Compare-and-swap against the current generation. Concurrent or retried
+// requests for a replaced generation fail; recover with GetCallConnection.
+message RestartCallConnectionRequest {
+  // Required participating session with the generation being replaced.
+  CallSession session = 1;
+}
+
+// Both endpoints now use a new generation, fresh ICE credentials, and empty
+// inboxes. The original caller offers first even when the callee restarted.
+message RestartCallConnectionResponse {
+  // New private parameters for the requesting endpoint only.
+  CallConnection connection = 1;
+  // Applicable endpoint refresh notification, never the peer's private result.
+  repeated Update updates = 2;
+}
+
+// Local media engine observation for this negotiation generation.
+enum CallConnectionState {
+  // Reject as a report.
+  CALL_CONNECTION_STATE_UNSPECIFIED = 0;
+  // Initial negotiation is underway.
+  CALL_CONNECTION_STATE_CONNECTING = 1;
+  // Engine reports an established connection.
+  CALL_CONNECTION_STATE_CONNECTED = 2;
+  // Engine is trying to restore a lost connection.
+  CALL_CONNECTION_STATE_RECONNECTING = 3;
+  // Local connection attempt failed; not a unilateral terminal decision.
+  CALL_CONNECTION_STATE_FAILED = 4;
+}
+
+// Only two current connected observations can establish the call. Reject
+// old-generation reports; ignore superseded observations within a generation.
+message ReportCallConnectionStateRequest {
+  // Required reporting endpoint session.
+  CallSession session = 1;
+  // Actual local observation; never a report about the peer.
+  CallConnectionState state = 2;
+  // Positive, increasing within this endpoint/generation's connection reports.
+  uint64 sequence = 3;
+}
+
+// Result of a report, not proof of media delivery.
+message ReportCallConnectionStateResponse {
+  // Shared snapshot if the server committed a visible transition.
+  repeated Update updates = 1;
+}
+
+// Report actual local publishing after native permission checks. A voice call
+// cannot publish video. Revoke capture locally without waiting for a response.
+message SetCallMediaStateRequest {
+  // Required publishing endpoint session.
+  CallSession session = 1;
+  // Required full replacement for this endpoint only; absent does not mean mute.
+  CallMediaState state = 2;
+  // Positive, increasing within this endpoint/generation's media reports.
+  // Ignore stale reports and reject conflicting reuse of the current sequence.
+  uint64 sequence = 3;
+}
+
+// Result of updating the selected participant's publishing state.
+message SetCallMediaStateResponse {
+  // Revised shared snapshot when the visible state changed.
+  repeated Update updates = 1;
+}

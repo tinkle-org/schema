@@ -1,0 +1,37 @@
+---
+title: Direct calls
+description: Start or answer a one-to-one call, exchange signals in order, and recover on the same device.
+---
+
+# Direct calls
+
+This guide covers the one-to-one methods of `tinkle.v1.CallsService`. Direct calls use typed trickle ICE signaling between the participating endpoints. For device-initiated negotiation with an SFU on the same service, see [Group calls](/schema/group-calls).
+
+Both participants can see the direct-call snapshot, including each participant's media state. Only the participating endpoints can retrieve their own connection details and incoming signals. Knowing the call ID does not grant endpoint access.
+
+## Start and answer
+
+1. Read `GetCallConfiguration` for call limits and capabilities. Keep the original start request before sending `StartCall`; retain the call ID as soon as it is known.
+2. A callee device uses `AcknowledgeIncomingCall` to acknowledge the incoming call. This does not answer it or claim the call for that device. Use `AcceptCall` to answer or `DeclineCall` to decline. The caller uses `CancelCall` to withdraw an unanswered call.
+3. Once accepted, each participating device uses `GetCallConnection` for its own session and unexpired TURN credentials. Set the relay-only policy before gathering candidates. Keep session IDs, credentials, SDP, and candidates out of shared state and logs.
+4. Use `ReportCallConnectionState` to report the endpoint's connection state and `SetCallMediaState` to change its participant media state. Use `EndCall` to finish an accepted call.
+
+## Exchange signals within one generation
+
+The **original caller is always the offerer**, even when the callee requests a restart. Each connection generation permits one offer from the caller and one answer from the callee. Do not send a second offer to repair a generation. For the underlying offer/answer model, see [RFC 9429 §3.1](https://www.rfc-editor.org/rfc/rfc9429#section-3.1).
+
+- **Send:** Use `SendCallSignal` with the endpoint's sender sequence for this generation. If the reply is lost, retry the same sequence and payload; do not assign the retry a new sequence. A successful send does not mean the peer's engine accepted the signal.
+- **Receive:** Use `ListCallSignals` to drain the receiving endpoint's bounded inbox in `position` order. This is the recipient's cursor, not the sender sequence. Apply each position at most once. Apply candidates and the end-of-candidates marker to the matching remote description in order ([RFC 8838 §9](https://www.rfc-editor.org/rfc/rfc8838#section-9)).
+- **Acknowledge:** Use `AcknowledgeCallSignals` only through the highest contiguous inbox position accepted by the local engine. If it accepts positions 1 and 2 but cannot yet accept 3, acknowledge through 2, even if 4 is already available. Listing a signal is not acceptance.
+- **Restart:** If a required position is missing from the retained inbox, do not skip or acknowledge the gap. Use `RestartCallConnection`, fetch the current connection, and negotiate in the new generation. Discard old-generation signals and keep their acknowledgments out of the new inbox.
+
+## Recover a lost reply or a disconnected endpoint
+
+| Situation | What to do |
+| --- | --- |
+| Lost `StartCall` reply | Look up the original `idempotency_key` with `GetCall` on the originating device. An identical `StartCall` retry during retention returns the same ID. If the recovery window has passed, report the outcome as unknown; only an intentional redial uses a new key. Do not infer the outcome from `ListActiveCalls`: the call may already have ended. |
+| Lost `AcceptCall` reply | On the device that attempted acceptance, use `GetCall` by call ID for shared state and `GetCallConnection` for that device's endpoint. An accepted snapshot alone does not prove this device won: another callee device may have answered first. |
+| Reconnect | Use `ListActiveCalls` to discover current calls and `GetCall` to refresh a known ID. On the same participating device, recover the connection by call ID with `GetCallConnection`. Resume the current generation only if the engine state and contiguous inbox position still match; otherwise restart. Do not use another device's endpoint state. |
+| Competing transitions | If acceptance races another answer, a decline, or cancellation, read the current call instead of acting on reply arrival order. A late ringing snapshot must not reopen a terminal call. If both endpoints request a restart, fetch the current generation rather than negotiating against a stale one. |
+
+Recovery does not require a live update. `CallChanged` carries shared state; `CallSignalsAvailable` and `CallConnectionRefreshRequired` prompt endpoint reads. They carry no signal bodies or credentials. See [Applying updates](/schema/applying-updates) for reply handling and the [schema reference](/schema/reference) for request and response fields.

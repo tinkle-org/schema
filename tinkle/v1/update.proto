@@ -5,6 +5,7 @@ package tinkle.v1;
 import "tinkle/v1/account_updates.proto";
 import "tinkle/v1/application_updates.proto";
 import "tinkle/v1/bot_updates.proto";
+import "tinkle/v1/call_updates.proto";
 import "tinkle/v1/chat_updates.proto";
 import "tinkle/v1/contact_updates.proto";
 import "tinkle/v1/dialog_updates.proto";
@@ -88,5 +89,15 @@ message Update {
     ConfigurationChanged configuration_changed = 55 [json_name = "configuration_changed"];
     WorkforceUserInfoChanged workforce_user_info_changed = 56 [json_name = "workforce_user_info_changed"];
     ReconciliationRequired reconciliation_required = 57 [json_name = "reconciliation_required"];
+    CallChanged call_changed = 58 [json_name = "call_changed"];
+    CallSignalsAvailable call_signals_available = 59 [json_name = "call_signals_available"];
+    CallConnectionRefreshRequired call_connection_refresh_required = 60 [json_name = "call_connection_refresh_required"];
+    GroupCallChanged group_call_changed = 61 [json_name = "group_call_changed"];
+    GroupCallParticipantsChanged group_call_participants_changed = 62 [json_name = "group_call_participants_changed"];
+    GroupCallInvitationChanged group_call_invitation_changed = 63 [json_name = "group_call_invitation_changed"];
+    GroupCallStartReminderChanged group_call_start_reminder_changed = 64 [json_name = "group_call_start_reminder_changed"];
+    CallPresentationChanged call_presentation_changed = 65 [json_name = "call_presentation_changed"];
+    CallHistoryChanged call_history_changed = 66 [json_name = "call_history_changed"];
+    GroupCallAccessChanged group_call_access_changed = 67 [json_name = "group_call_access_changed"];
   }
 }

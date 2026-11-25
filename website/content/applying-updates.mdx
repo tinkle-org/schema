@@ -5,7 +5,7 @@ description: Apply typed command replies, order recipient-specific changes, and 
 
 # Applying updates
 
-`tinkle/v1/update.proto` defines a single `Update` for one recipient. Its `change` oneof has 57 cases. A live delivery can carry one `Update`; 102 command reply types declare `repeated Update updates` directly. Neither path uses a wrapper or a shared collection of related entities.
+`tinkle/v1/update.proto` defines `Update` for one recipient. Its `change` oneof identifies the kind of change. A live delivery can carry one `Update`; command replies that include changes declare `repeated Update updates` directly. Neither path uses a wrapper or a shared collection of related entities.
 
 Select the current wire contract explicitly before decoding a live `Update`. The retired replay-era `tinkle.v1.Update` has the same name but a different wire format. Never infer the contract from payload bytes or a successful parse, and never decode a stored legacy record as a current update.
 
@@ -34,6 +34,8 @@ See the [descriptor-generated reference](/schema/reference) for the payloads and
 | --- | --- |
 | Messages and dialogs | Merge `MessageAdded` and `MessageEdited` by body revision. `MessageAccepted` settles the sender's key without a body and proves neither delivery nor a read. `dialog_changed` (`DialogChanged`) requests `GetDialogs`; it does not report deletion, a counter delta, or a draft clear. |
 | Rooms and channels | After membership, rights, or moderation changes, refresh visible details through `GetChatDetails`, `GetFullChannel`, or the relevant participant or join-request read. On `ConversationAccessChanged`, stop using cached disclosures until the source reauthorizes access. |
+| Direct calls | Merge `CallChanged` as a shared call snapshot, including participant media state. `CallSignalsAvailable` tells only the receiving endpoint to read its inbox; `CallConnectionRefreshRequired` tells only the affected endpoint to refresh its connection. None carries signaling payloads or credentials. See [Direct calls](/schema/direct-calls). |
+| Group calls | Refresh the visible call and roster after missed changes. Recover the device's own membership separately; a roster entry does not authorize an SFU connection. See [Group calls](/schema/group-calls). |
 | Accounts and contacts | Refresh the viewer's permitted profile or selected photo. Settings, session review, the full gallery, contacts, and blocked peers are owner-scoped. For example, a block changes the caller's `GetBlocked` result; it does not notify the blocked user. |
 | Stickers and media | Distinguish changes to an asset or pack from the caller's installed, recent, or favorite lists. Resolve an exact asset version rather than substituting the latest head; a representation hint calls for a current read. |
 | Bots and application data | Refetch commands for the indicated bot, scope, and language. Bot owners recover admin defaults with `GetInfo` and active usernames with `GetOwnedBots`. Workforce notes remain staff-only. A configuration hint requests fresh configuration; it supplies no values. |

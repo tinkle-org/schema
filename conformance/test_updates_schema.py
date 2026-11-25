@@ -17,7 +17,7 @@ import unittest
 from test_contract_completion import FIELD_NAMES, RPC_NAMES
 from test_files_schema import reset_descriptor_numbers
 from test_thumbnail_schema import THUMBNAILS
-from update_contract import APPLICATION_UPDATES_FILE, UPDATE_RESPONSES, CASE_FILES, current_filename
+from update_contract import APPLICATION_UPDATES_FILE, CALL_METHODS, CASE_FILES, UPDATE_RESPONSES, current_filename
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -218,6 +218,28 @@ CHANGED_DECLARATIONS.update({"tinkle.v1." + name for name in (
 CHANGED_DECLARATIONS.update("tinkle.v1." + name for name in UPDATE_RESPONSES)
 CHANGED_DECLARATIONS.update("tinkle.v1." + name for name in CASE_FILES)
 
+# New call declarations may be absent on origin/main; don't exclude whole files
+# or stop comparing these declarations once main contains them.
+CALL_ADDITIONS = {"tinkle.v1." + method + suffix
+                 for method in CALL_METHODS for suffix in ("Request", "Response")}
+CALL_ADDITIONS.update("tinkle.v1." + name for name in (
+    "CallsService", "CallSession", "CallConnection", "CallConnection.IceServer", "CallSignal",
+    "CallSignalPayload", "CallSignalPayload.IceTarget", "CallSignalPayload.Candidate",
+    "CallChanged", "CallSignalsAvailable", "CallConnectionRefreshRequired",
+    "Call", "CallRinging", "CallConnecting", "CallActive", "CallEnded", "CallEndReason",
+    "CallMediaKind", "CallProfile", "CallMediaState", "CallConnectionState",
+    "GroupCall", "GroupCallSettings", "GroupCallParticipant", "GroupCallParticipantRole",
+    "GroupCallParticipantRestrictions", "GroupCallMediaState", "GroupCallInvitation", "GroupCallInvitationState",
+    "GroupCallSession", "GroupCallConnection", "GroupCallTrack", "GroupCallTrack.Source",
+    "CallHistoryEntry", "CallReference", "CallHistoryDirection", "CallMessageSummary", "CallDiagnostics",
+    "CallPresentation", "CallPresentationEndpoint",
+))
+CALL_ADDITIONS.update("tinkle.v1." + name for name, path in CASE_FILES.items() if path == "tinkle/v1/call_updates.proto")
+CHANGED_DECLARATIONS.difference_update(CALL_ADDITIONS)
+# main may have the original 16 methods. The contract suite checks the entire
+# service against the ordered calls inventory, including its unchanged prefix.
+CHANGED_DECLARATIONS.add("tinkle.v1.CallsService")
+
 # Exact option/collection additions are pinned by test_messaging_options_schema.py.
 CHANGED_DECLARATIONS.update({"tinkle.v1." + name for name in (
     "CreateChatRequest", "AddChatParticipantRequest", "ReactionEffect",
@@ -363,7 +385,8 @@ class ConnectivitySchemaTests(unittest.TestCase):
                         if d[0] not in REPLACED_FILES | CHANGED_FILES
                         and n not in CHANGED_DECLARATIONS}
             current = {n: d for n, d in self.current[kind].items()
-                       if d[0] not in CHANGED_FILES and n not in CHANGED_DECLARATIONS}
+                       if d[0] not in CHANGED_FILES and n not in CHANGED_DECLARATIONS
+                       and (n not in CALL_ADDITIONS or n in self.baseline[kind])}
             self.assertTrue(baseline)
             self.assertEqual(baseline, current, kind)
 
