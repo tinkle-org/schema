@@ -1,0 +1,117 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Initial media requested in the invitation. Neither choice authorizes capture.
+enum CallMediaKind {
+  // Not valid in a start request.
+  CALL_MEDIA_KIND_UNSPECIFIED = 0;
+  // Audio only.
+  CALL_MEDIA_KIND_VOICE = 1;
+  // Audio with optional video; either participant can keep the camera off.
+  CALL_MEDIA_KIND_VIDEO = 2;
+}
+
+// A signaling and media profile supported by both selected devices.
+enum CallProfile {
+  // Unknown or unsupported; do not negotiate.
+  CALL_PROFILE_UNSPECIFIED = 0;
+  // JSEP offer/answer, Trickle ICE over relay candidates, and WebRTC media.
+  CALL_PROFILE_WEBRTC_RELAY_V1 = 1;
+}
+
+// Final server decision, never a device-local "answered elsewhere" notice.
+enum CallEndReason {
+  // The reason was not disclosed.
+  CALL_END_REASON_UNSPECIFIED = 0;
+  // A selected participant ended the accepted call.
+  CALL_END_REASON_COMPLETED = 1;
+  // The callee declined the unanswered invitation.
+  CALL_END_REASON_DECLINED = 2;
+  // The caller withdrew the unanswered invitation.
+  CALL_END_REASON_CANCELLED = 3;
+  // The ringing deadline passed without acceptance.
+  CALL_END_REASON_NO_ANSWER = 4;
+  // The destination was busy, when permitted to disclose this.
+  CALL_END_REASON_BUSY = 5;
+  // Establishment or continued participation failed.
+  CALL_END_REASON_FAILED = 6;
+}
+
+// Latest publishing state reported by the selected device. Absence in Call
+// means not reported. Reading this message must never activate local capture.
+message CallMediaState {
+  // True only while this device publishes audio.
+  bool microphone_enabled = 1;
+  // True only while this device publishes video.
+  bool camera_enabled = 2;
+}
+
+// Full shared snapshot for currently authorized devices of the two accounts.
+message Call {
+  // Stable positive identity, not an access credential.
+  int64 call_id = 1;
+  // Positive server revision increasing on every visible change to this call.
+  uint64 revision = 2;
+  // Account that initiated the call.
+  int64 caller_id = 3;
+  // Invited account.
+  int64 callee_id = 4;
+  // Requested media, unchanged by muting or disabling video.
+  CallMediaKind requested_media = 5;
+  // Required server creation time.
+  google.protobuf.Timestamp created_at = 6;
+  // Exactly one lifecycle state. An unknown state is not an invitation.
+  oneof state {
+    // Invitation outstanding; delivery and user attention are not implied.
+    CallRinging ringing = 7;
+    // An answering device has been selected.
+    CallConnecting connecting = 8;
+    // Both endpoints have reported connected in the same generation.
+    CallActive active = 9;
+    // Terminal and never transitions back to ringing or active.
+    CallEnded ended = 10;
+  }
+  // Initiating endpoint's latest media state, omitted after termination.
+  CallMediaState caller_media = 11;
+  // Answering endpoint's latest media state, omitted after termination.
+  CallMediaState callee_media = 12;
+  // Profile offered by the caller; acceptance requires support on this device.
+  CallProfile profile = 13;
+}
+
+// Unanswered invitation. An expired snapshot must not open ringing UI.
+message CallRinging {
+  // Last instant before which an answer may be accepted.
+  google.protobuf.Timestamp expires_at = 1;
+  // First eligible callee device acknowledgement, absent until received.
+  google.protobuf.Timestamp received_at = 2;
+}
+
+// Accepted call awaiting its first connected generation.
+message CallConnecting {
+  // Server time when the answering device was selected.
+  google.protobuf.Timestamp accepted_at = 1;
+  // End as failed if not active by this deadline; restarting does not extend it.
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+// Established call. Temporary renegotiation does not reset its start time.
+message CallActive {
+  // Time the call first became active, not proof that media was heard or seen.
+  google.protobuf.Timestamp started_at = 1;
+}
+
+// Retained terminal outcome, independent of the expired endpoint sessions.
+message CallEnded {
+  // Recipient-visible final outcome.
+  CallEndReason reason = 1;
+  // Server time when the call ended.
+  google.protobuf.Timestamp ended_at = 2;
+  // Absent if the call never became active or duration is not disclosed.
+  optional uint32 duration_seconds = 3;
+}

@@ -198,7 +198,8 @@ npm run check      # internal /schema/... links resolve + structure is sane
 Hand-written pages live in `website/content/` (`index.mdx`,
 `introduction.mdx`, [Connection Initialization](website/content/connection-initialization.mdx),
 [Device Enrollment](website/content/device-enrollment.mdx),
-[Applying updates](website/content/applying-updates.mdx), and `file-transfers.mdx`)
+[Applying updates](website/content/applying-updates.mdx),
+[Direct calls](website/content/direct-calls.mdx), and `file-transfers.mdx`)
 and are committed; generated
 output (`website/content/reference/`) is
 git-ignored. To preview the rendered site, run the website repo locally —
@@ -232,10 +233,13 @@ step — code generation happens on the BSR, and docs generation happens in
 ## Schema inventory
 
 Public contracts live under [`tinkle/v1/`](tinkle/v1/): authentication, accounts,
-users, contacts, messaging, channels, bots, stickers, and help APIs. Shared types
+users, contacts, messaging, channels, bots, stickers, direct calls, and help APIs. Shared types
 are in [`common.proto`](tinkle/v1/common.proto); shared rich-text spans are in
 [`entities.proto`](tinkle/v1/entities.proto), and the shared media vocabulary
 (metadata, attributes, thumbnails) is in [`media.proto`](tinkle/v1/media.proto).
+
+`CallsService` defines one-to-one calls. See [Direct calls](website/content/direct-calls.mdx)
+for the shared call snapshot, endpoint-private signaling, and same-device recovery.
 
 [`auth.proto`](tinkle/v1/auth.proto) defines recoverable device-key enrollment:
 `SendCode`, `SignIn`, `ResumeEnrollment`, `ActivateEnrollment`, and
@@ -339,9 +343,9 @@ See the [generated reference](https://tinkle.me/schema/reference) for field and
 method semantics. Runtime bindings and availability are documented in their
 implementation repositories.
 
-`tinkle/v1/update.proto` defines one recipient-specific `Update` with 57 cases.
+`tinkle/v1/update.proto` defines one recipient-specific `Update` with 60 cases.
 A live delivery can carry one `Update` under an explicitly selected current wire
-contract; 102 command reply types carry `repeated Update updates` directly.
+contract; 110 command reply types carry `repeated Update updates` directly.
 Reads keep their domain contracts. See [Applying updates](website/content/applying-updates.mdx)
 for reply handling, ordering changes, and recovering a command outcome separately
 from current visible state. The catalog defines no delivery service.

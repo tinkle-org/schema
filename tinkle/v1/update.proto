@@ -5,6 +5,7 @@ package tinkle.v1;
 import "tinkle/v1/account_updates.proto";
 import "tinkle/v1/application_updates.proto";
 import "tinkle/v1/bot_updates.proto";
+import "tinkle/v1/call_updates.proto";
 import "tinkle/v1/chat_updates.proto";
 import "tinkle/v1/contact_updates.proto";
 import "tinkle/v1/dialog_updates.proto";
@@ -88,5 +89,8 @@ message Update {
     ConfigurationChanged configuration_changed = 55 [json_name = "configuration_changed"];
     WorkforceUserInfoChanged workforce_user_info_changed = 56 [json_name = "workforce_user_info_changed"];
     ReconciliationRequired reconciliation_required = 57 [json_name = "reconciliation_required"];
+    CallChanged call_changed = 58 [json_name = "call_changed"];
+    CallSignalsAvailable call_signals_available = 59 [json_name = "call_signals_available"];
+    CallConnectionRefreshRequired call_connection_refresh_required = 60 [json_name = "call_connection_refresh_required"];
   }
 }

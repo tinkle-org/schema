@@ -1,6 +1,7 @@
 """Expected public update contract. Do not derive these inventories from HEAD."""
 
 BASELINE = "33b065883db8dc1f1b34cfe3ca0d9d9d0095e10f"
+PRE_CALL_BASELINE = "8d769f9749e6c221a231df27746d2b1886fba29d"
 UPDATE_FILE = "tinkle/v1/update.proto"
 APPLICATION_UPDATES_FILE = "tinkle/v1/application_updates.proto"
 
@@ -60,6 +61,15 @@ DeletePack AddPackAsset RemovePackAsset ReorderPackAssets PublishPack UnpublishP
 """
 UPDATE_RESPONSES = {method + "Response" for method in _COMMANDS.split()}
 
+CALL_METHODS = """
+GetCallConfiguration StartCall AcknowledgeIncomingCall AcceptCall DeclineCall CancelCall EndCall
+GetCall ListActiveCalls GetCallConnection SendCallSignal ListCallSignals AcknowledgeCallSignals
+RestartCallConnection ReportCallConnectionState SetCallMediaState
+""".split()
+UPDATE_RESPONSES.update(method + "Response" for method in (
+    "StartCall", "AcceptCall", "DeclineCall", "CancelCall", "EndCall",
+    "RestartCallConnection", "ReportCallConnectionState", "SetCallMediaState"))
+
 # These commands exist but their public replies do not carry updates. In particular,
 # BotApiService.SendMessage is a different handler from MessagesService.SendMessage.
 COMMANDS_WITHOUT_UPDATES = {
@@ -70,13 +80,14 @@ COMMANDS_WITHOUT_UPDATES = {
                      "EditMessageMedia EditMessageReplyMarkup DeleteMessage BanChatParticipant UnbanChatParticipant "
                      "RestrictChatParticipant PromoteChatParticipant LeaveChat SetWebhook DeleteWebhook AnswerCallbackQuery",
     "BotsService": "SendCustomRequest AnswerWebhookQuery",
+    "CallsService": "AcknowledgeIncomingCall SendCallSignal AcknowledgeCallSignals",
     "ConnectionService": "InitConnect KeepAlive",
     "FilesService": "BeginUpload UploadPart CompleteUpload AbortUpload DownloadPart",
     "HelpService": "SaveAppLog AcceptTermsOfService",
     "MessagesService": "SetTyping",
 }
 
-# Wire order: the first constructor has tag 1, the last tag 57.
+# Wire order, starting at tag 1.
 CASE_LEAVES = [
     ("message", "MessageAdded MessageEdited MessagesRemoved HistoryChanged MessageAccepted MessagePinsChanged "
                 "MessageReactionsChanged PollChanged ThreadChanged ScheduledMessagesChanged RecentReactionsChanged "
@@ -99,6 +110,7 @@ CASE_LEAVES = [
     ("application", "ConnectivityChanged"),
     ("chat", "RoomOnlineCountChanged"),
     ("application", "ConfigurationChanged WorkforceUserInfoChanged ReconciliationRequired"),
+    ("call", "CallChanged CallSignalsAvailable CallConnectionRefreshRequired"),
 ]
 CASE_FILES = {name: f"tinkle/v1/{domain}_updates.proto"
               for domain, names in CASE_LEAVES for name in names.split()}

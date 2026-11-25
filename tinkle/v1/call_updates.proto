@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "tinkle/v1/call_types.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Committed snapshot for authorized participant accounts. Merge only a newer
+// revision for this call. On reconnect, check current state before ringing.
+message CallChanged {
+  // Full recipient-authorized snapshot; never contains endpoint secrets.
+  Call call = 1;
+}
+
+// Ephemeral wake-up for the selected recipient device only. Coalesce duplicates;
+// list its unacknowledged inbox on reconnect even if no wake-up arrives.
+message CallSignalsAvailable {
+  // Direct call with pending private signaling.
+  int64 call_id = 1;
+  // Recipient's negotiation generation, not a signal position or receipt.
+  uint64 generation = 2;
+}
+
+// Endpoint-private invalidation, not a command to allocate a new generation.
+message CallConnectionRefreshRequired {
+  // Recover this device's current connection by call ID, if still authorized.
+  int64 call_id = 1;
+  // New generation. Ignore an older hint or a hint for a terminal call.
+  uint64 generation = 2;
+}

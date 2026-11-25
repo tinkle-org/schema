@@ -7,6 +7,7 @@ export default {
   'connection-initialization': 'Connection Initialization',
   'device-enrollment': 'Device Enrollment',
   'applying-updates': 'Applying updates',
+  'direct-calls': 'Direct calls',
   'file-transfers': 'File Transfers',
   reference: 'Reference',
 }

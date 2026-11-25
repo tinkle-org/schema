@@ -39,7 +39,8 @@ is not a compatibility layer or evidence of runtime deployment.
 ## Schema scope
 
 The package defines authentication, accounts, users, contacts, messaging,
-channels, bots, stickers, and help APIs, with shared types in `common.proto`.
+channels, bots, stickers, direct calls, and help APIs, with shared types in `common.proto`.
+See [Direct calls](/schema/direct-calls) for the `CallsService` lifecycle and endpoint signaling rules.
 `entities.proto` defines the single `Entity`/`EntityType` vocabulary for help text,
 message bodies, captions, drafts and quotes. Spans use UTF-16 code units with
 Unicode scalar boundaries, explicit nesting/overlap rules, and type-specific
