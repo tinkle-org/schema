@@ -98,6 +98,8 @@ jobs:
         run: git checkout "${{ steps.target.outputs.sha }}"
       - name: Set up Buf
         uses: bufbuild/buf-setup-action@v1
+        with:
+          github_token: ${{ github.token }}
       - name: Validate the released schema
         run: |
           buf build
