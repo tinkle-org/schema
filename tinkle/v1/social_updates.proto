@@ -8,6 +8,8 @@ import "tinkle/v1/post_types.proto";
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 
 // Merge only a newer authorized snapshot. Expiry still gates active display.
+// For the same viewer and Daily, preserve seen=true from DailySeenChanged or
+// an earlier snapshot even when the incoming snapshot has a newer revision.
 message DailyChanged {
   // Complete projection for this viewer; never broadcast an owner's copy.
   Daily daily = 1;

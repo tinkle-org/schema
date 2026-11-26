@@ -554,8 +554,8 @@ in the server implementation, not in this contract.
 `DownloadPartRequest.file_access_context` carry the reference for these checks.
 Select exactly one of `MessageFileReference` (conversation and message ID),
 `ProfilePhotoReference` (user and gallery-entry ID), `StickerAssetReference`
-(unified asset ID and exact version), or `ChatPhotoReference` (chat and current
-photo ID). The requested `file_id` must be the referenced version's main file or
+(unified asset ID and exact version), `ChatPhotoReference` (chat and current
+photo ID), `daily_id`, or `post_id`. The requested `file_id` must be the referenced version's main file or
 its explicitly linked thumbnail. With no context, only the
 uploader can read their own
 completed file. A supplied context is checked even for the uploader; it cannot

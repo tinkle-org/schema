@@ -45,6 +45,8 @@ Build each projection under current authorization, including related entities, o
 
 ## Order within the owning domain
 
+For the same viewer and Daily, once `DailySeenChanged` or a snapshot establishes `seen = true`, keep it true when merging a newer `DailyChanged` snapshot, even if that snapshot says false. The seen update does not advance the cached body revision or restore a removed Daily.
+
 | State being merged | Comparison that is valid |
 | --- | --- |
 | Message | `accept_seq` orders accepted messages within one conversation. `body_revision` orders complete bodies for the same viewer, target, and message. Neither is a journal checkpoint. A viewer's terminal removal must not be undone by a delayed add. |
