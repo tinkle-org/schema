@@ -1,0 +1,379 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "tinkle/v1/daily_types.proto";
+import "tinkle/v1/messages.proto";
+import "tinkle/v1/post_types.proto";
+import "tinkle/v1/social_types.proto";
+import "tinkle/v1/update.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// SocialService manages expiring Dailies and persistent Posts. All methods
+// require an active device-key-authenticated account. Only the owner can publish, edit, delete
+// or save their content. Check current visibility on every read and mutation;
+// a hidden or deleted object is indistinguishable from an unknown one.
+// A Daily expires 24 hours after server publication. At expiry, remove it from
+// active reads and availability; only its owner may read the retained archive.
+// An ID, update, availability row or page token grants no access to files.
+//
+// Persist a fresh canonical lowercase nonzero UUID request_id for each command
+// intent. Bind (caller, method, request_id) permanently to the exact arguments,
+// including field presence and media order. Reject a changed request under the
+// same key without effects. After an uncertain outcome retry the original
+// request: return its committed identities without repeating effects or leaking
+// now-hidden content. A dual publish is one intent, not two commands. Validation
+// failures publish nothing; a not-yet-ready file can be retried with the same key.
+// Command updates are caller-visible effects; an empty list is valid. Recover
+// current state with reads, not by replaying updates from an earlier result.
+//
+// Both feeds select the caller and authors in the caller's current contact list,
+// still subject to each item's audience. Detail/profile reads do not require
+// feed membership. Lists use opaque continuations bound to caller, method and author scope.
+// Omit page_token to start; reject empty, invalid, expired or out-of-scope
+// tokens. After expiry restart from the first page. Apply visibility and expiry
+// checks before counting rows against page_size on every page. Return a
+// nonempty next_page_token only if another authorized page remains.
+service SocialService {
+  // Publish one Daily; if requested, commit its saved Post in the same atomic write.
+  rpc PublishDaily(PublishDailyRequest) returns (PublishDailyResponse);
+  // Read one visible Daily without changing its seen state.
+  rpc GetDaily(GetDailyRequest) returns (GetDailyResponse);
+  // Change the owner's Daily caption or audience without extending its lifetime.
+  rpc EditDaily(EditDailyRequest) returns (EditDailyResponse);
+  // Remove the owner's Daily, including archive access; keep any saved Post.
+  rpc DeleteDaily(DeleteDailyRequest) returns (DeleteDailyResponse);
+  // Page through one author's active Dailies visible to the caller.
+  rpc ListDailies(ListDailiesRequest) returns (ListDailiesResponse);
+  // Page by author, not by Daily. Fetch a group's active bodies with ListDailies.
+  rpc ListDailyFeed(ListDailyFeedRequest) returns (ListDailyFeedResponse);
+  // Page through the caller's retained expired Dailies; no other owner may be selected.
+  rpc ListDailyArchive(ListDailyArchiveRequest) returns (ListDailyArchiveResponse);
+  // Mark one visible active Daily seen for this account across all its devices.
+  rpc MarkDailySeen(MarkDailySeenRequest) returns (MarkDailySeenResponse);
+  // Resolve viewer-relative availability for a bounded set of explicit authors.
+  rpc BatchGetDailyAvailability(BatchGetDailyAvailabilityRequest) returns (BatchGetDailyAvailabilityResponse);
+  // Publish one Post atomically after validating its entire ordered media list.
+  rpc PublishPost(PublishPostRequest) returns (PublishPostResponse);
+  // Read one visible Post, including its current like count and the caller's like.
+  rpc GetPost(GetPostRequest) returns (GetPostResponse);
+  // Change the owner's Post caption or audience without changing its source Daily.
+  rpc EditPost(EditPostRequest) returns (EditPostResponse);
+  // Remove the owner's Post without affecting any source Daily or freeing its save slot.
+  rpc DeletePost(DeletePostRequest) returns (DeletePostResponse);
+  // Page through one author's Posts visible to the caller.
+  rpc ListPosts(ListPostsRequest) returns (ListPostsResponse);
+  // Page through visible Posts across eligible authors, one row per Post.
+  rpc ListPostFeed(ListPostFeedRequest) returns (ListPostFeedResponse);
+  // Set, rather than toggle, the caller's like on a currently visible Post.
+  rpc SetPostLike(SetPostLikeRequest) returns (SetPostLikeResponse);
+  // Save the owner's active or retained archived Daily as a persistent Post.
+  // This and dual publish share one permanent Daily-to-Post mapping. Concurrent
+  // or later saves return the first committed post_id, even after Post deletion;
+  // they never edit, replace or resurrect it. Editing or deleting one object
+  // leaves the other unchanged. Seen state and private replies are not copied.
+  rpc SaveDailyAsPost(SaveDailyAsPostRequest) returns (SaveDailyAsPostResponse);
+}
+
+// Exactly one typed source is required. Accept only completed, immutable,
+// caller-owned files already validated for the selected profile. Validate all
+// matching IMAGE/VIDEO processing intent, claims, previews and thumbnails
+// (message photo/video bounds, at most 320x320) before commit; never enqueue pending
+// social content. Freeze the exact main and ready output file IDs at publish:
+// later generated files do not join the object. Each file read requires current
+// authorization for its context and exact membership in that object's file set.
+message SocialMediaSource {
+  // The selected input determines which validation profile applies.
+  oneof media {
+    // Requires IMAGE version 1.
+    PhotoSource photo = 1;
+    // Requires VIDEO version 1.
+    VideoSource video = 2;
+  }
+}
+
+// Publish a Daily, optionally saving a Post without another upload or request.
+message PublishDailyRequest {
+  // Unique key for the whole publish intent, including any Post.
+  string request_id = 1;
+  // Exactly one validated photo or video.
+  SocialMediaSource media = 2;
+  // Optional caption; omission publishes without text or entities.
+  SocialCaption caption = 3;
+  // Required visibility policy for the Daily.
+  SocialAudience audience = 4;
+  // If true, also create the one saved Post with the same caption and frozen files.
+  bool also_publish_post = 5;
+  // Owner's explicit Post policy; omit to inherit the Daily policy at commit.
+  // Reject if present when also_publish_post is false.
+  optional SocialAudience post_audience = 6;
+}
+
+// Both identities describe the original commit, not continued visibility.
+message PublishDailyResponse {
+  // Positive ID of the committed Daily.
+  int64 daily_id = 1;
+  // Positive ID present exactly when the same commit created a Post.
+  optional int64 post_id = 2;
+  // Caller-visible effects of the commit.
+  repeated Update updates = 3;
+}
+
+// Look up a Daily under current viewer or archive authorization.
+message GetDailyRequest {
+  // Positive Daily ID.
+  int64 daily_id = 1;
+}
+
+// Authoritative detail for this viewer.
+message GetDailyResponse {
+  // Visible Daily, including this account's seen state.
+  Daily daily = 1;
+}
+
+// Apply all present changes atomically; at least one must be present.
+message EditDailyRequest {
+  // Unique edit intent.
+  string request_id = 1;
+  // Positive ID of the owned Daily.
+  int64 daily_id = 2;
+  // Omit to preserve; a present empty caption clears both text and entities.
+  SocialCaption caption = 3;
+  // Omit to preserve; otherwise replace the entire audience policy.
+  optional SocialAudience audience = 4;
+}
+
+// A Daily edit never changes shared files or a saved Post.
+message EditDailyResponse {
+  // Caller-visible edit effects.
+  repeated Update updates = 1;
+}
+
+// Remove the Daily as a file access context, not other contexts for the files.
+message DeleteDailyRequest {
+  // Unique deletion intent.
+  string request_id = 1;
+  // Positive ID of the owned Daily.
+  int64 daily_id = 2;
+}
+
+// Result of removing the Daily.
+message DeleteDailyResponse {
+  // Caller-visible deletion effects.
+  repeated Update updates = 1;
+}
+
+// Read active Dailies for a single author; reads do not mark them seen.
+message ListDailiesRequest {
+  // Positive author account ID, including self.
+  int64 user_id = 1;
+  // Maximum Dailies, 1..100; omit for 50.
+  optional uint32 page_size = 2;
+  // Omit to start; otherwise use the preceding page's token unchanged.
+  optional string page_token = 3;
+}
+
+// Active, visible Dailies in publication order (oldest first, then ascending ID).
+message ListDailiesResponse {
+  // Each row includes this viewer's seen state.
+  repeated Daily dailies = 1;
+  // Continuation for this author only.
+  optional string next_page_token = 2;
+}
+
+// Read active author groups, bounded independently of each author's Daily count.
+message ListDailyFeedRequest {
+  // Maximum distinct authors, 1..100; omit for 50.
+  optional uint32 page_size = 1;
+  // Omit to start; otherwise use the preceding feed token unchanged.
+  optional string page_token = 2;
+}
+
+// One summary per eligible author with at least one visible active Daily, newest
+// visible active publication first, then descending author ID to break ties.
+message ListDailyFeedResponse {
+  // Only visible active Dailies contribute: next_expiry_at is their earliest
+  // expiry, when clients should refresh even if some Dailies remain active.
+  // Pass each row's user_id to ListDailies; no Daily bodies are embedded here.
+  repeated DailyAvailability authors = 1;
+  // Continues between author groups, never within a group.
+  optional string next_page_token = 2;
+}
+
+// The archive owner is always the caller, never a request parameter.
+message ListDailyArchiveRequest {
+  // Maximum archived Dailies, 1..100; omit for 50.
+  optional uint32 page_size = 1;
+  // Omit to start; otherwise use the preceding archive token unchanged.
+  optional string page_token = 2;
+}
+
+// Owner-only retained archive, newest publication first, then descending ID.
+message ListDailyArchiveResponse {
+  // Expired, nondeleted Dailies; excludes any saved Post bodies.
+  repeated Daily dailies = 1;
+  // Continuation for this owner's archive.
+  optional string next_page_token = 2;
+}
+
+// Seen is private and monotonic per (viewer, Daily), never per device or author.
+message MarkDailySeenRequest {
+  // Unique mark intent; marking an already-seen Daily is a no-op.
+  string request_id = 1;
+  // Positive ID of the visible active Daily actually viewed.
+  int64 daily_id = 2;
+}
+
+// Recover missed seen changes via GetDaily/ListDailies and availability reads.
+message MarkDailySeenResponse {
+  // Effects for the viewer only; never an author-facing read receipt.
+  repeated Update updates = 1;
+}
+
+// Check availability without enumerating accounts or fetching bodies.
+message BatchGetDailyAvailabilityRequest {
+  // 1..100 distinct positive author IDs. Reject invalid batches as a whole.
+  repeated int64 user_ids = 1;
+}
+
+// Results follow request order. Unknown or inaccessible authors must not be
+// distinguishable from authors with no visible active Dailies.
+message BatchGetDailyAvailabilityResponse {
+  // One row per requested ID. With no visible active Daily both flags are false
+  // and next_expiry_at is absent; never include an expiry from a hidden Daily.
+  repeated DailyAvailability availability = 1;
+}
+
+// Publish a standalone Post owned by the authenticated caller.
+message PublishPostRequest {
+  // Unique publish intent; identical media may be published under a new intent.
+  string request_id = 1;
+  // 1..10 validated items, retained in exactly this order.
+  repeated SocialMediaSource media = 2;
+  // Optional caption for the whole Post, not per item.
+  SocialCaption caption = 3;
+  // Required visibility policy for the Post.
+  SocialAudience audience = 4;
+}
+
+// Receipt for the complete Post, never a partially accepted album.
+message PublishPostResponse {
+  // Positive ID of the committed Post.
+  int64 post_id = 1;
+  // Caller-visible publish effects.
+  repeated Update updates = 2;
+}
+
+// Look up one Post under current viewer authorization.
+message GetPostRequest {
+  // Positive Post ID.
+  int64 post_id = 1;
+}
+
+// Authoritative detail for this viewer.
+message GetPostResponse {
+  // Visible Post including like_count and this caller's liked_by_me.
+  Post post = 1;
+}
+
+// Apply all present changes atomically; require at least one. Media is immutable.
+message EditPostRequest {
+  // Unique edit intent.
+  string request_id = 1;
+  // Positive ID of the owned Post.
+  int64 post_id = 2;
+  // Omit to preserve; a present empty caption clears both text and entities.
+  SocialCaption caption = 3;
+  // Omit to preserve; otherwise replace the entire audience policy.
+  optional SocialAudience audience = 4;
+}
+
+// Result of editing only this Post.
+message EditPostResponse {
+  // Caller-visible edit effects.
+  repeated Update updates = 1;
+}
+
+// Remove the Post as a file access context, not other contexts for the files.
+message DeletePostRequest {
+  // Unique deletion intent.
+  string request_id = 1;
+  // Positive ID of the owned Post.
+  int64 post_id = 2;
+}
+
+// Result of removing the Post.
+message DeletePostResponse {
+  // Caller-visible deletion effects.
+  repeated Update updates = 1;
+}
+
+// Bound a profile Post list to one author.
+message ListPostsRequest {
+  // Positive author account ID, including self.
+  int64 user_id = 1;
+  // Maximum Posts, 1..100; omit for 50.
+  optional uint32 page_size = 2;
+  // Omit to start; otherwise use the preceding page's token unchanged.
+  optional string page_token = 3;
+}
+
+// Visible profile Posts, newest publication first, then descending ID.
+message ListPostsResponse {
+  // Posts with caller-relative like state.
+  repeated Post posts = 1;
+  // Continuation for this author only.
+  optional string next_page_token = 2;
+}
+
+// Bound a feed page by visible Posts, not media items.
+message ListPostFeedRequest {
+  // Maximum Posts, 1..100; omit for 50.
+  optional uint32 page_size = 1;
+  // Omit to start; otherwise use the preceding feed token unchanged.
+  optional string page_token = 2;
+}
+
+// Visible feed Posts, newest publication first, then descending ID.
+message ListPostFeedResponse {
+  // Posts with caller-relative like state.
+  repeated Post posts = 1;
+  // Continuation for this caller's Post feed.
+  optional string next_page_token = 2;
+}
+
+// Each account contributes at most one like to a Post, across all devices.
+message SetPostLikeRequest {
+  // Unique intent; replaying it must not undo a later like or unlike.
+  string request_id = 1;
+  // Positive ID of the visible Post, never a source Daily ID.
+  int64 post_id = 2;
+  // Required desired state: true adds, false removes; matching state is a no-op.
+  optional bool liked = 3;
+}
+
+// Recover like_count and liked_by_me via Post reads; no Daily state changes.
+message SetPostLikeResponse {
+  // Caller-visible effects of an actual membership change.
+  repeated Update updates = 1;
+}
+
+// First save snapshots the Daily's current caption and audience and shares its
+// exact frozen media file set. Do not copy bytes or discover newer outputs.
+message SaveDailyAsPostRequest {
+  // Unique save intent; even a distinct key cannot allocate a second saved Post.
+  string request_id = 1;
+  // Positive ID of the owned source Daily.
+  int64 daily_id = 2;
+  // Owner's explicit replacement policy for the new Post; omission inherits.
+  optional SocialAudience post_audience = 3;
+}
+
+// Receipt for the permanent save mapping, not proof the Post still exists.
+message SaveDailyAsPostResponse {
+  // Positive original Post ID, unchanged even if that Post was deleted.
+  int64 post_id = 1;
+  // Caller-visible effects; an existing mapping has no new publish effects.
+  repeated Update updates = 2;
+}

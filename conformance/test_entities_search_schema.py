@@ -36,6 +36,7 @@ class EntitiesSearchSchemaTests(files.BufSchemaTestCase):
         expected = {
             ("DraftMessage", "entities", 2), ("Message", "entities", 7),
             ("MessageReplyHeader", "quote_entities", 5),
+            ("SocialCaption", "entities", 2),
             ("ReplyInput", "quote_entities", 3), ("AlbumItem", "entities", 3),
             ("SendMessageRequest", "entities", 8), ("SendMediaRequest", "entities", 9),
             ("EditMessageRequest", "entities", 5),

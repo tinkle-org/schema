@@ -83,6 +83,15 @@ UPDATE_RESPONSES.update(method + "Response" for method in (
     "StartCall", "AcceptCall", "DeclineCall", "CancelCall", "EndCall",
     "RestartCallConnection", "ReportCallConnectionState", "SetCallMediaState"))
 
+SOCIAL_METHODS = """
+PublishDaily GetDaily EditDaily DeleteDaily ListDailies ListDailyFeed ListDailyArchive
+MarkDailySeen BatchGetDailyAvailability PublishPost GetPost EditPost DeletePost ListPosts
+ListPostFeed SetPostLike SaveDailyAsPost
+""".split()
+SOCIAL_UPDATE_RESPONSES = {method + "Response" for method in SOCIAL_METHODS
+                           if not method.startswith(("Get", "List", "BatchGet"))}
+UPDATE_RESPONSES.update(SOCIAL_UPDATE_RESPONSES)
+
 # These commands exist but their public replies do not carry updates. In particular,
 # BotApiService.SendMessage is a different handler from MessagesService.SendMessage.
 COMMANDS_WITHOUT_UPDATES = {
@@ -126,6 +135,7 @@ CASE_LEAVES = [
     ("call", "CallChanged CallSignalsAvailable CallConnectionRefreshRequired"),
     ("call", "GroupCallChanged GroupCallParticipantsChanged GroupCallInvitationChanged GroupCallStartReminderChanged "
              "CallPresentationChanged CallHistoryChanged GroupCallAccessChanged"),
+    ("social", "DailyChanged DailyRemoved DailyAvailabilityChanged DailySeenChanged PostChanged PostRemoved PostLikesChanged"),
 ]
 CASE_FILES = {name: f"tinkle/v1/{domain}_updates.proto"
               for domain, names in CASE_LEAVES for name in names.split()}

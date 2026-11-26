@@ -179,6 +179,12 @@ message MessageReplyHeader {
   string quote_text = 4;
   // Rich-text spans in quote_text, independent of source-message offsets.
   repeated Entity quote_entities = 5;
+  // For a private reply to a Daily, this positive ID replaces all message,
+  // peer, thread and quote fields. The DM persists under normal chat rules;
+  // resolve through GetDaily under current visibility, or show unavailable.
+  // Neither this header nor a message file context grants the Daily's files.
+  // Do not propagate this private reference when forwarding the message.
+  optional int64 daily_id = 6;
 }
 
 // MessageReplies contains thread reply summary for a message.

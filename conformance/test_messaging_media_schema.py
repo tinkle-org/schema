@@ -163,7 +163,8 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
     def test_reply_album_schedule_search_and_poll_tags(self):
         """Pin additive messaging fields, types, and explicit presence."""
         expected = {
-            "ReplyInput": [("thread_root_id", 4, "INT64", "", False, True)],
+            "ReplyInput": [("thread_root_id", 4, "INT64", "", False, True),
+                           ("daily_id", 5, "INT64", "", False, True)],
             "Message": [("album_id", 15, "INT64", "", False, True),
                         ("scheduled_state", 16, "ENUM", "MessageScheduledState", False, False),
                         ("schedule_date", 17, "INT32", "", False, True),
@@ -203,12 +204,14 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
     def test_file_context_oneof_and_request_tags(self):
         """Pin a single typed authorization context on both file read calls."""
         self.assert_oneof("FileAccessContext", "reference",
-                          ["message", "profile_photo", "sticker_asset", "chat_photo"])
+                          ["message", "profile_photo", "sticker_asset", "chat_photo", "daily_id", "post_id"])
         self.assert_fields("FileAccessContext", [
             ("message", 1, "MESSAGE", "MessageFileReference", False, False),
             ("profile_photo", 2, "MESSAGE", "ProfilePhotoReference", False, False),
             ("sticker_asset", 3, "MESSAGE", "StickerAssetReference", False, False),
             ("chat_photo", 4, "MESSAGE", "ChatPhotoReference", False, False),
+            ("daily_id", 5, "INT64", "", False, False),
+            ("post_id", 6, "INT64", "", False, False),
         ])
         for name, tag in (("GetFileInfoRequest", 2), ("DownloadPartRequest", 4)):
             field = self.descriptor(name)["field"][-1]
@@ -297,7 +300,8 @@ class MessagingMediaSchemaTests(files.BufSchemaTestCase):
         contexts = [{"message": {"target": {"chatId": "4"}, "messageId": "9007199254740993"}},
                     {"profilePhoto": {"userId": "2", "photoId": "3"}},
                     {"stickerAsset": {"assetId": "5", "assetVersion": "2"}},
-                    {"chatPhoto": {"chatId": "9007199254740993", "photoId": "9007199254740995"}}]
+                    {"chatPhoto": {"chatId": "9007199254740993", "photoId": "9007199254740995"}},
+                    {"dailyId": "41"}, {"postId": "53"}]
         for index, context in enumerate(contexts):
             for name in ("GetFileInfoRequest", "DownloadPartRequest"):
                 fixture = {"fileId": "9007199254740995", "fileAccessContext": context}

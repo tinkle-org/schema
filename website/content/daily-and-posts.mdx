@@ -1,0 +1,39 @@
+---
+title: Daily and Posts
+description: Publish expiring Dailies and independent Posts, show the right ring for each viewer, and reply in a private conversation.
+---
+
+# Daily and Posts
+
+[`SocialService`](/schema/reference/services/social) defines two publication types. A **Daily** shares one photo or video for 24 hours. A **Post** keeps 1–10 photos or videos in the author's order until deleted. Either can have a caption, with optional rich-text entities using the shared UTF-16 span rules in `tinkle/v1/entities.proto`.
+
+## Example: share a photo for a day and keep a Post
+
+1. Alex uploads a photo on Monday at 09:00 UTC. In `PublishDaily`, Alex selects contacts for the Daily and asks to publish a Post immediately for selected users. Validation finishes and the server publishes at 09:04. Both objects become visible to their respective audiences atomically, or neither is published. The Daily expires **Tuesday at 09:04 UTC**, exactly 24 hours after server publication, not 24 hours after upload.
+2. Sam is a contact outside the Post's selected audience. Sam can open the Daily and read its photo using the `daily_id` file context. Seeing the same photo in the Daily does not authorize `GetPost` or a read using the `post_id` context. Sam replies “Where was this?” in the private DM with Alex: the ordinary message send uses `ReplyInput.daily_id`, and the resulting message identifies the Daily in `MessageReplyHeader.daily_id`. The reply does not grant access to the photo after expiry.
+3. At expiry the Daily leaves Sam's feed. Alex can still find it in the owner-only archive under the same Daily ID. The Post keeps its own ID and audience. Editing or deleting one object does not edit or delete the other.
+
+For immediate dual publication, set `PublishDailyRequest.also_publish_post`. An owner who publishes just the Daily can use `SaveDailyAsPost` later, including from the archive. Both paths inherit the Daily's current audience unless the owner explicitly sets `post_audience`. A Daily can produce **one saved Post in total**, counting a Post published alongside it. Deleting that Post and saving again returns the original ID without reviving it. Use `PublishPost` for a deliberate new publication of the same media; it never creates or extends a ring.
+
+## Choose the read or mutation
+
+| Task | Daily | Post |
+| --- | --- | --- |
+| Publish media with an audience | `PublishDaily` | `PublishPost` |
+| Open one visible item by ID | `GetDaily` | `GetPost` |
+| Change or remove an owned item | `EditDaily`, `DeleteDaily` | `EditPost`, `DeletePost` |
+| Browse one author's visible items | `ListDailies` | `ListPosts` |
+| Browse the viewer's feed | `ListDailyFeed` | `ListPostFeed` |
+| Revisit an expired Daily as its owner | `ListDailyArchive` | No expiry or archive needed |
+
+Each object has its own audience: contacts, selected users, or everyone. **Everyone means authenticated users**, not anonymous access. For metadata and byte ranges, `GetFileInfo` and `DownloadPart` check both the viewer's current access to the identified object and whether it references the requested file. A file ID, ring, or DM reply is not a substitute for this check. See [File transfers](/schema/file-transfers).
+
+For profile rings, use `BatchGetDailyAvailability` for the displayed authors. Show no ring if the viewer has no visible active Dailies, an unseen ring if any are unseen, and a seen ring otherwise. `MarkDailySeen` records that viewer's view of one Daily; it does not mark the author's other Dailies or change another viewer's ring. Refresh at the **earliest expiry among that viewer's visible active Dailies**: if the only unseen item expires, the ring can switch to seen while another Daily remains active.
+
+`SetPostLike` sets the viewer's desired state: liked to add a like, not liked to remove it. Retrying the same choice does not toggle it. Posts have no comments; a Daily reply is an ordinary private message, not a public thread.
+
+Mutation replies that report changes carry `repeated Update updates` directly, never a wrapper. Apply each recognized change once, and use the corresponding detail, list, or availability read to recover current state. See [Applying updates](/schema/applying-updates).
+
+## Design references
+
+Telegram's [Stories tour](https://telegram.org/tour/stories), [Stories API schema](https://core.telegram.org/api/stories), and [`StoryItem` type](https://core.telegram.org/type/StoryItem) describe a story that retains its identity when kept on a profile. Tinkle's saved Post instead gets a separate identity. [Instagram's carousel](https://help.instagram.com/269314186824048) is the inspiration for ordered Post media; [WhatsApp Status](https://about.fb.com/news/2023/02/new-whatsapp-status-features/) illustrates the 24-hour audience and profile ring. These are design references, not wire contracts.

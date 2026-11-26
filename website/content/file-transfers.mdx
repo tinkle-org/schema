@@ -539,9 +539,9 @@ terminal outcome is known.
 ## Authorization
 
 File access flows from the application objects that reference a file —
-messages, profile photos, chat photos, sticker packs — and from the uploader's own
-authorization. A `file_id` grants no access by itself: resolution requires
-an authorized application object or uploader authorization, so a bare
+messages, profile photos, chat photos, sticker packs, Dailies, and Posts — and
+from the uploader's own authorization. A `file_id` grants no access by itself:
+resolution requires an authorized application object or uploader authorization, so a bare
 `file_id` obtained from any other source — for example an export or a
 guess — must not resolve. Servers report unknown and inaccessible files
 identically, and upload sessions of other principals are indistinguishable
@@ -554,16 +554,21 @@ in the server implementation, not in this contract.
 `DownloadPartRequest.file_access_context` carry the reference for these checks.
 Select exactly one of `MessageFileReference` (conversation and message ID),
 `ProfilePhotoReference` (user and gallery-entry ID), `StickerAssetReference`
-(unified asset ID and exact version), or `ChatPhotoReference` (chat and current
-photo ID). The requested `file_id` must be the referenced version's main file or
-its explicitly linked thumbnail. With no context, only the
-uploader can read their own
-completed file. A supplied context is checked even for the uploader; it cannot
-authorize an unrelated file or fall back to uploader identity or another object.
+(unified asset ID and exact version), `ChatPhotoReference` (chat and current
+photo ID), `daily_id`, or `post_id`. The requested `file_id` must identify a
+main file or its explicitly linked thumbnail in the exact object or asset
+version selected by the context. With no context, only the uploader can read
+their own completed file. A supplied context is checked even for the uploader;
+it cannot authorize an unrelated file or fall back to uploader identity or another object.
 A metadata response does not grant future downloads:
 each range call checks visibility again, including deletion/revocation, photo
 selection/privacy, and pack unpublication. Unknown and inaccessible references
 and mismatched file membership have the same not-found outcome.
+
+The [Daily and Posts contract](/schema/daily-and-posts) defines file
+contexts scoped to `daily_id` or `post_id`. If both objects reference the same
+media file, check the object named on this read. A visible Post does not extend a
+viewer's access through an expired Daily.
 
 `FileAccessContext.chat_photo` in `tinkle/v1/files.proto` references a positive
 chat/group/channel `chat_id` and the current `ChatPhoto.photo_id` from

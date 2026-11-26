@@ -463,6 +463,13 @@ message FileAccessContext {
     StickerAssetReference sticker_asset = 3;
     // A currently visible chat's current photo or its linked thumbnail.
     ChatPhotoReference chat_photo = 4;
+    // Positive Daily ID. Require exact main/thumbnail membership and current
+    // Daily visibility. From expiry only the owner may use the archive grant;
+    // deletion ends it. Never authorize via a Post that shares the same file.
+    int64 daily_id = 5;
+    // Positive Post ID. Check that Post's audience and exact main/thumbnail
+    // membership on every read, independently of any Daily or its expiry.
+    int64 post_id = 6;
   }
 }
 

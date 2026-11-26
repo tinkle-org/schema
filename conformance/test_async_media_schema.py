@@ -40,7 +40,8 @@ class AsyncMediaSchemaTests(files.BufSchemaTestCase):
             "--as-file-descriptor-set", "-o", "-#format=json").stdout)
         old_services = {"tinkle.v1." + s["name"] for p in baseline["file"]
                         if p["name"].startswith("tinkle/") for s in p.get("service", [])}
-        self.assertEqual(old_services | {"tinkle.v1.CallsService"}, set(self.declarations["service"]))
+        self.assertEqual(old_services | {"tinkle.v1.CallsService", "tinkle.v1.SocialService"},
+                         set(self.declarations["service"]))
 
         def compare_enums(items, current, prefix):
             """Preserve enum names/values, including enums inside nested messages."""
