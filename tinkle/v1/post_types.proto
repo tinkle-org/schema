@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "google/protobuf/timestamp.proto";
+import "tinkle/v1/social_types.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Persistent profile publication. A saved Post has the same lifecycle as a
+// standalone Post; neither implies that a Daily exists or that a ring is active.
+message Post {
+  // Positive server-assigned ID, unique among Posts and never reused.
+  int64 post_id = 1;
+  // Account that published this Post.
+  int64 author_id = 2;
+  // One to ten validated items in immutable publication order.
+  repeated SocialMedia media = 3;
+  // Optional current caption for the entire sequence.
+  SocialCaption caption = 4;
+  // Author only; omit for all other recipients.
+  SocialAudience audience = 5;
+  // Post commit time, not the upload time or an earlier Daily's timestamp.
+  google.protobuf.Timestamp published_at = 6;
+  // Positive monotonic revision for this (viewer, Post), including likes and
+  // visibility changes. Restored access requires a revision newer than removal.
+  uint64 revision = 7;
+  // Number of distinct accounts liking the Post. A new Post starts at zero.
+  uint64 like_count = 8;
+  // Whether the authenticated viewer likes it; no voter identities are exposed.
+  bool liked_by_me = 9;
+}

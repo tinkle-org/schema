@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "google/protobuf/timestamp.proto";
+import "tinkle/v1/social_types.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Complete recipient-specific Daily. At expires_at, only the author's private
+// archive retains it until deletion; even the author's ring excludes it.
+message Daily {
+  // Positive server-assigned ID, unique among Dailies and never reused.
+  int64 daily_id = 1;
+  // Account that published this Daily.
+  int64 author_id = 2;
+  // Exactly one validated photo or video.
+  SocialMedia media = 3;
+  // Optional current caption, independent of any saved Post.
+  SocialCaption caption = 4;
+  // Author only; omit for all other recipients.
+  SocialAudience audience = 5;
+  // Server commit time, after validation. Never changes on edit or save.
+  google.protobuf.Timestamp published_at = 6;
+  // Exactly published_at + 24 hours. Active only while server time is earlier.
+  google.protobuf.Timestamp expires_at = 7;
+  // Positive monotonic revision for this (viewer, Daily), including seen and
+  // visibility changes. Restored access requires a revision newer than removal.
+  uint64 revision = 8;
+  // Seen by this authenticated account, not a list or count of other viewers.
+  bool seen = 9;
+}
+
+// Ring state for one author as viewed by the caller. Posts never contribute.
+message DailyAvailability {
+  // Author ID supplied by the caller or returned as a visible tray group.
+  int64 user_id = 1;
+  // Any undeleted, unexpired Daily currently visible to this caller.
+  bool has_active_dailies = 2;
+  // At least one of those active Dailies is unseen. Implies has_active_dailies.
+  bool has_unseen_dailies = 3;
+  // Earliest expiry among those Dailies; absent for no ring. Recheck at that
+  // time or on resume; an expiry notification is not required for expiry.
+  google.protobuf.Timestamp next_expiry_at = 4;
+}

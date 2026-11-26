@@ -565,6 +565,11 @@ each range call checks visibility again, including deletion/revocation, photo
 selection/privacy, and pack unpublication. Unknown and inaccessible references
 and mismatched file membership have the same not-found outcome.
 
+The [Daily and Posts contract](/schema/daily-and-posts) defines file
+contexts scoped to `daily_id` or `post_id`. If both objects reference the same
+photo, check the object named on this read. A visible Post does not extend a
+viewer's access through an expired Daily.
+
 `FileAccessContext.chat_photo` in `tinkle/v1/files.proto` references a positive
 chat/group/channel `chat_id` and the current `ChatPhoto.photo_id` from
 `tinkle/v1/messages.proto`, not a file ID. `ChatPhoto.file_id`, `metadata` and

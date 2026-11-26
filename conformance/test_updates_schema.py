@@ -17,7 +17,8 @@ import unittest
 from test_contract_completion import FIELD_NAMES, RPC_NAMES
 from test_files_schema import reset_descriptor_numbers
 from test_thumbnail_schema import THUMBNAILS
-from update_contract import APPLICATION_UPDATES_FILE, CALL_METHODS, CASE_FILES, UPDATE_RESPONSES, current_filename
+from update_contract import (APPLICATION_UPDATES_FILE, CALL_METHODS, CASE_FILES, SOCIAL_UPDATE_RESPONSES,
+                             UPDATE_RESPONSES, current_filename)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -215,8 +216,12 @@ CHANGED_DECLARATIONS.update({"tinkle.v1." + name for name in (
     "AlbumItem", "ChatPhoto", "ChatRestrictedScope", "PinScope", "ChatComplete", "ChatDetails",
     "DeleteHistoryResponse", "ToggleFavoriteStickerRequest",
 )})
-CHANGED_DECLARATIONS.update("tinkle.v1." + name for name in UPDATE_RESPONSES)
-CHANGED_DECLARATIONS.update("tinkle.v1." + name for name in CASE_FILES)
+CHANGED_DECLARATIONS.update("tinkle.v1." + name for name in UPDATE_RESPONSES - SOCIAL_UPDATE_RESPONSES)
+CHANGED_DECLARATIONS.update("tinkle.v1." + name for name, path in CASE_FILES.items()
+                            if path != "tinkle/v1/social_updates.proto")
+
+SOCIAL_FILES = {f"tinkle/v1/{name}.proto" for name in
+                ("social", "social_types", "daily_types", "post_types", "social_updates")}
 
 # New call declarations may be absent on origin/main; don't exclude whole files
 # or stop comparing these declarations once main contains them.
@@ -380,13 +385,18 @@ class ConnectivitySchemaTests(unittest.TestCase):
 
     def test_unrelated_contracts_are_unchanged(self):
         for kind in self.baseline:
+            additions = CALL_ADDITIONS.copy()
+            if kind in ("message", "enum"):
+                additions.update(n for n, (path, _) in self.current[kind].items() if path in SOCIAL_FILES)
+            elif kind == "service":
+                additions.add("tinkle.v1.SocialService")
             baseline = {n: (current_filename(d[0], n), reset_descriptor_numbers(d[1]))
                         for n, d in self.baseline[kind].items()
                         if d[0] not in REPLACED_FILES | CHANGED_FILES
                         and n not in CHANGED_DECLARATIONS}
             current = {n: d for n, d in self.current[kind].items()
                        if d[0] not in CHANGED_FILES and n not in CHANGED_DECLARATIONS
-                       and (n not in CALL_ADDITIONS or n in self.baseline[kind])}
+                       and (n not in additions or n in self.baseline[kind])}
             self.assertTrue(baseline)
             self.assertEqual(baseline, current, kind)
 

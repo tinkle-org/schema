@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "tinkle/v1/entities.proto";
+import "tinkle/v1/media.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// One caption for the publication. Entities index its original UTF-16 text.
+message SocialCaption {
+  // Empty text requires no entities.
+  string text = 1;
+  // Formatting and semantic spans follow Entity validation. Asset-backed custom
+  // emoji are not supported in social captions; they would require a file grant.
+  repeated Entity entities = 2;
+}
+
+// Who besides the owner may view a publication. A block in either direction
+// overrides every mode. Re-evaluate against current relationships on each read.
+enum SocialAudienceMode {
+  // Missing or unknown policy: reject on authoring, never treat as everyone.
+  SOCIAL_AUDIENCE_MODE_UNSPECIFIED = 0;
+  // Current contacts in the author's contact list.
+  SOCIAL_AUDIENCE_MODE_CONTACTS = 1;
+  // Only accounts explicitly named in the policy.
+  SOCIAL_AUDIENCE_MODE_SELECTED = 2;
+  // All otherwise eligible authenticated Tinkle accounts; never the open web.
+  SOCIAL_AUDIENCE_MODE_EVERYONE = 3;
+}
+
+// Author-managed policy. Never include this message in a nonowner projection.
+message SocialAudience {
+  // Required on writes, including an explicit saved-Post audience override.
+  SocialAudienceMode mode = 1;
+  // Nonempty distinct positive user IDs for SELECTED, empty for all other modes.
+  repeated int64 user_ids = 2;
+}
+
+// Validated media as published. File reads select the enclosing Daily or Post.
+message SocialMedia {
+  // Positive ID of the immutable completed main, never an upload session ID.
+  int64 file_id = 1;
+  // Exactly one set of physical facts measured from the main bytes.
+  oneof kind {
+    // IMAGE version 1.
+    ImageMetadata photo = 2;
+    // VIDEO version 1.
+    VideoMetadata video = 3;
+  }
+  // Optional validated inline JPEG. Discard with the publication's cached body.
+  InlinePreview inline_preview = 4;
+  // Optional validated thumbnail, captured at publication; no late enrichment.
+  Thumbnail thumbnail = 5;
+}

@@ -199,6 +199,7 @@ Hand-written pages live in `website/content/` (`index.mdx`,
 `introduction.mdx`, [Connection Initialization](website/content/connection-initialization.mdx),
 [Device Enrollment](website/content/device-enrollment.mdx),
 [Applying updates](website/content/applying-updates.mdx),
+[Daily and Posts](website/content/daily-and-posts.mdx),
 [Direct calls](website/content/direct-calls.mdx),
 [Group calls](website/content/group-calls.mdx), and `file-transfers.mdx`)
 and are committed; generated
@@ -239,6 +240,11 @@ are in [`common.proto`](tinkle/v1/common.proto); shared rich-text spans are in
 [`entities.proto`](tinkle/v1/entities.proto), and the shared media vocabulary
 (metadata, attributes, thumbnails) is in [`media.proto`](tinkle/v1/media.proto).
 
+[`SocialService`](tinkle/v1/social.proto), described in [Daily and Posts](website/content/daily-and-posts.mdx),
+distinguishes a 24-hour, single-media Daily from a persistent Post with 1–10
+ordered photos or videos. The guide follows one photo through dual publication,
+a viewer's private DM reply, expiry, and the owner's archive.
+
 `CallsService` covers both [direct calls](website/content/direct-calls.mdx) and
 [group calls](website/content/group-calls.mdx). Direct endpoints exchange typed
 trickle ICE signals. A group participant's device recovers its own membership
@@ -276,7 +282,7 @@ cancellation (`AbortUpload`), storage metadata (`GetFileInfo`), and byte-range
 downloads (`DownloadPart`). Completed files are immutable and referenced by
 canonical `file_id` across services. Non-uploaders supply `FileAccessContext`
 on both file-read methods, selecting a visible message, retained profile-gallery
-entry, usable sticker asset, or current chat photo; authorization and exact file
+entry, usable sticker asset, current chat photo, Daily, or Post; authorization and exact file
 membership are rechecked on every call. Profile-photo owners may reference
 unselected retained entries; nonowners may reference only the selected photo when
 privacy permits it.

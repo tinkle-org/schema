@@ -597,6 +597,12 @@ message ReplyInput {
   // must be visible to the caller. Omit for an ordinary reply outside a thread.
   // Never infer a root from a quote or accept a root from another conversation.
   optional int64 thread_root_id = 4;
+  // Alternative to a message reply: positive ID of a currently visible active
+  // Daily. Require a private user target equal to its author and normal DM send
+  // permission. Reject message/quote/thread selectors and scheduled sends with
+  // this field. Recheck at final acceptance, including a pending media send.
+  // Record only the reference, never copy the Daily media or caption into chat.
+  optional int64 daily_id = 5;
 }
 
 // ChatPhotoSource selects the photo for chat photo operations: it either

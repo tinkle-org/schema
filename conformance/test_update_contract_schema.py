@@ -7,12 +7,27 @@ import unittest
 import test_files_schema as files
 from test_updates_schema import declarations
 from update_contract import (BASELINE, CALL_METHODS, CASE_FILES, COMMANDS_WITHOUT_UPDATES,
-                             PRE_CALL_BASELINE, UPDATE_FILE, UPDATE_RESPONSES, current_filename)
+                             PRE_CALL_BASELINE, SOCIAL_METHODS, UPDATE_FILE, UPDATE_RESPONSES, current_filename)
 
 
 RESPONSE = "SendMessageResponse"
 CALL_SUMMARY_FIELD = {"name": "call_summary", "jsonName": "callSummary", "number": 21,
                      "label": "LABEL_OPTIONAL", "type": "TYPE_MESSAGE", "typeName": ".tinkle.v1.CallMessageSummary"}
+
+
+def with_social_fields(old):
+    """Apply only the specified social additions to a historical descriptor."""
+    daily = {"name": "daily_id", "jsonName": "dailyId", "number": 5,
+             "label": "LABEL_OPTIONAL", "type": "TYPE_INT64", "oneofIndex": 0}
+    if old["name"] == "FileAccessContext":
+        post = dict(daily, name="post_id", jsonName="postId", number=6)
+        return dict(old, field=[*old["field"], daily, post])
+    if old["name"] in ("ReplyInput", "MessageReplyHeader"):
+        oneofs = old.get("oneofDecl", [])
+        tag = 5 if old["name"] == "ReplyInput" else 6
+        return dict(old, field=[*old["field"], dict(daily, number=tag, oneofIndex=len(oneofs), proto3Optional=True)],
+                    oneofDecl=[*oneofs, {"name": "_daily_id"}])
+    return old
 
 
 class UpdateContractSchemaTests(files.BufSchemaTestCase):
@@ -30,7 +45,7 @@ class UpdateContractSchemaTests(files.BufSchemaTestCase):
         cls.after = {p["name"]: p for p in current["file"]}
         cls.current = declarations(current)
 
-    def test_pre_call_baseline_only_appends_to_message_and_update(self):
+    def test_only_planned_fields_appended_since_pre_call_baseline(self):
         before = declarations(json.loads(self.pre_call_path.read_bytes()))
         for kind in ("message", "enum"):
             for name, (old_path, old) in before[kind].items():
@@ -40,7 +55,7 @@ class UpdateContractSchemaTests(files.BufSchemaTestCase):
                     current = dict(current, field=current["field"][:len(old["field"])])
                 elif name == "tinkle.v1.Message":
                     old = dict(old, field=[*old["field"], CALL_SUMMARY_FIELD])
-                self.assertEqual((old_path, old), (path, current), name)
+                self.assertEqual((old_path, with_social_fields(old)), (path, current), name)
 
     def test_legacy_fields_and_file_moves(self):
         for kind in ("message", "enum"):
@@ -58,7 +73,7 @@ class UpdateContractSchemaTests(files.BufSchemaTestCase):
                     elif short in ("GetInfoResponse", "OwnedBot"):
                         # Additional fields are pinned by the bot recovery check below.
                         current = dict(current, field=current["field"][:len(fields)])
-                    self.assertEqual(expected, current)
+                    self.assertEqual(with_social_fields(expected), current)
 
     @staticmethod
     def updates_field(tag):
@@ -72,7 +87,7 @@ class UpdateContractSchemaTests(files.BufSchemaTestCase):
                 if field.get("typeName") == ".tinkle.v1.Update":
                     self.assertEqual(self.updates_field(field["number"]), field, name)
                     actual.append(name.removeprefix("tinkle.v1."))
-        self.assertEqual(130, len(UPDATE_RESPONSES))
+        self.assertEqual(139, len(UPDATE_RESPONSES))
         self.assertCountEqual(UPDATE_RESPONSES, actual)
 
     def test_update_inventory_accounts_for_rpc_handlers(self):
@@ -102,10 +117,12 @@ class UpdateContractSchemaTests(files.BufSchemaTestCase):
         methods = service["method"]
         self.assertCountEqual(added.values(), [m for m in methods if m["name"] in added])
         services[key] = path, dict(service, method=[m for m in methods if m["name"] not in added])
-        calls = {"name": "CallsService", "method": [
-            {"name": m, "inputType": f".tinkle.v1.{m}Request", "outputType": f".tinkle.v1.{m}Response"}
-            for m in CALL_METHODS]}
-        self.assertEqual(("tinkle/v1/calls.proto", calls), services.pop("tinkle.v1.CallsService"))
+        for name, path, inventory in (("CallsService", "tinkle/v1/calls.proto", CALL_METHODS),
+                                      ("SocialService", "tinkle/v1/social.proto", SOCIAL_METHODS)):
+            expected = {"name": name, "method": [
+                {"name": m, "inputType": f".tinkle.v1.{m}Request", "outputType": f".tinkle.v1.{m}Response"}
+                for m in inventory]}
+            self.assertEqual((path, expected), services.pop("tinkle.v1." + name))
         self.assertEqual(self.before["service"], services)
 
     def test_update_import_graph(self):
@@ -165,7 +182,7 @@ class UpdateContractSchemaTests(files.BufSchemaTestCase):
         self.assertFalse(source.get("enumType"))
         self.assertEqual(["Update"], [d["name"] for d in source["messageType"]])
         update = self.descriptor("Update", UPDATE_FILE)
-        self.assertEqual(67, len(CASE_FILES))
+        self.assertEqual(74, len(CASE_FILES))
         expected = []
         for tag, name in enumerate(CASE_FILES, 1):
             key = re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
@@ -174,10 +191,10 @@ class UpdateContractSchemaTests(files.BufSchemaTestCase):
         self.assertEqual({"name": "Update", "oneofDecl": [{"name": "change"}], "field": expected}, update)
         for name, filename in CASE_FILES.items():
             self.descriptor(name, filename)
-        call_file = "tinkle/v1/call_updates.proto"
-        call_changes = [name for name, filename in CASE_FILES.items() if filename == call_file]
-        self.assertEqual(call_changes, [msg["name"] for msg in self.after[call_file]["messageType"]
-                                        if msg["name"] in call_changes])
+        for path in ("tinkle/v1/call_updates.proto", "tinkle/v1/social_updates.proto"):
+            changes = [name for name, filename in CASE_FILES.items() if filename == path]
+            self.assertEqual(changes, [msg["name"] for msg in self.after[path]["messageType"]
+                                       if msg["name"] in changes], path)
         self.assertNotIn("tinkle.v1.DialogInvalidated", self.current["message"])
         for name in ("MessageAdded", "MessageEdited"):
             self.assert_fields(name, [("message", 1, "MESSAGE", "Message", False, False)])

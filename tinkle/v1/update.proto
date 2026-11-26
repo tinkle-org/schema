@@ -10,6 +10,7 @@ import "tinkle/v1/chat_updates.proto";
 import "tinkle/v1/contact_updates.proto";
 import "tinkle/v1/dialog_updates.proto";
 import "tinkle/v1/message_updates.proto";
+import "tinkle/v1/social_updates.proto";
 import "tinkle/v1/sticker_updates.proto";
 
 option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
@@ -99,5 +100,12 @@ message Update {
     CallPresentationChanged call_presentation_changed = 65 [json_name = "call_presentation_changed"];
     CallHistoryChanged call_history_changed = 66 [json_name = "call_history_changed"];
     GroupCallAccessChanged group_call_access_changed = 67 [json_name = "group_call_access_changed"];
+    DailyChanged daily_changed = 68 [json_name = "daily_changed"];
+    DailyRemoved daily_removed = 69 [json_name = "daily_removed"];
+    DailyAvailabilityChanged daily_availability_changed = 70 [json_name = "daily_availability_changed"];
+    DailySeenChanged daily_seen_changed = 71 [json_name = "daily_seen_changed"];
+    PostChanged post_changed = 72 [json_name = "post_changed"];
+    PostRemoved post_removed = 73 [json_name = "post_removed"];
+    PostLikesChanged post_likes_changed = 74 [json_name = "post_likes_changed"];
   }
 }

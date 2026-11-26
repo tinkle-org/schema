@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "tinkle/v1/daily_types.proto";
+import "tinkle/v1/post_types.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Merge only a newer authorized snapshot. Expiry still gates active display.
+message DailyChanged {
+  // Complete projection for this viewer; never broadcast an owner's copy.
+  Daily daily = 1;
+}
+
+// Retract a previously disclosed Daily from this recipient, without a reason.
+message DailyRemoved {
+  // Known Daily whose cached body and file references must be discarded.
+  int64 daily_id = 1;
+  // Same revision scope as Daily. Retain this floor; stale bodies at or below
+  // it cannot restore access. On missed delivery reauthorize via GetDaily.
+  uint64 revision = 2;
+}
+
+// Viewer-specific invalidation, not evidence that the author currently has a
+// Daily. Coalesce and re-read BatchGetDailyAvailability, including on reconnect.
+message DailyAvailabilityChanged {
+  // Author with changed visible availability or a previously disclosed ring.
+  int64 user_id = 1;
+}
+
+// This account marked an active Daily seen. Never notify other accounts.
+message DailySeenChanged {
+  // Already viewed Daily. Mark seen if still cached, never recreate its body.
+  int64 daily_id = 1;
+}
+
+// Complete authorized Post snapshot; apply only a newer viewer/Post revision.
+message PostChanged {
+  // Includes only this recipient's like state. Never changes Daily availability.
+  Post post = 1;
+}
+
+// Retract a previously disclosed Post, without revealing why it is unavailable.
+message PostRemoved {
+  // Known Post whose cached body and file references must be discarded.
+  int64 post_id = 1;
+  // Same scope as Post.revision. Never restore from a snapshot at or below it.
+  uint64 revision = 2;
+}
+
+// Like state invalidation for authorized recipients. Coalesce duplicates and
+// refresh GetPost; never increment a local count from this hint.
+message PostLikesChanged {
+  // Visible Post, without the liking user's identity.
+  int64 post_id = 1;
+}
