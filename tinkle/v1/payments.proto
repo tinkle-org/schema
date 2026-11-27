@@ -1,0 +1,312 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "tinkle/v1/payment_types.proto";
+import "tinkle/v1/update.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Private billing for the authenticated principal. No method accepts a beneficiary.
+service PaymentsService {
+  // Quote an authorized invoice or reserve exactly one native premium checkout.
+  rpc CreateInvoice(CreateInvoiceRequest) returns (CreateInvoiceResponse);
+  // Claim a still-eligible native reservation once, immediately before native UI.
+  rpc ClaimStoreCheckout(ClaimStoreCheckoutRequest) returns (ClaimStoreCheckoutResponse);
+  // Read a private quote, never native launch material.
+  rpc GetInvoice(GetInvoiceRequest) returns (GetInvoiceResponse);
+  // Get a tokenization form for an authorized OTHER_INVOICE only.
+  rpc GetPaymentForm(GetPaymentFormRequest) returns (GetPaymentFormResponse);
+  // Validate tokenized other-invoice details without charging or granting access.
+  rpc ValidatePaymentDetails(ValidatePaymentDetailsRequest) returns (ValidatePaymentDetailsResponse);
+  // Submit one authorized other invoice. Reject every store or premium product.
+  rpc SubmitPayment(SubmitPaymentRequest) returns (SubmitPaymentResponse);
+  // Recover a payment or an accepted submit/verify operation without resubmitting evidence.
+  rpc GetPayment(GetPaymentRequest) returns (GetPaymentResponse);
+  // Discover payments including renewals processed while the app was offline.
+  rpc ListPayments(ListPaymentsRequest) returns (ListPaymentsResponse);
+  // Read a sanitized receipt, not store proof or a tax invoice from the store.
+  rpc GetPaymentReceipt(GetPaymentReceiptRequest) returns (GetPaymentReceiptResponse);
+  // Request a full other-invoice refund; actual store refunds are origin-controlled.
+  rpc CreateRefund(CreateRefundRequest) returns (CreateRefundResponse);
+  // Read a private refund, including a store-reported reversal.
+  rpc GetRefund(GetRefundRequest) returns (GetRefundResponse);
+  // Verify native evidence or restore it. Never initiates a charge.
+  rpc VerifyStorePurchase(VerifyStorePurchaseRequest) returns (VerifyStorePurchaseResponse);
+  // Read effective coverage and all verified sources for this account and environment.
+  rpc GetMyEntitlements(GetMyEntitlementsRequest) returns (GetMyEntitlementsResponse);
+}
+
+// Native checkout selector. Catalog, principal and environment are checked by the server.
+message PremiumCheckoutRequest {
+  // Fresh private eligibility fence from GetMyEntitlements, not a store token.
+  bytes checkout_fence = 1;
+  // Select the native store and exact allowlisted subscription SKU.
+  oneof product {
+    // StoreKit product identifier.
+    string apple_product_id = 2;
+    // Play subscription product identifier (launch supports one configured plan per SKU).
+    string play_product_id = 3;
+  }
+}
+
+// Request a private quote. Choosing a branch cannot override catalog policy.
+message CreateInvoiceRequest {
+  // Principal-scoped operation UUID. Bind permanently to the exact request.
+  string request_id = 1;
+  // Exactly one purpose required.
+  oneof purpose {
+    // Digital premium: check and reserve across both stores before returning.
+    PremiumCheckoutRequest premium = 2;
+    // Server-issued order for an independently authorized non-premium use.
+    string other_order_id = 3;
+  }
+}
+
+// Reserve only. An authorized exact retry returns the original invoice ID and deadline
+// even after release; never reacquire a slot, refresh the deadline or return a binding.
+message CreateInvoiceResponse {
+  // Authorized immutable quote.
+  Invoice invoice = 1;
+  // Former draft launch field. Never populate or use, even on first acceptance.
+  StorePurchaseIntent store_intent = 2 [deprecated = true];
+  // Owner-only eligibility change on reservation. An other-invoice quote emits none.
+  repeated Update updates = 3;
+}
+
+// Serialize with reserve, expiry and verified store changes for this account/partition/benefit.
+// Require the owner's current RESERVED native invoice, approved app/store/product, no coverage
+// or competing checkout, unchanged reservation revision and server time strictly before expiry.
+// At or after expiry release only an unclaimed reservation. A released invoice cannot be claimed.
+message ClaimStoreCheckoutRequest {
+  // Required logical operation UUID. Bind permanently to the exact invoice and revision
+  // within actor, trusted environment and method; changed input conflicts without effects.
+  string request_id = 1;
+  // Opaque ID of the premium invoice, not a store token or proof of ownership.
+  string invoice_id = 2;
+  // Positive post-reserve MyEntitlements.revision; must still be current at transition.
+  uint64 expected_revision = 3;
+}
+
+// Durably commit the claim, owner binding and revision advance before returning material.
+// Only the transition winner gets an intent. While claimed, an authorized exact duplicate
+// succeeds without material; another key fails. After release every claim fails.
+message ClaimStoreCheckoutResponse {
+  // For a single live launch only. Absence never authorizes calling the store.
+  StorePurchaseIntent store_intent = 1;
+  // Owner-only entitlement refresh hint on transition, never a launch instruction.
+  repeated Update updates = 2;
+}
+
+// Lookup a quote by neutral ID.
+message GetInvoiceRequest {
+  // ID returned by CreateInvoice.
+  string invoice_id = 1;
+}
+
+// Current authorized quote, including its original deadline.
+message GetInvoiceResponse {
+  // Neither proof of settlement nor permission to launch.
+  Invoice invoice = 1;
+}
+
+// Request other-invoice tokenization instructions.
+message GetPaymentFormRequest {
+  // Must resolve to an open, authorized non-store invoice.
+  string invoice_id = 1;
+}
+
+// An ephemeral private form for the specified provider's tokenization flow.
+message GetPaymentFormResponse {
+  // Bound to the principal, invoice and expiry.
+  string form_id = 1;
+  // Allowlisted integration name; never an arbitrary checkout URL.
+  string provider = 2;
+  // Exclusive Unix seconds deadline.
+  int64 expires_at = 3;
+}
+
+// Validate a token from the selected provider; never send raw card details.
+// Before exchange, atomically bind (actor, trusted environment, method, request_id)
+// to the form and a protected digest of the exact token bytes. Changed input conflicts
+// without effects. Concurrent exact retries share one exchange. After a crash, recover
+// by the same provider operation key or reconcile; never blindly consume the token again.
+message ValidatePaymentDetailsRequest {
+  // Owner's unexpired non-store form.
+  string form_id = 1;
+  // Single-use tokenization result, private input only. Never log the raw token.
+  bytes provider_token = 2;
+  // Required operation UUID. Persist before sending; retry with identical inputs.
+  string request_id = 3;
+}
+
+// Private validated details handle, not a payment outcome.
+message ValidatePaymentDetailsResponse {
+  // Bound to the exact invoice, amount, provider, principal and form deadline.
+  // Persist before replying. An authorized exact retry returns this same handle while
+  // valid; after expiry fail without minting a replacement or reopening the key.
+  string validated_details_id = 1;
+}
+
+// Pay the validated other invoice at most once, including across different keys.
+message SubmitPaymentRequest {
+  // Owner-scoped UUID persisted before submission.
+  string request_id = 1;
+  // Must match the validated non-store invoice.
+  string invoice_id = 2;
+  // Only the server's validated token handle is accepted here.
+  string validated_details_id = 3;
+}
+
+// Outcome of a non-store payment submission.
+message SubmitPaymentResponse {
+  // Stable identity even if settlement is pending.
+  Payment payment = 1;
+  // Direct owner-visible changes.
+  repeated Update updates = 2;
+}
+
+// Select exactly one nonempty ID. The authenticated actor and partition are implicit.
+message GetPaymentRequest {
+  oneof lookup {
+    // Neutral transaction-level ID.
+    string payment_id = 1;
+    // Original SubmitPayment UUID; the same UUID on another method is a different key.
+    string submit_payment_request_id = 2;
+    // Original VerifyStorePurchase UUID, including a verification with no settled row yet.
+    string verify_store_purchase_request_id = 3;
+  }
+}
+
+// Exactly one outcome on success. Unknown/unowned keys are not pending operations.
+message GetPaymentResponse {
+  oneof outcome {
+    // For a payment ID or submit UUID; pending non-store settlement has a stable row.
+    Payment payment = 1;
+    // For a verify UUID only. Same result contract as VerifyStorePurchase, even without a row.
+    StorePurchaseResult verification = 2;
+  }
+  // Required with verification: current owner coverage, not a replay of a historic grant.
+  MyEntitlements entitlements = 3;
+}
+
+// Walk the caller's ledger without an original intent or device.
+message ListPaymentsRequest {
+  // 1..100 rows; zero selects 50.
+  uint32 limit = 1;
+  // Absent/empty starts a scan; otherwise use the exact returned cursor.
+  bytes cursor = 2;
+}
+
+// Page ordered by descending immutable ledger insertion order.
+message ListPaymentsResponse {
+  // Currently authorized rows only.
+  repeated Payment payments = 1;
+  // Empty means end. On expired cursor restart and deduplicate by payment ID.
+  bytes next_cursor = 2;
+}
+
+// Select an origin-confirmed transaction.
+message GetPaymentReceiptRequest {
+  // Owner's payment ID, not store evidence.
+  string payment_id = 1;
+}
+
+// Sanitized receipt for the original settlement; available after a reversal too.
+message GetPaymentReceiptResponse {
+  // Current ledger detail with any subsequent refund link.
+  Payment payment = 1;
+  // Original settlement instant in Unix seconds, not the last revision time.
+  int64 settled_at = 2;
+}
+
+// Request a full refund for an eligible other-invoice settlement.
+message CreateRefundRequest {
+  // Owner-scoped UUID persisted before submission.
+  string request_id = 1;
+  // If Apple or Play, reject without submitting a refund or altering coverage.
+  string payment_id = 2;
+}
+
+// Refund acceptance does not imply reversal.
+message CreateRefundResponse {
+  // Recover this record rather than initiating a second refund.
+  Refund refund = 1;
+  // Owner-visible refund and any changed payment.
+  repeated Update updates = 2;
+}
+
+// Select an authorized refund record.
+message GetRefundRequest {
+  // Exactly one nonempty ID within the authenticated actor's ledger partition.
+  oneof lookup {
+    // Neutral ID discoverable on the payment.
+    string refund_id = 1;
+    // Original CreateRefund UUID, including while its refund is pending.
+    string create_refund_request_id = 2;
+  }
+}
+
+// Current private refund detail.
+message GetRefundResponse {
+  // Only definitive confirmation means funds were reversed.
+  Refund refund = 1;
+}
+
+// Submit one store proof. Absence of the local intent selects restore, never first-claim binding.
+message VerifyStorePurchaseRequest {
+  // Required operation UUID. Persist before submission. Exact retries resolve the original
+  // bound occurrence, never the latest renewal. This is not a store transaction identity.
+  string request_id = 1;
+  // If present it must match; a mismatch must not fall back to restore.
+  optional string intent_id = 2;
+  // Exactly one nonempty native input. Identity, owner, state and price are server-verified.
+  oneof evidence {
+    // Compact signed StoreKit transaction (JWS).
+    string apple_signed_transaction = 3;
+    // Opaque Play token for authoritative server lookup; not a renewal ID.
+    string play_purchase_token = 4;
+  }
+}
+
+// Ownership established but no verified settlement yet. Do not fulfill or acknowledge.
+message StorePurchasePending {}
+
+// Origin confirmed that the bound pending purchase ended without settlement.
+message StorePurchaseNotCompleted {}
+
+// Recoverable result for one accepted verification request, not an entitlement.
+message StorePurchaseResult {
+  // Exactly one known outcome required on success. Never substitute a later purchase.
+  oneof outcome {
+    // Awaiting authoritative settlement of the original occurrence; no synthetic receipt.
+    StorePurchasePending pending = 1;
+    // The original settled payment. Refund or loss of coverage does not change its identity.
+    Payment verified_payment = 2;
+    // Terminal nonpurchase, not an unknown key or a refunded settlement.
+    StorePurchaseNotCompleted not_completed = 3;
+  }
+}
+
+// Private result and current coverage are both required, even on an exact retry.
+message VerifyStorePurchaseResponse {
+  // Same request-bound result returned by GetPayment's verify-UUID lookup.
+  StorePurchaseResult result = 1;
+  // Current account snapshot, independent of the purchase's original settlement.
+  MyEntitlements entitlements = 2;
+  // Direct owner-only refresh hints; never replay credits or a past grant.
+  repeated Update updates = 3;
+}
+
+// Always selects the authenticated account and trusted endpoint partition.
+message GetMyEntitlementsRequest {}
+
+// Cross-device recovery, independent of local keys. Apply due unclaimed expiry before
+// reporting eligibility; a read never reserves a slot or returns native launch material.
+message GetMyEntitlementsResponse {
+  // Complete source list and a single effective benefit.
+  MyEntitlements entitlements = 1;
+  // Short-lived opaque server-authenticated fence bound to account, partition,
+  // eligibility revision and expiry. Only supplied when eligible. Never a launch permit.
+  bytes checkout_fence = 2;
+}

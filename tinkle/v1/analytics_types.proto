@@ -1,0 +1,185 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "tinkle/v1/message_types.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// One accepted message in a room. The room kind and membership of the
+// message in that room must be checked; a direct conversation is invalid.
+message AnalyticsMessageRef {
+  // Required room: chat_id for a group, channel_id for a channel or broadcast.
+  RoomQueryTarget target = 1;
+  // Positive message ID within that chat, not a send key or poll ID.
+  int64 message_id = 2;
+}
+
+// Select exactly one subject. All IDs must be positive. A poll is addressed
+// by its containing message and must still be the visible poll at that key.
+message AnalyticsSubject {
+  oneof subject {
+    // Channel or broadcast Chat ID.
+    int64 channel_id = 1;
+    // Group Chat ID.
+    int64 group_id = 2;
+    // Message in the specified room.
+    AnalyticsMessageRef message = 3;
+    // Independent Daily publication ID.
+    int64 daily_id = 4;
+    // Independent persistent Post ID.
+    int64 post_id = 5;
+    // Poll-bearing message in the specified room.
+    AnalyticsMessageRef poll = 6;
+  }
+}
+
+// Half-open UTC interval. Requests require 1..90 whole UTC calendar days;
+// responses use actual boundaries, which need not fall at midnight.
+message AnalyticsPeriod {
+  // Inclusive start, required and strictly before end.
+  google.protobuf.Timestamp start = 1;
+  // Exclusive end, required. The last requested day may be today.
+  google.protobuf.Timestamp end = 2;
+}
+
+// Timing of a final authorized read. Neither timestamp is the requested end.
+message AnalyticsFreshness {
+  // When this result was produced. Serving it from cache does not advance it.
+  google.protobuf.Timestamp generated_at = 1;
+  // Exclusive source watermark used for the read, no later than generated_at.
+  // Required with coverage; omit when unknown or not disclosable. Coverage may
+  // end earlier (e.g. a historical query), but must never extend past this time.
+  google.protobuf.Timestamp data_through = 2;
+}
+
+// Bucket widths available to series queries. Launch supports only UTC days.
+enum AnalyticsGranularity {
+  // Not a supported width.
+  ANALYTICS_GRANULARITY_UNSPECIFIED = 0;
+  // Split the covered interval at midnight UTC.
+  ANALYTICS_GRANULARITY_DAY = 1;
+}
+
+// Final outcome for an authorized query that cannot return a series.
+enum AnalyticsSeriesUnavailableReason {
+  // Unknown; never emit as a final decision or interpret as zero.
+  ANALYTICS_SERIES_UNAVAILABLE_REASON_UNSPECIFIED = 0;
+  // Disclosure policy precludes the graph, including its bucket boundaries.
+  ANALYTICS_SERIES_UNAVAILABLE_REASON_WITHHELD = 1;
+  // No disclosable observation interval intersects the requested days. Only
+  // use when absence of coverage may itself be disclosed.
+  ANALYTICS_SERIES_UNAVAILABLE_REASON_NO_COVERAGE = 2;
+}
+
+// Every launch metric has one explicit outcome. Missing/unknown outcomes
+// are not zero. Never report a partial count as if it were complete.
+message AnalyticsCount {
+  oneof result {
+    // Exact count, including a measured zero.
+    uint64 value = 1;
+    // No disclosable measurement (policy, missing history or source lag).
+    google.protobuf.Empty withheld = 2;
+  }
+}
+
+// Closed launch vocabulary. Each subject accepts only its own metrics.
+enum AnalyticsMetric {
+  // Not a query or a grant.
+  ANALYTICS_METRIC_UNSPECIFIED = 0;
+  // Distinct channel members at the end of coverage.
+  ANALYTICS_METRIC_SUBSCRIBERS = 1;
+  // Accepted top-level room messages during coverage, excluding service events.
+  ANALYTICS_METRIC_MESSAGES = 2;
+  // Distinct group members at the end of coverage.
+  ANALYTICS_METRIC_MEMBERS = 3;
+  // Current reaction selections on the message as of the end of coverage.
+  ANALYTICS_METRIC_REACTIONS = 4;
+  // Publication of this Daily in coverage (one event, not a viewer count).
+  ANALYTICS_METRIC_PUBLICATIONS = 5;
+  // Distinct accounts liking this Post at the end of coverage.
+  ANALYTICS_METRIC_LIKES = 6;
+  // Distinct voters in this poll at the end of coverage; no option breakdown.
+  ANALYTICS_METRIC_VOTERS = 7;
+}
+
+// Channel or broadcast summary, including only authorized room activity.
+message ChannelStats {
+  // Distinct subscribed accounts just before the exclusive end.
+  AnalyticsCount subscribers = 1;
+  // Top-level channel messages accepted in the covered interval.
+  AnalyticsCount messages = 2;
+}
+
+// Group summary; no author or member breakdowns.
+message GroupStats {
+  // Distinct members just before the exclusive end.
+  AnalyticsCount members = 1;
+  // Top-level group messages accepted in the covered interval.
+  AnalyticsCount messages = 2;
+}
+
+// Aggregate for one currently visible room message, never a DM.
+message MessageStats {
+  // Reaction selections still present just before the exclusive end.
+  AnalyticsCount reactions = 1;
+}
+
+// Author-only publication activity. No seen, impression or reply metrics.
+message DailyStats {
+  // One if published in the covered interval, otherwise zero.
+  AnalyticsCount publications = 1;
+}
+
+// Author-only aggregate for one persistent Post.
+message PostStats {
+  // Same distinct-account measure as Post.like_count, at the coverage cutoff.
+  AnalyticsCount likes = 1;
+}
+
+// Room poll aggregate subject to the source's current results policy.
+message PollStats {
+  // Distinct voters at cutoff; multiple selections by one voter count once.
+  AnalyticsCount voters = 1;
+}
+
+// A fresh single-metric series query. There is no arbitrary grouping,
+// filtering, comparison, raw event export or cross-subject aggregation.
+message AnalyticsSeriesQuery {
+  // Required subject, checked against the metric and current caller.
+  AnalyticsSubject subject = 1;
+  // One supported, non-unspecified metric for this subject.
+  AnalyticsMetric metric = 2;
+  // Required requested window, at most 90 daily buckets.
+  AnalyticsPeriod period = 3;
+  // Omit for DAY. If supplied, must be a supported, non-unspecified width.
+  optional AnalyticsGranularity granularity = 4;
+}
+
+// One UTC day intersected with actual coverage.
+message AnalyticsBucket {
+  // Actual half-open interval for this point, never padded to a full day.
+  AnalyticsPeriod period = 1;
+  // Same metric definition and disclosure policy as its summary.
+  AnalyticsCount count = 2;
+}
+
+// Ready graph, never a sentinel for withheld data or absent coverage.
+message AnalyticsSeries {
+  // Actual contiguous interval evaluated within the requested period.
+  AnalyticsPeriod coverage = 1;
+  // One per covered day in ascending order, including zero or withheld days.
+  repeated AnalyticsBucket buckets = 2;
+}
+
+// Retry a deferred series read, not an authorization or a pagination cursor.
+message AnalyticsPending {
+  // Opaque nonempty token (at most 256 bytes), bound to principal and query.
+  bytes token = 1;
+  // Absolute expiration, at most 15 minutes from the initial deferral.
+  google.protobuf.Timestamp expires_at = 2;
+  // Minimum seconds before retry, in 1..60. Stop at expiry.
+  uint32 retry_after_seconds = 3;
+}

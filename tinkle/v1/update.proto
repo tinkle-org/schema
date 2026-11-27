@@ -4,12 +4,14 @@ package tinkle.v1;
 
 import "tinkle/v1/account_updates.proto";
 import "tinkle/v1/application_updates.proto";
+import "tinkle/v1/boost_updates.proto";
 import "tinkle/v1/bot_updates.proto";
 import "tinkle/v1/call_updates.proto";
 import "tinkle/v1/chat_updates.proto";
 import "tinkle/v1/contact_updates.proto";
 import "tinkle/v1/dialog_updates.proto";
 import "tinkle/v1/message_updates.proto";
+import "tinkle/v1/payment_updates.proto";
 import "tinkle/v1/social_updates.proto";
 import "tinkle/v1/sticker_updates.proto";
 
@@ -107,5 +109,10 @@ message Update {
     PostChanged post_changed = 72 [json_name = "post_changed"];
     PostRemoved post_removed = 73 [json_name = "post_removed"];
     PostLikesChanged post_likes_changed = 74 [json_name = "post_likes_changed"];
+    PaymentChanged payment_changed = 75 [json_name = "payment_changed"];
+    RefundChanged refund_changed = 76 [json_name = "refund_changed"];
+    MyEntitlementsChanged my_entitlements_changed = 77 [json_name = "my_entitlements_changed"];
+    MyBoostsChanged my_boosts_changed = 78 [json_name = "my_boosts_changed"];
+    BoostStatusChanged boost_status_changed = 79 [json_name = "boost_status_changed"];
   }
 }

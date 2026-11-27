@@ -1,0 +1,181 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "tinkle/v1/analytics_types.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Pull-only aggregates. Every call requires active authentication and current
+// source visibility and entitlement; a prior access result or token grants none.
+service AnalyticsService {
+  // Discover eligible metrics without exposing subject existence to outsiders.
+  rpc GetAnalyticsAccess(GetAnalyticsAccessRequest) returns (GetAnalyticsAccessResponse);
+  // Read a channel or broadcast summary as its owner or authorized admin.
+  rpc GetChannelStats(GetChannelStatsRequest) returns (GetChannelStatsResponse);
+  // Read a group summary as its owner or authorized admin.
+  rpc GetGroupStats(GetGroupStatsRequest) returns (GetGroupStatsResponse);
+  // Read aggregate reactions on a visible message as an authorized room admin or owner.
+  rpc GetMessageStats(GetMessageStatsRequest) returns (GetMessageStatsResponse);
+  // Read publication activity on the caller's undeleted Daily, including its archive.
+  rpc GetDailyStats(GetDailyStatsRequest) returns (GetDailyStatsResponse);
+  // Read aggregate likes on the caller's undeleted Post.
+  rpc GetPostStats(GetPostStatsRequest) returns (GetPostStatsResponse);
+  // Read distinct participation only, subject to room access and poll-result visibility.
+  rpc GetPollStats(GetPollStatsRequest) returns (GetPollStatsResponse);
+  // Read daily points or retry a pending query after rechecking current access.
+  rpc GetAnalyticsSeries(GetAnalyticsSeriesRequest) returns (GetAnalyticsSeriesResponse);
+}
+
+// Ask which metrics may be requested now, not which measurements exist.
+message GetAnalyticsAccessRequest {
+  // Exactly one subject, including the containing room for messages and polls.
+  AnalyticsSubject subject = 1;
+}
+
+// An advisory allowlist, not a capability. Inaccessible and nonexistent
+// subjects have the same empty result. No data-dependent denial reasons.
+message GetAnalyticsAccessResponse {
+  // Distinct eligible metrics in enum-number order, never UNSPECIFIED.
+  repeated AnalyticsMetric metrics = 1;
+  // Distinct supported series widths for these metrics; DAY only at launch.
+  // Empty when no metrics may be requested.
+  repeated AnalyticsGranularity granularities = 2;
+  // Disclosable history window for this subject, before request clipping.
+  // Absent when unavailable, withheld or no access. Not a promise of values
+  // for every metric or a relaxation of the 90-day per-query maximum.
+  AnalyticsPeriod supported_period = 3;
+}
+
+// Request aggregate stats for one channel or broadcast.
+message GetChannelStatsRequest {
+  // Positive channel Chat ID; a group or DM is invalid.
+  int64 channel_id = 1;
+  // Required requested UTC days.
+  AnalyticsPeriod period = 2;
+}
+
+// Channel aggregates over the actual coverage only.
+message GetChannelStatsResponse {
+  // Actual interval; absent for no coverage (all metrics withheld).
+  AnalyticsPeriod coverage = 1;
+  // Required summary with one explicit outcome per launch metric.
+  ChannelStats stats = 2;
+  // Result generation time and source watermark, independent of coverage.
+  AnalyticsFreshness freshness = 3;
+}
+
+// Request aggregate stats for one group.
+message GetGroupStatsRequest {
+  // Positive group Chat ID; a channel or DM is invalid.
+  int64 group_id = 1;
+  // Required requested UTC days.
+  AnalyticsPeriod period = 2;
+}
+
+// Group aggregates over the actual coverage only.
+message GetGroupStatsResponse {
+  // Actual interval; absent for no coverage (all metrics withheld).
+  AnalyticsPeriod coverage = 1;
+  // Required group summary, without individual contributors.
+  GroupStats stats = 2;
+  // Result generation time and source watermark, independent of coverage.
+  AnalyticsFreshness freshness = 3;
+}
+
+// Request aggregate stats for one visible room message.
+message GetMessageStatsRequest {
+  // Required canonical room and message identity.
+  AnalyticsMessageRef message = 1;
+  // Required requested UTC days.
+  AnalyticsPeriod period = 2;
+}
+
+// Message aggregates over the actual coverage only.
+message GetMessageStatsResponse {
+  // Actual interval; absent for no coverage (all metrics withheld).
+  AnalyticsPeriod coverage = 1;
+  // Required summary; no reaction actor or read receipts.
+  MessageStats stats = 2;
+  // Result generation time and source watermark, independent of coverage.
+  AnalyticsFreshness freshness = 3;
+}
+
+// Request stats for one owned Daily, independent of any saved Post.
+message GetDailyStatsRequest {
+  // Positive Daily publication ID.
+  int64 daily_id = 1;
+  // Required requested UTC days.
+  AnalyticsPeriod period = 2;
+}
+
+// Owner-facing publication activity; no viewer activity is reported.
+message GetDailyStatsResponse {
+  // Actual interval; absent for no coverage (all metrics withheld).
+  AnalyticsPeriod coverage = 1;
+  // Required publication summary.
+  DailyStats stats = 2;
+  // Result generation time and source watermark, independent of coverage.
+  AnalyticsFreshness freshness = 3;
+}
+
+// Request stats for one owned Post, independent of its media or origin.
+message GetPostStatsRequest {
+  // Positive persistent Post ID.
+  int64 post_id = 1;
+  // Required requested UTC days.
+  AnalyticsPeriod period = 2;
+}
+
+// Post aggregates over the actual coverage only.
+message GetPostStatsResponse {
+  // Actual interval; absent for no coverage (all metrics withheld).
+  AnalyticsPeriod coverage = 1;
+  // Required summary; never identifies who liked the Post.
+  PostStats stats = 2;
+  // Result generation time and source watermark, independent of coverage.
+  AnalyticsFreshness freshness = 3;
+}
+
+// Request participation stats for a poll in a visible room message.
+message GetPollStatsRequest {
+  // Required poll-bearing room message, not a standalone poll ID.
+  AnalyticsMessageRef poll = 1;
+  // Required requested UTC days.
+  AnalyticsPeriod period = 2;
+}
+
+// Poll participation over the actual coverage only.
+message GetPollStatsResponse {
+  // Actual interval; absent for no coverage (all metrics withheld).
+  AnalyticsPeriod coverage = 1;
+  // Required summary; no options, choices, identities or quiz answer key.
+  PollStats stats = 2;
+  // Result generation time and source watermark, independent of coverage.
+  AnalyticsFreshness freshness = 3;
+}
+
+// Start one bounded query or resume exactly that query (no overrides).
+message GetAnalyticsSeriesRequest {
+  oneof source {
+    // Validate scope, metric, period and current disclosure before starting.
+    AnalyticsSeriesQuery query = 1;
+    // Retry unchanged before expiry; recheck principal, subject and disclosure.
+    bytes pending_token = 2;
+  }
+}
+
+// Exactly one result on success; pending does not signal empty coverage.
+message GetAnalyticsSeriesResponse {
+  oneof result {
+    // Ready graph. Never use an empty graph to indicate unavailability.
+    AnalyticsSeries series = 1;
+    // Work is deferred; no values are disclosed yet.
+    AnalyticsPending pending = 2;
+    // Terminal non-data result; not a pending read, zero, or access denial.
+    AnalyticsSeriesUnavailableReason unavailable = 3;
+  }
+  // Required for terminal results; absent for pending. Withhold the watermark
+  // when the graph is withheld. A retry must not advance the source cutoff.
+  AnalyticsFreshness freshness = 4;
+}

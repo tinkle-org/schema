@@ -6,7 +6,7 @@ import re
 import unittest
 
 import test_files_schema as files
-from update_contract import UPDATE_RESPONSES, current_filename
+from update_contract import NEW_SERVICE_METHODS, UPDATE_RESPONSES, current_filename
 from test_thumbnail_schema import THUMBNAILS
 
 
@@ -40,7 +40,7 @@ class AsyncMediaSchemaTests(files.BufSchemaTestCase):
             "--as-file-descriptor-set", "-o", "-#format=json").stdout)
         old_services = {"tinkle.v1." + s["name"] for p in baseline["file"]
                         if p["name"].startswith("tinkle/") for s in p.get("service", [])}
-        self.assertEqual(old_services | {"tinkle.v1.CallsService", "tinkle.v1.SocialService"},
+        self.assertEqual(old_services | {"tinkle.v1." + name for name in ("CallsService", "SocialService", *NEW_SERVICE_METHODS)},
                          set(self.declarations["service"]))
 
         def compare_enums(items, current, prefix):

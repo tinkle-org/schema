@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Owner-only refresh hint. Reauthorize and read GetPayment; not a receipt.
+// Coalesce hints by highest revision for this owner, partition, and payment ID.
+// Ignore snapshots older than the applied snapshot. If a newer hint arrives during a read,
+// refetch unless the returned revision covers it. On startup or reconnect, page through ListPayments
+// and refetch known payments with GetPayment.
+message PaymentChanged {
+  // Neutral ID to refetch within the recipient's ledger partition.
+  string payment_id = 1;
+  // Positive revision of that payment, not an applied snapshot or operation outcome.
+  uint64 revision = 2;
+}
+
+// Owner-only refresh hint. Reauthorize and read GetRefund; not a refund decision.
+// Coalesce hints by highest revision for this owner, partition, and refund ID.
+// Ignore snapshots older than the applied snapshot. If a newer hint arrives during a read,
+// refetch unless the returned revision covers it. On startup or reconnect, follow
+// refund_id from ListPayments to GetRefund.
+message RefundChanged {
+  // Neutral ID to refetch within the recipient's ledger partition.
+  string refund_id = 1;
+  // Positive revision of that refund.
+  uint64 revision = 2;
+}
+
+// Owner-only hint to refetch GetMyEntitlements, not a grant or launch permission.
+// Reserve, claim, unclaimed expiry and authoritative resolution each advance the revision
+// and notify the owner. A missed expiry hint needs no original device: refetch at the deadline.
+// Coalesce hints by highest revision for the receiving account and partition.
+// Ignore snapshots older than the applied snapshot. If a newer hint arrives during a read,
+// refetch unless the returned revision covers it. On startup or reconnect, read GetMyEntitlements.
+message MyEntitlementsChanged {
+  // Positive owner-only entitlement revision; identity is implicit, never another account.
+  uint64 revision = 1;
+}

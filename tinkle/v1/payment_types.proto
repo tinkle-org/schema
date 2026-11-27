@@ -1,0 +1,177 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// The origin responsible for this purchase and its refunds.
+enum PaymentOrigin {
+  // Unknown; do not offer checkout or refund actions.
+  PAYMENT_ORIGIN_UNSPECIFIED = 0;
+  // Apple App Store.
+  PAYMENT_ORIGIN_APPLE = 1;
+  // Google Play.
+  PAYMENT_ORIGIN_PLAY = 2;
+  // Authorized non-store invoice; never digital premium.
+  PAYMENT_ORIGIN_OTHER_INVOICE = 3;
+}
+
+// Server-selected accounting partition. Never aggregate across partitions.
+enum PaymentEnvironment {
+  // Unknown; do not apply.
+  PAYMENT_ENVIRONMENT_UNSPECIFIED = 0;
+  // Real purchases.
+  PAYMENT_ENVIRONMENT_PRODUCTION = 1;
+  // Isolated test purchases; no production benefits.
+  PAYMENT_ENVIRONMENT_LAB = 2;
+}
+
+// An exact monetary amount, never a floating point display price.
+message PaymentAmount {
+  // Uppercase ISO 4217 currency code.
+  string currency = 1;
+  // Units at the currency's minor-unit exponent; nonnegative.
+  int64 minor_units = 2;
+}
+
+// Private immutable quote. Reading it cannot start either checkout flow.
+message Invoice {
+  // Opaque server ID.
+  string invoice_id = 1;
+  // Immutable route selected from the server catalog.
+  PaymentOrigin origin = 2;
+  // Partition of this quote.
+  PaymentEnvironment environment = 3;
+  // Server-selected catalog product.
+  string product_id = 4;
+  // Required for other invoices; native purchases use the store's terms.
+  PaymentAmount amount = 5;
+  // Exclusive Unix seconds deadline for starting checkout. For premium this also
+  // bounds the short-lived unclaimed reservation; it never releases a claimed slot.
+  int64 expires_at = 6;
+}
+
+// One-shot private launch material. Not a payment, receipt or reusable form.
+message StorePurchaseIntent {
+  // Opaque handle bound to the invoice, principal, app, product, store and environment.
+  string intent_id = 1;
+  // Exclusive Unix seconds deadline; retries never extend it.
+  int64 expires_at = 2;
+  // Pass the selected binding unchanged in the matching native purchase call.
+  oneof binding {
+    // Server-issued UUID passed as StoreKit appAccountToken.
+    string apple_app_account_token = 3;
+    // Server-issued pseudonym passed to Play setObfuscatedAccountId.
+    string play_obfuscated_account_id = 4;
+  }
+}
+
+// Settlement of one payment, independent of current subscription access.
+enum PaymentState {
+  // Unknown; do not fulfill.
+  PAYMENT_STATE_UNSPECIFIED = 0;
+  // Non-store settlement is unresolved.
+  PAYMENT_STATE_PENDING = 1;
+  // Origin confirmed the original settlement. Remains succeeded after refund or revocation.
+  PAYMENT_STATE_SUCCEEDED = 2;
+  // Origin definitively rejected settlement.
+  PAYMENT_STATE_FAILED = 3;
+}
+
+// Owner-only ledger row. A verified store renewal gets a new payment ID.
+message Payment {
+  // Stable opaque transaction-level ID; never a purchase token.
+  string payment_id = 1;
+  // Origin which controls billing.
+  PaymentOrigin origin = 2;
+  // Ledger partition.
+  PaymentEnvironment environment = 3;
+  // Stable server catalog product.
+  string product_id = 4;
+  // Origin-confirmed or quoted amount, absent if unknown.
+  PaymentAmount amount = 5;
+  // Original settlement outcome, never overwritten with the refund's state.
+  PaymentState state = 6;
+  // Orders snapshots of this payment only; positive.
+  uint64 revision = 7;
+  // Absent for store transactions without a corresponding invoice.
+  optional string invoice_id = 8;
+  // Opaque subscription lineage ID; absent on other invoices.
+  optional string billing_source_id = 9;
+  // Discover the full-refund record even after missing its update.
+  optional string refund_id = 10;
+}
+
+// State of a full-refund record, not a subscription cancellation.
+enum RefundState {
+  // Unknown.
+  REFUND_STATE_UNSPECIFIED = 0;
+  // Submitted to the origin, not settled.
+  REFUND_STATE_PENDING = 1;
+  // Confirmed by the origin.
+  REFUND_STATE_SUCCEEDED = 2;
+  // Origin definitively declined.
+  REFUND_STATE_FAILED = 3;
+}
+
+// Current owner-visible refund, including reversals imported from stores.
+message Refund {
+  // Opaque refund identity.
+  string refund_id = 1;
+  // Exactly one underlying transaction.
+  string payment_id = 2;
+  // Current refund state.
+  RefundState state = 3;
+  // Orders snapshots of this refund only; positive.
+  uint64 revision = 4;
+}
+
+// Store-confirmed access for one billing lineage, separate from auto-renewal.
+enum PremiumSourceState {
+  // Unknown; not a grant.
+  PREMIUM_SOURCE_STATE_UNSPECIFIED = 0;
+  // Grants access up to the verified coverage deadline.
+  PREMIUM_SOURCE_STATE_COVERED = 1;
+  // No current paid coverage, e.g. expired or on hold.
+  PREMIUM_SOURCE_STATE_NOT_COVERED = 2;
+  // Access withdrawn by this origin, even before the former deadline.
+  PREMIUM_SOURCE_STATE_REVOKED = 3;
+}
+
+// Sanitized private display row, one per verified store subscription lineage.
+message PremiumBillingSource {
+  // Same neutral identity used by associated Payment rows.
+  string billing_source_id = 1;
+  // Apple or Play; manage the subscription there.
+  PaymentOrigin origin = 2;
+  // Verified current store product.
+  string product_id = 3;
+  // Current source-specific coverage.
+  PremiumSourceState state = 4;
+  // Exclusive verified coverage deadline in Unix seconds; required if covered.
+  optional int64 covered_until = 5;
+  // Absent when unknown. False does not shorten paid coverage.
+  optional bool auto_renews = 6;
+}
+
+// Complete account snapshot for a single environment, shared across devices.
+message MyEntitlements {
+  // Never merge a lab snapshot into production.
+  PaymentEnvironment environment = 1;
+  // Positive monotonic account/partition revision, also fences checkout decisions.
+  uint64 revision = 2;
+  // One effective premium deadline, maximum (not sum) of current covered sources.
+  // Absence means no verified access in this snapshot.
+  optional int64 premium_until = 3;
+  // Includes simultaneous Apple and Play subscriptions; never hide a duplicate bill.
+  repeated PremiumBillingSource billing_sources = 4;
+  // An outstanding or ambiguous checkout blocks all new premium intents,
+  // even with no verified coverage. Never itself grants access.
+  bool checkout_unresolved = 5;
+  // Present only while RESERVED, with checkout_unresolved true. Safe quote for any signed-in
+  // owner device to inspect or wait out; never launch from it. At its deadline refetch.
+  // If unresolved without a reservation, material may have escaped: block both stores
+  // until matched settlement or authoritative final nonpurchase. Timeout, an empty
+  // query or a client cancellation report cannot establish that outcome.
+  Invoice reserved_checkout = 6;
+}

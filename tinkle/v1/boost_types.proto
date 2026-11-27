@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "tinkle/v1/message_types.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// The authenticated account's single slot from effective, server-verified Premium.
+// Billing sources never own slots. Only the authenticated owner can read it.
+message BoostSlot {
+  // Absent when available for assignment; otherwise the currently boosted room.
+  RoomQueryTarget target = 1;
+  // Exclusive verified Premium deadline in Unix seconds; positive for every slot.
+  // Revocation, or an end to eligibility for the room, can remove a boost earlier.
+  int64 expires_at = 2;
+}
+
+// Complete current slot inventory for the authenticated owner in this environment.
+message MyBoosts {
+  // Positive monotonically increasing owner revision, even when there is no slot.
+  uint64 revision = 1;
+  // Absent without effective verified Premium. Restored coverage after a lapse starts unassigned.
+  BoostSlot slot = 2;
+}

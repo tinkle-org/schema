@@ -7,7 +7,8 @@ import unittest
 import test_files_schema as files
 from test_updates_schema import declarations
 from update_contract import (BASELINE, CALL_METHODS, CASE_FILES, COMMANDS_WITHOUT_UPDATES,
-                             PRE_CALL_BASELINE, SOCIAL_METHODS, UPDATE_FILE, UPDATE_RESPONSES, current_filename)
+                             NEW_SERVICE_METHODS, PRE_CALL_BASELINE, SOCIAL_METHODS, UPDATE_FILE,
+                             UPDATE_RESPONSES, current_filename)
 
 
 RESPONSE = "SendMessageResponse"
@@ -87,7 +88,7 @@ class UpdateContractSchemaTests(files.BufSchemaTestCase):
                 if field.get("typeName") == ".tinkle.v1.Update":
                     self.assertEqual(self.updates_field(field["number"]), field, name)
                     actual.append(name.removeprefix("tinkle.v1."))
-        self.assertEqual(139, len(UPDATE_RESPONSES))
+        self.assertEqual(145, len(UPDATE_RESPONSES))
         self.assertCountEqual(UPDATE_RESPONSES, actual)
 
     def test_update_inventory_accounts_for_rpc_handlers(self):
@@ -117,8 +118,8 @@ class UpdateContractSchemaTests(files.BufSchemaTestCase):
         methods = service["method"]
         self.assertCountEqual(added.values(), [m for m in methods if m["name"] in added])
         services[key] = path, dict(service, method=[m for m in methods if m["name"] not in added])
-        for name, path, inventory in (("CallsService", "tinkle/v1/calls.proto", CALL_METHODS),
-                                      ("SocialService", "tinkle/v1/social.proto", SOCIAL_METHODS)):
+        for name, inventory in {"CallsService": CALL_METHODS, "SocialService": SOCIAL_METHODS, **NEW_SERVICE_METHODS}.items():
+            path = f"tinkle/v1/{name.removesuffix('Service').lower()}.proto"
             expected = {"name": name, "method": [
                 {"name": m, "inputType": f".tinkle.v1.{m}Request", "outputType": f".tinkle.v1.{m}Response"}
                 for m in inventory]}
@@ -182,7 +183,7 @@ class UpdateContractSchemaTests(files.BufSchemaTestCase):
         self.assertFalse(source.get("enumType"))
         self.assertEqual(["Update"], [d["name"] for d in source["messageType"]])
         update = self.descriptor("Update", UPDATE_FILE)
-        self.assertEqual(74, len(CASE_FILES))
+        self.assertEqual(79, len(CASE_FILES))
         expected = []
         for tag, name in enumerate(CASE_FILES, 1):
             key = re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
@@ -191,7 +192,8 @@ class UpdateContractSchemaTests(files.BufSchemaTestCase):
         self.assertEqual({"name": "Update", "oneofDecl": [{"name": "change"}], "field": expected}, update)
         for name, filename in CASE_FILES.items():
             self.descriptor(name, filename)
-        for path in ("tinkle/v1/call_updates.proto", "tinkle/v1/social_updates.proto"):
+        for path in ("tinkle/v1/call_updates.proto", "tinkle/v1/social_updates.proto",
+                     "tinkle/v1/payment_updates.proto", "tinkle/v1/boost_updates.proto"):
             changes = [name for name, filename in CASE_FILES.items() if filename == path]
             self.assertEqual(changes, [msg["name"] for msg in self.after[path]["messageType"]
                                        if msg["name"] in changes], path)
@@ -273,6 +275,22 @@ class UpdateContractSchemaTests(files.BufSchemaTestCase):
         self.assertEqual(current, self.decode(wire, RESPONSE))
         old = self.convert(wire, RESPONSE, "binpb", "json", image_path=self.pre_call_path)
         self.assertEqual({"message": message, "updates": [{}, known]}, json.loads(old.stdout))
+
+    def test_pre_payments_reader_keeps_known_update_siblings(self):
+        old = self.image_path.with_name("before-payments.json")
+        files.run_buf("build", ".git#ref=a83e60986f837d7b3457e1e56c34e0904b2dcf3f", "--exclude-source-info",
+                      "--as-file-descriptor-set", "-o", str(old))
+        first = {"post_likes_changed": {}}
+        last = {"dialog_changed": {"target": {"chatId": "7"}}}
+        current = {"updates": [first, {"payment_changed": {"paymentId": "p", "revision": "1"}},
+                               {"refund_changed": {"refundId": "r", "revision": "2"}},
+                               {"my_entitlements_changed": {"revision": "3"}},
+                               {"my_boosts_changed": {"revision": "4"}},
+                               {"boost_status_changed": {"target": {"channelId": "7"}, "revision": "5"}}, last]}
+        wire = self.encode(current, RESPONSE)
+        self.assertEqual(current, self.decode(wire, RESPONSE))
+        old_view = self.convert(wire, RESPONSE, "binpb", "json", image_path=old)
+        self.assertEqual({"updates": [first, {}, {}, {}, {}, {}, last]}, json.loads(old_view.stdout))
 
     def test_binary_response_compatibility_in_both_directions(self):
         legacy = {"message": {"messageId": "9007199254740993", "target": {"chatId": "9"}, "fromId": "11",
