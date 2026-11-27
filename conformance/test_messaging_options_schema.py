@@ -40,7 +40,7 @@ class MessagingOptionsSchemaTests(files.BufSchemaTestCase):
         """The empty request cannot select a different account or follow asset heads."""
         services = self.declarations["service"]
         self.assertEqual(18, len(services))
-        self.assertEqual(312, sum(len(service[1]["method"]) for service in services.values()))
+        self.assertEqual(313, sum(len(service[1]["method"]) for service in services.values()))
         self.assert_fields("GetRecentReactionsRequest", [])
         self.assert_fields("GetRecentReactionsResponse", [
             ("reactions", 1, "MESSAGE", "Reaction", True, False),

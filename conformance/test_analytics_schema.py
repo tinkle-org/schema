@@ -71,8 +71,26 @@ class AnalyticsSchemaTests(files.BufSchemaTestCase):
         self.assertNotEqual(0, self.convert({"value": "0", "withheld": {}}, "AnalyticsCount", check=False).returncode)
 
     def test_series_query_and_deferred_result(self):
+        self.assert_fields("GetAnalyticsSeriesRequest", [
+            ("query", 1, "MESSAGE", "AnalyticsSeriesQuery", False, False),
+            ("pending_token", 2, "BYTES", "", False, False)], SERVICE)
         self.assert_oneof("GetAnalyticsSeriesRequest", "source", ["query", "pending_token"], SERVICE)
+        self.assert_fields("GetAnalyticsSeriesResponse", [
+            ("series", 1, "MESSAGE", "AnalyticsSeries", False, False),
+            ("pending", 2, "MESSAGE", "AnalyticsPending", False, False),
+            ("unavailable", 3, "ENUM", "AnalyticsSeriesUnavailableReason", False, False),
+            ("freshness", 4, "MESSAGE", "AnalyticsFreshness", False, False)], SERVICE)
         self.assert_oneof("GetAnalyticsSeriesResponse", "result", ["series", "pending", "unavailable"], SERVICE)
+        self.assert_fields("AnalyticsSeries", [
+            ("coverage", 1, "MESSAGE", "AnalyticsPeriod", False, False),
+            ("buckets", 2, "MESSAGE", "AnalyticsBucket", True, False)], TYPES)
+        self.assert_fields("AnalyticsBucket", [
+            ("period", 1, "MESSAGE", "AnalyticsPeriod", False, False),
+            ("count", 2, "MESSAGE", "AnalyticsCount", False, False)], TYPES)
+        self.assert_fields("AnalyticsPending", [
+            ("token", 1, "BYTES", "", False, False),
+            ("expires_at", 2, "MESSAGE", ".google.protobuf.Timestamp", False, False),
+            ("retry_after_seconds", 3, "UINT32", "", False, False)], TYPES)
         self.assert_enum_values("AnalyticsSeriesUnavailableReason", ["ANALYTICS_SERIES_UNAVAILABLE_REASON_" + reason
                                 for reason in ("UNSPECIFIED", "WITHHELD", "NO_COVERAGE")], TYPES)
         self.assert_fields("AnalyticsSeriesQuery", [

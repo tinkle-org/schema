@@ -11,6 +11,8 @@ option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
 service PaymentsService {
   // Quote an authorized invoice or reserve exactly one native premium checkout.
   rpc CreateInvoice(CreateInvoiceRequest) returns (CreateInvoiceResponse);
+  // Claim a still-eligible native reservation once, immediately before native UI.
+  rpc ClaimStoreCheckout(ClaimStoreCheckoutRequest) returns (ClaimStoreCheckoutResponse);
   // Read a private quote, never native launch material.
   rpc GetInvoice(GetInvoiceRequest) returns (GetInvoiceResponse);
   // Get a tokenization form for an authorized OTHER_INVOICE only.
@@ -61,14 +63,39 @@ message CreateInvoiceRequest {
   }
 }
 
-// Recover the same quote on retry, never a second native launch.
+// Reserve only. An authorized exact retry returns the original invoice ID and deadline
+// even after release; never reacquire a slot, refresh the deadline or return a binding.
 message CreateInvoiceResponse {
   // Authorized immutable quote.
   Invoice invoice = 1;
-  // Only on the first successful premium reservation; never on replay or lookup.
-  StorePurchaseIntent store_intent = 2;
+  // Former draft launch field. Never populate or use, even on first acceptance.
+  StorePurchaseIntent store_intent = 2 [deprecated = true];
   // Owner-only eligibility change on reservation. An other-invoice quote emits none.
   repeated Update updates = 3;
+}
+
+// Serialize with reserve, expiry and verified store changes for this account/partition/benefit.
+// Require the owner's current RESERVED native invoice, approved app/store/product, no coverage
+// or competing checkout, unchanged reservation revision and server time strictly before expiry.
+// At or after expiry release only an unclaimed reservation. A released invoice cannot be claimed.
+message ClaimStoreCheckoutRequest {
+  // Required logical operation UUID. Bind permanently to the exact invoice and revision
+  // within actor, trusted environment and method; changed input conflicts without effects.
+  string request_id = 1;
+  // Opaque ID of the premium invoice, not a store token or proof of ownership.
+  string invoice_id = 2;
+  // Positive post-reserve MyEntitlements.revision; must still be current at transition.
+  uint64 expected_revision = 3;
+}
+
+// Durably commit the claim, owner binding and revision advance before returning material.
+// Only the transition winner gets an intent. While claimed, an authorized exact duplicate
+// succeeds without material; another key fails. After release every claim fails.
+message ClaimStoreCheckoutResponse {
+  // For a single live launch only. Absence never authorizes calling the store.
+  StorePurchaseIntent store_intent = 1;
+  // Owner-only entitlement refresh hint on transition, never a launch instruction.
+  repeated Update updates = 2;
 }
 
 // Lookup a quote by neutral ID.
@@ -100,16 +127,24 @@ message GetPaymentFormResponse {
 }
 
 // Validate a token from the selected provider; never send raw card details.
+// Before exchange, atomically bind (actor, trusted environment, method, request_id)
+// to the form and a protected digest of the exact token bytes. Changed input conflicts
+// without effects. Concurrent exact retries share one exchange. After a crash, recover
+// by the same provider operation key or reconcile; never blindly consume the token again.
 message ValidatePaymentDetailsRequest {
   // Owner's unexpired non-store form.
   string form_id = 1;
-  // Single-use tokenization result, private input only.
+  // Single-use tokenization result, private input only. Never log the raw token.
   bytes provider_token = 2;
+  // Required operation UUID. Persist before sending; retry with identical inputs.
+  string request_id = 3;
 }
 
 // Private validated details handle, not a payment outcome.
 message ValidatePaymentDetailsResponse {
   // Bound to the exact invoice, amount, provider, principal and form deadline.
+  // Persist before replying. An authorized exact retry returns this same handle while
+  // valid; after expiry fail without minting a replacement or reopening the key.
   string validated_details_id = 1;
 }
 
@@ -266,7 +301,8 @@ message VerifyStorePurchaseResponse {
 // Always selects the authenticated account and trusted endpoint partition.
 message GetMyEntitlementsRequest {}
 
-// Cross-device recovery and eligibility observation; never itself reserves a checkout.
+// Cross-device recovery, independent of local keys. Apply due unclaimed expiry before
+// reporting eligibility; a read never reserves a slot or returns native launch material.
 message GetMyEntitlementsResponse {
   // Complete source list and a single effective benefit.
   MyEntitlements entitlements = 1;

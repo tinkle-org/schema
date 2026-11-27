@@ -46,7 +46,8 @@ message Invoice {
   string product_id = 4;
   // Required for other invoices; native purchases use the store's terms.
   PaymentAmount amount = 5;
-  // Exclusive Unix seconds deadline for starting checkout.
+  // Exclusive Unix seconds deadline for starting checkout. For premium this also
+  // bounds the short-lived unclaimed reservation; it never releases a claimed slot.
   int64 expires_at = 6;
 }
 
@@ -167,4 +168,10 @@ message MyEntitlements {
   // An outstanding or ambiguous checkout blocks all new premium intents,
   // even with no verified coverage. Never itself grants access.
   bool checkout_unresolved = 5;
+  // Present only while RESERVED, with checkout_unresolved true. Safe quote for any signed-in
+  // owner device to inspect or wait out; never launch from it. At its deadline refetch.
+  // If unresolved without a reservation, material may have escaped: block both stores
+  // until matched settlement or authoritative final nonpurchase. Timeout, an empty
+  // query or a client cancellation report cannot establish that outcome.
+  Invoice reserved_checkout = 6;
 }

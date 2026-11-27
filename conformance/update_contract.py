@@ -95,12 +95,12 @@ UPDATE_RESPONSES.update(SOCIAL_UPDATE_RESPONSES)
 NEW_SERVICE_METHODS = {
     "AnalyticsService": "GetAnalyticsAccess GetChannelStats GetGroupStats GetMessageStats GetDailyStats "
                         "GetPostStats GetPollStats GetAnalyticsSeries".split(),
-    "PaymentsService": "CreateInvoice GetInvoice GetPaymentForm ValidatePaymentDetails SubmitPayment GetPayment "
+    "PaymentsService": "CreateInvoice ClaimStoreCheckout GetInvoice GetPaymentForm ValidatePaymentDetails SubmitPayment GetPayment "
                        "ListPayments GetPaymentReceipt CreateRefund GetRefund VerifyStorePurchase GetMyEntitlements".split(),
     "BoostsService": "GetBoostConfiguration GetMyBoosts ApplyBoosts GetBoostStatus ListBoosts GetUserBoosts".split(),
 }
 UPDATE_RESPONSES.update(method + "Response" for method in (
-    "CreateInvoice", "SubmitPayment", "CreateRefund", "VerifyStorePurchase", "ApplyBoosts"))
+    "CreateInvoice", "ClaimStoreCheckout", "SubmitPayment", "CreateRefund", "VerifyStorePurchase", "ApplyBoosts"))
 
 # These commands exist but their public replies do not carry updates. In particular,
 # BotApiService.SendMessage is a different handler from MessagesService.SendMessage.

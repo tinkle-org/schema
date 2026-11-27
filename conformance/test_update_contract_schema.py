@@ -88,7 +88,7 @@ class UpdateContractSchemaTests(files.BufSchemaTestCase):
                 if field.get("typeName") == ".tinkle.v1.Update":
                     self.assertEqual(self.updates_field(field["number"]), field, name)
                     actual.append(name.removeprefix("tinkle.v1."))
-        self.assertEqual(144, len(UPDATE_RESPONSES))
+        self.assertEqual(145, len(UPDATE_RESPONSES))
         self.assertCountEqual(UPDATE_RESPONSES, actual)
 
     def test_update_inventory_accounts_for_rpc_handlers(self):

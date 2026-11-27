@@ -9,13 +9,31 @@ RPC = "tinkle/v1/payments.proto"
 TYPES = "tinkle/v1/payment_types.proto"
 LEAVES = "tinkle/v1/payment_updates.proto"
 METHODS = (
-    "CreateInvoice GetInvoice GetPaymentForm ValidatePaymentDetails SubmitPayment "
+    "CreateInvoice ClaimStoreCheckout GetInvoice GetPaymentForm ValidatePaymentDetails SubmitPayment "
     "GetPayment ListPayments GetPaymentReceipt CreateRefund GetRefund "
     "VerifyStorePurchase GetMyEntitlements"
 ).split()
 
 
 class PaymentsSchemaTests(BufSchemaTestCase):
+    def test_payment_enum_assignments(self):
+        expected = {
+            "PaymentOrigin": [("PAYMENT_ORIGIN_UNSPECIFIED", 0), ("PAYMENT_ORIGIN_APPLE", 1),
+                              ("PAYMENT_ORIGIN_PLAY", 2), ("PAYMENT_ORIGIN_OTHER_INVOICE", 3)],
+            "PaymentEnvironment": [("PAYMENT_ENVIRONMENT_UNSPECIFIED", 0), ("PAYMENT_ENVIRONMENT_PRODUCTION", 1),
+                                   ("PAYMENT_ENVIRONMENT_LAB", 2)],
+            "PaymentState": [("PAYMENT_STATE_UNSPECIFIED", 0), ("PAYMENT_STATE_PENDING", 1),
+                             ("PAYMENT_STATE_SUCCEEDED", 2), ("PAYMENT_STATE_FAILED", 3)],
+            "RefundState": [("REFUND_STATE_UNSPECIFIED", 0), ("REFUND_STATE_PENDING", 1),
+                            ("REFUND_STATE_SUCCEEDED", 2), ("REFUND_STATE_FAILED", 3)],
+            "PremiumSourceState": [("PREMIUM_SOURCE_STATE_UNSPECIFIED", 0), ("PREMIUM_SOURCE_STATE_COVERED", 1),
+                                   ("PREMIUM_SOURCE_STATE_NOT_COVERED", 2), ("PREMIUM_SOURCE_STATE_REVOKED", 3)],
+        }
+        for name, assignments in expected.items():
+            path, enum = self.declarations["enum"]["tinkle.v1." + name]
+            self.assertEqual(TYPES, path, name)
+            self.assertEqual(assignments, [(v["name"], v["number"]) for v in enum["value"]], name)
+
     def test_rpc_order_and_direct_updates(self):
         path, service = self.declarations["service"]["tinkle.v1.PaymentsService"]
         self.assertEqual(RPC, path)
@@ -23,7 +41,7 @@ class PaymentsSchemaTests(BufSchemaTestCase):
             {"name": m, "inputType": f".tinkle.v1.{m}Request", "outputType": f".tinkle.v1.{m}Response"}
             for m in METHODS
         ])
-        update_tags = {"CreateInvoice": 3, "SubmitPayment": 2, "CreateRefund": 2, "VerifyStorePurchase": 3}
+        update_tags = {"CreateInvoice": 3, "ClaimStoreCheckout": 2, "SubmitPayment": 2, "CreateRefund": 2, "VerifyStorePurchase": 3}
         for m in METHODS:
             fields = self.descriptor(m + "Response", RPC)["field"]
             updates = [f for f in fields if f["name"] == "updates" or f.get("typeName") == ".tinkle.v1.Update"]
@@ -51,7 +69,7 @@ class PaymentsSchemaTests(BufSchemaTestCase):
             "PaymentAmount": "currency:string minor_units:int64",
             "Payment": "payment_id:string origin:PaymentOrigin environment:PaymentEnvironment product_id:string amount:PaymentAmount state:PaymentState revision:uint64 invoice_id:?string billing_source_id:?string refund_id:?string",
             "Refund": "refund_id:string payment_id:string state:RefundState revision:uint64",
-            "MyEntitlements": "environment:PaymentEnvironment revision:uint64 premium_until:?int64 billing_sources:*PremiumBillingSource checkout_unresolved:bool",
+            "MyEntitlements": "environment:PaymentEnvironment revision:uint64 premium_until:?int64 billing_sources:*PremiumBillingSource checkout_unresolved:bool reserved_checkout:Invoice",
             "PremiumBillingSource": "billing_source_id:string origin:PaymentOrigin product_id:string state:PremiumSourceState covered_until:?int64 auto_renews:?bool",
             "PaymentChanged": "payment_id:string revision:uint64",
             "RefundChanged": "refund_id:string revision:uint64",
@@ -62,7 +80,7 @@ class PaymentsSchemaTests(BufSchemaTestCase):
             "GetInvoiceResponse": "invoice:Invoice",
             "GetPaymentFormRequest": "invoice_id:string",
             "GetPaymentFormResponse": "form_id:string provider:string expires_at:int64",
-            "ValidatePaymentDetailsRequest": "form_id:string provider_token:bytes",
+            "ValidatePaymentDetailsRequest": "form_id:string provider_token:bytes request_id:string",
             "ValidatePaymentDetailsResponse": "validated_details_id:string",
             "SubmitPaymentResponse": "payment:Payment updates:*Update",
             "GetPaymentRequest": "payment_id:string submit_payment_request_id:string verify_store_purchase_request_id:string",
@@ -77,6 +95,8 @@ class PaymentsSchemaTests(BufSchemaTestCase):
             "GetMyEntitlementsResponse": "entitlements:MyEntitlements checkout_fence:bytes",
             "CreateInvoiceRequest": "request_id:string premium:PremiumCheckoutRequest other_order_id:string",
             "CreateInvoiceResponse": "invoice:Invoice store_intent:StorePurchaseIntent updates:*Update",
+            "ClaimStoreCheckoutRequest": "request_id:string invoice_id:string expected_revision:uint64",
+            "ClaimStoreCheckoutResponse": "store_intent:StorePurchaseIntent updates:*Update",
             "PremiumCheckoutRequest": "checkout_fence:bytes apple_product_id:string play_product_id:string",
             "StorePurchaseIntent": "intent_id:string expires_at:int64 apple_app_account_token:string play_obfuscated_account_id:string",
             "SubmitPaymentRequest": "request_id:string invoice_id:string validated_details_id:string",
@@ -107,7 +127,7 @@ class PaymentsSchemaTests(BufSchemaTestCase):
         ]:
             fixtures = [
                 ("CreateInvoiceRequest", {"requestId": "request", "premium": {"checkoutFence": "AAE=", product: "premium"}}),
-                ("CreateInvoiceResponse", {"storeIntent": {"intentId": "intent", "expiresAt": "2000000000", binding: "binding"}}),
+                ("ClaimStoreCheckoutResponse", {"storeIntent": {"intentId": "intent", "expiresAt": "2000000000", binding: "binding"}}),
                 ("VerifyStorePurchaseRequest", {"requestId": "e5ceed35-344e-4532-b219-9bf4993c2d23", "intentId": "intent", proof: "fixture"}),
                 ("VerifyStorePurchaseRequest", {"requestId": "8bb3d4d0-141a-4577-933f-ed5fdb7b76b3", proof: "fixture"}),
             ]
@@ -122,6 +142,29 @@ class PaymentsSchemaTests(BufSchemaTestCase):
             ("GetRefundRequest", {"refundId": "refund", "createRefundRequestId": "key"}),
         ]:
             self.assertNotEqual(0, self.convert(bad, name, check=False).returncode, name)
+
+    def test_reservation_and_claim_boundaries_codec(self):
+        legacy = self.descriptor("CreateInvoiceResponse", RPC)["field"][1]
+        self.assertTrue(legacy["options"]["deprecated"])
+        invoice = {"invoiceId": "A", "origin": "PAYMENT_ORIGIN_PLAY", "productId": "premium",
+                   "environment": "PAYMENT_ENVIRONMENT_LAB", "expiresAt": "2000000000"}
+        snapshot = {"environment": invoice["environment"], "revision": "9007199254740993"}
+        for name, body in (
+            ("CreateInvoiceResponse", {"invoice": invoice}),  # includes replay after release
+            ("GetMyEntitlementsResponse", {"entitlements": dict(snapshot, checkoutUnresolved=True, reservedCheckout=invoice)}),
+            ("ClaimStoreCheckoutRequest", {"requestId": "e5ceed35-344e-4532-b219-9bf4993c2d23", "invoiceId": "A",
+                                          "expectedRevision": snapshot["revision"]}),
+            ("ClaimStoreCheckoutResponse", {}),  # duplicate has no permit
+            ("GetMyEntitlementsResponse", {"entitlements": dict(snapshot, checkoutUnresolved=True)}),
+            ("GetMyEntitlementsResponse", {"entitlements": snapshot, "checkoutFence": "AAE="}),
+        ):
+            self.assertEqual(body, self.round_trip(body, name))
+
+    def test_validate_payment_details_codec(self):
+        request = {"formId": "form-A", "providerToken": "AP8=", "requestId": "e5ceed35-344e-4532-b219-9bf4993c2d23"}
+        self.assertEqual(request, self.round_trip(request, "ValidatePaymentDetailsRequest"))
+        response = {"validatedDetailsId": "handle-A"}
+        self.assertEqual(response, self.round_trip(response, "ValidatePaymentDetailsResponse"))
 
     def test_both_sources_and_renewal_receipts_codec(self):
         sources = [
@@ -151,8 +194,6 @@ class PaymentsSchemaTests(BufSchemaTestCase):
         ]:
             self.assertEqual(lookup, self.round_trip(lookup, message))
 
-        self.assert_enum_values("PaymentState", ["PAYMENT_STATE_" + s for s in
-                                ("UNSPECIFIED", "PENDING", "SUCCEEDED", "FAILED")], TYPES)
         settled = {"paymentId": "order-A", "origin": "PAYMENT_ORIGIN_PLAY", "state": "PAYMENT_STATE_SUCCEEDED",
                    "refundId": "refund-A", "amount": {"currency": "USD", "minorUnits": "999"}}
         revoked = {"environment": "PAYMENT_ENVIRONMENT_LAB", "revision": "17", "billingSources": [
