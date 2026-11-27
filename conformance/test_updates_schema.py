@@ -17,8 +17,8 @@ import unittest
 from test_contract_completion import FIELD_NAMES, RPC_NAMES
 from test_files_schema import reset_descriptor_numbers
 from test_thumbnail_schema import THUMBNAILS
-from update_contract import (APPLICATION_UPDATES_FILE, CALL_METHODS, CASE_FILES, SOCIAL_UPDATE_RESPONSES,
-                             UPDATE_RESPONSES, current_filename)
+from update_contract import (APPLICATION_UPDATES_FILE, CALL_METHODS, CASE_FILES, NEW_SERVICE_METHODS,
+                             SOCIAL_UPDATE_RESPONSES, UPDATE_RESPONSES, current_filename)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -223,6 +223,27 @@ CHANGED_DECLARATIONS.update("tinkle.v1." + name for name, path in CASE_FILES.ite
 SOCIAL_FILES = {f"tinkle/v1/{name}.proto" for name in
                 ("social", "social_types", "daily_types", "post_types", "social_updates")}
 
+# Allow only named additions in their owning files until origin/main contains them.
+NEW_DECLARATIONS = {
+    "analytics_types": "AnalyticsMessageRef AnalyticsSubject AnalyticsPeriod AnalyticsCount AnalyticsMetric "
+                       "ChannelStats GroupStats MessageStats DailyStats PostStats PollStats AnalyticsSeriesQuery "
+                       "AnalyticsBucket AnalyticsSeries AnalyticsPending AnalyticsFreshness "
+                       "AnalyticsGranularity AnalyticsSeriesUnavailableReason".split(),
+    "payment_types": "PaymentOrigin PaymentEnvironment PaymentAmount Invoice StorePurchaseIntent PaymentState "
+                     "Payment RefundState Refund PremiumSourceState PremiumBillingSource MyEntitlements".split(),
+    "boost_types": ["BoostSlot", "MyBoosts"],
+    "payments": ["PremiumCheckoutRequest", "StorePurchasePending", "StorePurchaseResult", "StorePurchaseNotCompleted"],
+}
+for service, methods in NEW_SERVICE_METHODS.items():
+    names = NEW_DECLARATIONS.setdefault(service.removesuffix("Service").lower(), [])
+    names.append(service)
+    names.extend(method + suffix for method in methods for suffix in ("Request", "Response"))
+NEW_OWNERS = {"tinkle.v1." + name: f"tinkle/v1/{owner}.proto"
+              for owner, names in NEW_DECLARATIONS.items() for name in names}
+NEW_OWNERS.update({"tinkle.v1." + name: path for name, path in CASE_FILES.items()
+                   if path in ("tinkle/v1/payment_updates.proto", "tinkle/v1/boost_updates.proto")})
+CHANGED_DECLARATIONS.difference_update(NEW_OWNERS)
+
 # New call declarations may be absent on origin/main; don't exclude whole files
 # or stop comparing these declarations once main contains them.
 CALL_ADDITIONS = {"tinkle.v1." + method + suffix
@@ -386,6 +407,7 @@ class ConnectivitySchemaTests(unittest.TestCase):
     def test_unrelated_contracts_are_unchanged(self):
         for kind in self.baseline:
             additions = CALL_ADDITIONS.copy()
+            additions.update(n for n, (path, _) in self.current[kind].items() if NEW_OWNERS.get(n) == path)
             if kind in ("message", "enum"):
                 additions.update(n for n, (path, _) in self.current[kind].items() if path in SOCIAL_FILES)
             elif kind == "service":

@@ -1,0 +1,41 @@
+---
+title: Room boosts
+description: Assign a Premium account's slot to a room and recover account and room state after changes.
+---
+
+# Room boosts
+
+At launch, effective verified Premium gives an account **one slot**. `GetMyBoosts` returns the account revision and either no slot (ineligible), a slot without a target (available), or a slot with a target (assigned). All devices see the same assignment. A target is a `RoomQueryTarget`: exactly one positive group chat ID or channel ID. A direct conversation is never eligible.
+
+## When a slot counts
+
+Use the payment authority's effective verified coverage in the same environment as the room. The slot's `expires_at` is the exclusive `premium_until` deadline in Unix seconds: the latest end of any currently covered source, not the sum of their durations. Overlapping Apple and Play subscriptions still give **one** slot. A profile `premium` flag, pending checkout, client receipt or sandbox entitlement in production cannot grant one.
+
+Turning off auto-renewal does not cut short paid coverage. A verified extension before expiry preserves the assignment. Revoking one source recomputes coverage from the others. At the deadline (server time), or immediately when the last coverage is revoked, the slot disappears and its contribution stops counting, even if the client is offline or a cleanup job has not run. Restored coverage after a lapse creates an **unassigned** slot. A room's deletion, or the contributor leaving, losing visibility, being banned or restricted there, clears the assignment without removing an otherwise eligible slot. Rejoining does not restore it.
+
+## Assign, move or release
+
+1. Read `GetMyBoosts` as the authenticated user. Persist a new canonical request UUID, the snapshot's positive `revision` as `expected_revision`, and the desired assignment. Select `target` to assign or move, or explicitly select `release` to unassign. Missing selection is an error.
+2. For a new key, `ApplyBoosts` checks the current account, slot eligibility and expected revision at commit. The destination must still exist and the actor must be a current, unrestricted member allowed to see it. Release needs no permission to manage the old room. Commit the owner state, affected room contributions and receipt together: a failed move cannot leave the old room unboosted. Setting the current target or releasing an available slot succeeds without advancing any revision or emitting hints.
+3. If the reply is lost, retry **the same UUID and arguments**, including the original expected revision. Authenticate the owner in the same environment before looking up the receipt. An accepted key returns the original `accepted_revision` without applying the change or testing the old preconditions again. Never reuse an accepted key; changed arguments conflict. The key binding and accepted revision remain recoverable for the account's lifetime.
+4. A stale revision on a new key fails without a write. Refetch `GetMyBoosts` and, if the user still wants the change, submit a new UUID using that snapshot's revision. A timeout alone does not justify a new key.
+
+Every successful `ApplyBoosts` reply also includes `my_boosts`, the same owner-only snapshot returned by `GetMyBoosts`. Read it under current authorization on **every** reply, including retries; do not replay the original snapshot or hints about a room the caller can no longer see. For example, if an assignment was accepted at revision 8 and Premium expired at revision 9, an exact retry returns `accepted_revision = 8` and `my_boosts.revision = 9` with no slot or room ID. Use the snapshot's revision for cache ordering and for the next write, not the receipt's revision.
+
+## What the room gets
+
+`GetBoostConfiguration.extra_shared_pins` is an allowance of 1–5 extra **shared message pins**. With zero active assignments the ordinary room limit applies. With one or more, add the allowance **once**. For example, a base limit of 5 and an allowance of 2 give a limit of 7 with either one or three contributors. `GetBoostStatus` returns the effective limit and active count to current members allowed to see the room.
+
+The existing room pin authority enforces the limit when adding a new shared pin through `SetMessagePin`; it still checks current message visibility, shared pin permissions, restrictions and moderation. Concurrent additions cannot exceed the limit. Losing the benefit does not silently unpin messages: if 7 remain pinned after the limit falls to 5, authorized unpins still work, but no new pin can be added until the count is below 5. Boosts do not grant admin rights or affect personal pins, dialog pins or DMs.
+
+`ListBoosts` and `GetUserBoosts` require a current room owner or administrator with `manage_chat` (owners need no extra scope). Verify room and contributor visibility on each lookup and page. The list returns only disclosable active contributor IDs, never slot deadlines, receipts or billing sources. For an authorized manager the user lookup returns false for an absent, hidden or unknown contributor alike. It cannot discover another account's assignments elsewhere. Deny unauthorized room requests without disclosing whether the room or subject exists.
+
+List in ascending numeric user ID order. Use the opaque next token with the same caller, room and page size (zero defaults to 50, maximum 100); an empty next token ends the list. Reject invalid tokens. If the room revision or the caller's visible contributor set changes between pages, discard the partial list and start over; never splice together different snapshots.
+
+## Hints and recovery
+
+Owner revisions increase for changes in slot presence, deadline or assignment. They never reset on expiry or regrant. A separate room revision increases when contributors or the effective limit change, including a configuration change that alters the limit. Compare revisions only within the same environment and owner or room; neither a payment revision nor another room's revision is comparable.
+
+`MyBoostsChanged` tells only the owner to refetch. On a move from A to B, `BoostStatusChanged(A)` invalidates A's status and contributor reads, and `BoostStatusChanged(B)` does the same for B. Filter each hint independently by **current** room visibility and membership. Neither includes the contributor, the other room or a billing reason. First assignment affects only the new room; release, expiry and revocation of the last coverage affect only the old one. Suppress room hints where even the target can no longer be disclosed.
+
+Hints can be missed, duplicated or reordered. Do not adjust counts locally, use hint revisions as write tokens, or install a snapshot older than one already applied. Refetch if a newer hint arrives during a read. On startup or reconnect, refresh configuration, the owner's snapshot and each displayed room's status; restart any displayed contributor list or lookup under current authorization. Drop cached details on loss of access, regardless of revision. At a cached expiry stop treating the slot as active and refetch; the client clock cannot grant or extend a benefit.

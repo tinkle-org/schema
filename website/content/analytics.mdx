@@ -1,0 +1,44 @@
+---
+title: Analytics
+description: Which room and publication aggregates may be read, what their periods cover, and how to retrieve a deferred daily series.
+---
+
+# Analytics
+
+Use [`AnalyticsService`](/schema/reference/services/analytics) to read a summary or a daily series for **one subject at a time**. `GetAnalyticsAccess` reports the caller's eligible `metrics`, supported series `granularities` (only `DAY` at launch), and `supported_period`, the history window that can currently be disclosed for the subject. The window is a guide for choosing dates, not a guarantee that every metric has a value. If the window is unknown, withheld or empty, it is absent. Missing or inaccessible subjects return no metrics, granularities or period. Discovery never authorizes another call.
+
+## Launch metrics and access
+
+All reads require an active authenticated session. In the table, **room manager** means the current owner or a current administrator with `ChatAdminScopes.manage_chat` for that room. They must still be able to see the source. A public room, public poll, or public Post does not make its analytics public.
+
+| Summary | Subject and caller | Metrics returned by the summary and available as series |
+| --- | --- | --- |
+| `GetChannelStats` | Channel or broadcast Chat ID; room manager | `SUBSCRIBERS`: distinct subscribed accounts at cutoff. `MESSAGES`: accepted top-level messages during coverage. |
+| `GetGroupStats` | Group Chat ID; room manager | `MEMBERS`: distinct members at cutoff. `MESSAGES`: accepted top-level messages during coverage. |
+| `GetMessageStats` | `RoomQueryTarget` and visible message ID in that room; room manager | `REACTIONS`: reaction selections still present at cutoff, not the number of reacting accounts or reaction events. |
+| `GetDailyStats` | Daily ID; author only, including the author's undeleted archive | `PUBLICATIONS`: one if this Daily was published in coverage, otherwise zero. Saving it as a Post is not a second Daily publication. |
+| `GetPostStats` | Post ID; author only | `LIKES`: distinct accounts liking this Post at cutoff, the historical counterpart of `Post.like_count`. An unlike removes a like; setting the same state twice does not add one. |
+| `GetPollStats` | `RoomQueryTarget` and visible poll-bearing message ID; room manager who can currently see the source poll's aggregate results | `VOTERS`: distinct voters at cutoff. A multiple-choice vote counts once. |
+
+Cutoff means just before the exclusive end of actual coverage or, for a series point, its bucket. Do not sum these snapshots across days. `MESSAGES` and `PUBLICATIONS` count events instead: count each acceptance once, not retries or edits. Room message totals exclude service events, thread replies, and scheduled items not yet accepted into history.
+
+IDs must be positive and match the selected domain. In `AnalyticsMessageRef.target`, select `chat_id` for a group or `channel_id` for a channel or broadcast. These are distinct identities even when the numbers match. The server checks the message within that exact room and checks current access before evaluating any metric or returning coverage. For syntactically valid subjects, access discovery does not distinguish missing, deleted, hidden, or unauthorized sources. Summary and series reads deny those cases alike without returning data. Unknown metrics, `UNSPECIFIED`, and subject/metric combinations outside the table are invalid queries.
+
+Daily `seen` is viewer-private, and a Daily reply belongs to a private conversation. Neither contributes to **any** metric, even as a count for the author. Post likes never identify likers. Poll analytics reveal no voter identities, per-option counts, selections, answers or quiz correctness. There are no DM subjects, read receipts, forward lists, public-forward lookups or analytics push events. Use the ordinary [Daily and Post reads](/schema/daily-and-posts) for publication state.
+
+## Request dates and read coverage
+
+Supply both timestamps in `period`: inclusive `start` and exclusive `end`, each at midnight UTC, spanning 1–90 calendar days. Today may be included; tomorrow cannot be the first day of a bucket. Reject empty, reversed, unaligned, oversized or future windows rather than silently widening or truncating a request. There is no all-time default, filter by person, custom bucket size or pagination.
+
+`coverage` is the **actual period** evaluated: intersect the request with the subject's lifetime, authorized history, retained history and the source's observation cutoff. For a series, split that interval at UTC midnights into at most 90 ordered, non-overlapping points with their actual boundaries. Do not skip a covered day just because its value is zero or withheld. Without any overlap, omit summary coverage and withhold all summary counts. For a series, return `unavailable: NO_COVERAGE` if the lack of overlap can be disclosed, or `unavailable: WITHHELD` if it cannot. Neither is a successful graph with an empty list of points.
+
+Summaries and terminal series responses carry `freshness`. `generated_at` dates the result, not the source data; `data_through` is the exclusive source watermark used to compute it. For example, a result generated Wednesday at 12:15 from data through Wednesday at 12:00 may cover only Monday and Tuesday: the requested end was Wednesday at 00:00. Never use generation time to extend coverage. Omit the watermark when unknown or unsafe to disclose, including a withheld graph; it is required with actual coverage.
+
+A Post like count of `{"value":"0"}` means there were no active likes at that cutoff. `{"withheld":{}}` means the value cannot be disclosed or measured reliably. If a metric has gaps within coverage or the source only knows today's count, withhold the affected historical value; do not substitute today's count or a partial total. A missing or unrecognized outcome must never render as zero.
+
+## Retrieve a deferred series
+
+1. Send `GetAnalyticsSeries` with one subject, one allowed metric and the period. Omit `granularity` for `DAY`, or select a width listed by discovery; explicit `UNSPECIFIED` and unknown widths are invalid. Handle the `result` arm: `series` is ready, `unavailable` is final without a graph, and only `pending` invites a retry. A withheld bucket in a ready series hides that measurement; `unavailable: WITHHELD` hides the entire graph.
+2. For `pending`, wait at least `retry_after_seconds` (1–60), then call the same method with only the opaque `pending_token` (1–256 bytes). Stop at `expires_at`, no later than 15 minutes after the first deferral. Retries do not extend that deadline.
+3. On **every** retry, including a cached ready result, validate the token, its original principal, exact typed subject, metric, period, granularity and original observation cutoff. Recheck current ownership or admin rights, object visibility, history access and metric disclosure before returning anything. If access has narrowed, never serve the old result under the old permissions. A token cannot be transferred or used to change a query. Invalid, foreign and expired tokens disclose no subject or result metadata.
+4. After expiry, start a fresh authorized query if still needed; its cutoff can be newer. Clients may stop retrying at any time. No subscription, completion notification or public job listing is involved.

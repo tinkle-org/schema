@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "tinkle/v1/message_types.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Owner-only invalidation. Refetch GetMyBoosts; this is not a command receipt.
+message MyBoostsChanged {
+  // Positive owner revision at the change, not a write precondition.
+  uint64 revision = 1;
+}
+
+// Invalidation for current members allowed to read this room's boost status.
+// A move invalidates both rooms separately; neither hint identifies the other room.
+message BoostStatusChanged {
+  // Only the affected, currently disclosable room. Refetch GetBoostStatus there.
+  RoomQueryTarget target = 1;
+  // Positive room revision; also invalidates contributor reads for this room.
+  uint64 revision = 2;
+}

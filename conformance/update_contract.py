@@ -92,6 +92,16 @@ SOCIAL_UPDATE_RESPONSES = {method + "Response" for method in SOCIAL_METHODS
                            if not method.startswith(("Get", "List", "BatchGet"))}
 UPDATE_RESPONSES.update(SOCIAL_UPDATE_RESPONSES)
 
+NEW_SERVICE_METHODS = {
+    "AnalyticsService": "GetAnalyticsAccess GetChannelStats GetGroupStats GetMessageStats GetDailyStats "
+                        "GetPostStats GetPollStats GetAnalyticsSeries".split(),
+    "PaymentsService": "CreateInvoice GetInvoice GetPaymentForm ValidatePaymentDetails SubmitPayment GetPayment "
+                       "ListPayments GetPaymentReceipt CreateRefund GetRefund VerifyStorePurchase GetMyEntitlements".split(),
+    "BoostsService": "GetBoostConfiguration GetMyBoosts ApplyBoosts GetBoostStatus ListBoosts GetUserBoosts".split(),
+}
+UPDATE_RESPONSES.update(method + "Response" for method in (
+    "CreateInvoice", "SubmitPayment", "CreateRefund", "VerifyStorePurchase", "ApplyBoosts"))
+
 # These commands exist but their public replies do not carry updates. In particular,
 # BotApiService.SendMessage is a different handler from MessagesService.SendMessage.
 COMMANDS_WITHOUT_UPDATES = {
@@ -136,6 +146,8 @@ CASE_LEAVES = [
     ("call", "GroupCallChanged GroupCallParticipantsChanged GroupCallInvitationChanged GroupCallStartReminderChanged "
              "CallPresentationChanged CallHistoryChanged GroupCallAccessChanged"),
     ("social", "DailyChanged DailyRemoved DailyAvailabilityChanged DailySeenChanged PostChanged PostRemoved PostLikesChanged"),
+    ("payment", "PaymentChanged RefundChanged MyEntitlementsChanged"),
+    ("boost", "MyBoostsChanged BoostStatusChanged"),
 ]
 CASE_FILES = {name: f"tinkle/v1/{domain}_updates.proto"
               for domain, names in CASE_LEAVES for name in names.split()}

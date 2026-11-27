@@ -1,0 +1,123 @@
+syntax = "proto3";
+
+package tinkle.v1;
+
+import "google/protobuf/empty.proto";
+import "tinkle/v1/boost_types.proto";
+import "tinkle/v1/message_types.proto";
+import "tinkle/v1/update.proto";
+
+option go_package = "github.com/tinklehq/tinkle-proto/tinkle/v1;tinklev1";
+
+// Assign the caller's verified Premium slot and read current room benefits.
+// All calls require an authenticated user; detailed contributor reads require room management.
+service BoostsService {
+  // Read launch policy, not the caller's entitlement or a room's effective limit.
+  rpc GetBoostConfiguration(GetBoostConfigurationRequest) returns (GetBoostConfigurationResponse);
+  // Recover the complete private slot snapshot, including after expiry or missed hints.
+  rpc GetMyBoosts(GetMyBoostsRequest) returns (GetMyBoostsResponse);
+  // Assign, move or release the caller's one slot atomically at an expected revision.
+  rpc ApplyBoosts(ApplyBoostsRequest) returns (ApplyBoostsResponse);
+  // Read the aggregate count and effective shared pin limit as a current member.
+  rpc GetBoostStatus(GetBoostStatusRequest) returns (GetBoostStatusResponse);
+  // Page through current contributors in one managed room, in ascending user ID order.
+  rpc ListBoosts(ListBoostsRequest) returns (ListBoostsResponse);
+  // Look up one user's contribution in one managed room, never across rooms.
+  rpc GetUserBoosts(GetUserBoostsRequest) returns (GetUserBoostsResponse);
+}
+
+// Read current boost policy. No room or user selector.
+message GetBoostConfigurationRequest {}
+
+// Launch gives exactly one slot per account with effective verified Premium.
+message GetBoostConfigurationResponse {
+  // Added to the ordinary room shared pin limit once when any boost is active (1..5).
+  uint32 extra_shared_pins = 1;
+}
+
+// Read the authenticated owner's slots only, including when no slot exists.
+message GetMyBoostsRequest {}
+
+// Authoritative snapshot, not an allocation per subscription, payment or device.
+message GetMyBoostsResponse {
+  // Always present on success, including when the owner has no slot.
+  MyBoosts my_boosts = 1;
+}
+
+// Persist the actor-scoped request UUID and exact arguments before submitting.
+message ApplyBoostsRequest {
+  // Required canonical UUID. An accepted key cannot be reused for different arguments.
+  string request_id = 1;
+  // Positive revision read from GetMyBoosts. Mismatch on first execution changes nothing.
+  uint64 expected_revision = 2;
+  // Exactly one desired assignment; omission is invalid, never an implicit release.
+  oneof assignment {
+    // Set or move to this eligible room; caller must be a current unrestricted member.
+    RoomQueryTarget target = 3;
+    // Remove the assignment while keeping the eligible account slot.
+    google.protobuf.Empty release = 4;
+  }
+}
+
+// Durable owner-only receipt accompanied by the current owner inventory.
+message ApplyBoostsResponse {
+  // Owner revision at acceptance, including for an accepted no-op. Stable on exact retry.
+  uint64 accepted_revision = 1;
+  // Always present on success. Read at or after acceptance under current GetMyBoosts
+  // authorization on every reply, including retries; never replay a stored assignment.
+  MyBoosts my_boosts = 2;
+  // Currently recipient-authorized hints only; replay need not repeat them.
+  repeated Update updates = 3;
+}
+
+// Read one room's aggregate status. No contributor identity is returned.
+message GetBoostStatusRequest {
+  // Required visible room in which the caller is currently a member.
+  RoomQueryTarget target = 1;
+}
+
+// Complete room snapshot. Does not grant the caller pin permission.
+message GetBoostStatusResponse {
+  // Positive monotonically increasing revision scoped to the room, including contributor changes.
+  uint64 revision = 1;
+  // Number of distinct accounts with a currently active assignment here.
+  uint64 active_boost_count = 2;
+  // Current maximum shared message pins, including any non-stacking boost allowance.
+  uint32 shared_pin_limit = 3;
+}
+
+// Read active contributor IDs as room owner or administrator with manage_chat.
+message ListBoostsRequest {
+  // Required managed room; never a global list.
+  RoomQueryTarget target = 1;
+  // Zero selects 50; otherwise 1..100.
+  uint32 page_size = 2;
+  // Opaque continuation bound to caller, room, revision and page size; empty starts a list.
+  string page_token = 3;
+}
+
+// One page at a single room revision. A stale continuation requires a fresh first page.
+message ListBoostsResponse {
+  // Room revision shared with GetBoostStatus and GetUserBoosts.
+  uint64 revision = 1;
+  // Distinct active contributor IDs in ascending numeric order, without billing details.
+  repeated int64 user_ids = 2;
+  // Empty at exhaustion; otherwise pass unchanged to continue.
+  string next_page_token = 3;
+}
+
+// Room-scoped lookup under the same management checks as ListBoosts.
+message GetUserBoostsRequest {
+  // Required managed room.
+  RoomQueryTarget target = 1;
+  // Positive account ID to check in this room only.
+  int64 user_id = 2;
+}
+
+// Never reveals whether the subject owns a slot or has boosted another room.
+message GetUserBoostsResponse {
+  // Room revision of the lookup.
+  uint64 revision = 1;
+  // True only for a current contribution here; false also covers an unknown subject.
+  bool boosting = 2;
+}
